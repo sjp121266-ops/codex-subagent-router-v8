@@ -15,12 +15,12 @@ Use this skill only after the user explicitly enables or asks for subagents, mul
 $HOME/.codex/subagents/router.mjs managed --json "<task>"
 ```
 
-Use this when the user says “调用合适子代理完成任务”, “开启子代理持续实现”, “多代理帮我优化”, or similar broad delegation language. The managed output is the user-facing plan: selected agent, role, skills, stage/goal loop, one-question clarification state, and the three short explanations:
+Use this when the user says “调用合适子代理完成任务”, “开启子代理持续实现”, “多代理帮我优化”, or similar broad delegation language. The managed output is the user-facing plan and execution contract: selected agent, role, skills, stage/goal loop, one-question clarification state, write boundaries, parent responsibilities, stage inputs/outputs, and the three short explanations:
 - why this agent;
 - why Codex is not asking now;
 - when Codex will ask.
 
-Do not expose internal fields such as `judgeMode`, `candidateBudget`, `failureClass`, cache keys, or raw candidate scoring in normal user updates.
+Do not expose internal fields such as `judgeMode`, `candidateBudget`, `failureClass`, cache keys, or raw candidate scoring in normal user updates. Use `managed --json` as the default for real delegation; reserve `judge --verbose` and `judge --explain` for auditing, debugging, or improving the router itself.
 
 2. For debugging the router or medium/high-risk delegation, run the cost-aware router:
 
@@ -50,6 +50,7 @@ The router is quality-first and cost-aware:
 - `importanceLevel` explains whether the task is `critical`, `high`, `normal`, or `low`.
 - `modelRationale` explains why that model and effort were selected.
 - `taskProfile` summarizes complexity, risk, scope, write intent, and matched signals.
+- v12 `taskProfile.taskKind` may include `release-publishing`, `repo-maintenance`, `research-only`, or `incident-response` in addition to engineering/product/orchestration kinds.
 - `executionPlan` tells whether to use one agent, staged execution, parallel review, or clarification first.
 - `executionPlan.stageDetails` gives executable stage details when available: agent, role, sandbox, model, reasoning, skills, expected output, and acceptance criteria.
 - `handoffPlan` is the preferred multi-agent delegation plan. Follow its `stages` in order unless local context makes a stage unsafe.
@@ -88,6 +89,13 @@ When `handoffPlan.stages` exists, use it as the concrete execution checklist:
 - use each stage's `agent`, `role`, `sandboxMode`, `selectedModel`, and `reasoningEffort`;
 - treat `acceptanceCriteria` as the stage completion check;
 - for `clarify-first`, ask `handoffPlan.clarificationQuestion` before spawning.
+
+When `managed --json` returns `executionContract`, `writeBoundaries`, `parentResponsibilities`, `stageInputs`, and `stageOutputs`, treat them as the parent Codex execution contract:
+- enforce one writer per file or module at a time;
+- keep mapping, research, review, and public-hygiene stages read-only;
+- pass each stage only the inputs it needs;
+- collect each stage output before starting the next dependent stage;
+- keep final integration and user-facing verification in the parent Codex.
 
 For continuous goal work, report each stage in this fixed structure:
 - goal;
@@ -146,22 +154,30 @@ $HOME/.codex/subagents/router.mjs test
 $HOME/.codex/subagents/router.mjs eval
 $HOME/.codex/subagents/router.mjs test-performance
 $HOME/.codex/subagents/router.mjs test-managed
+$HOME/.codex/subagents/router.mjs test-managed-contract
 $HOME/.codex/subagents/router.mjs test-skills-phase
 $HOME/.codex/subagents/router.mjs test-judge-matrix
 $HOME/.codex/subagents/router.mjs test-recovery
 $HOME/.codex/subagents/router.mjs test-handoff
 $HOME/.codex/subagents/router.mjs test-skill-repair
+$HOME/.codex/subagents/router.mjs test-config
+$HOME/.codex/subagents/router.mjs test-config-explain
+$HOME/.codex/subagents/router.mjs test-route-cache
+$HOME/.codex/subagents/router.mjs config-check
 $HOME/.codex/subagents/router.mjs doctor
 $HOME/.codex/subagents/router.mjs report
 ```
 
 Use `judge --explain "<task>"` when you need a human-readable explanation of the routing decision.
+Use `config-explain "<task>"` when you need to inspect which v12 taskKind, risk, skill, and cache policies matched a task.
+Use `refresh-skills` after installing or removing skills so the local snapshot is current.
 
 ## Guardrails
 
 - Do not auto-delegate unless the user explicitly asked for subagents or multi-agent routing.
 - Keep the main agent responsible for final integration, review, and user-facing summary.
 - For write-capable workers, assign a clear file or subsystem ownership boundary.
+- For v12 managed plans, follow `writeBoundaries`; never let two write-capable stages edit the same file/module concurrently.
 - Do not let subagents overwrite unrelated user changes.
 - Prefer `high` confidence routes for autonomous spawning. Treat `medium` as acceptable when local context confirms the route. Treat `low` as a candidate list, not a decision.
 - Treat `parent-review-required` as a hard stop for automatic delegation.

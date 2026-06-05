@@ -1,5 +1,5 @@
 {
-  "version": 4,
+  "version": 12,
   "skillRules": [
     {
       "id": "frontend",
@@ -374,7 +374,7 @@
   "costPolicy": {
     "budgets": ["economy", "balanced", "premium", "critical"],
     "highRiskIntents": ["security", "review", "planning", "devops", "data-ai"],
-    "volatileContextPattern": "current diff|当前\\s*diff|git diff|uncommitted|working tree|当前分支|日志|log\\b|stack trace|traceback|报错输出|失败输出|test output|文件\\s*:|/[\\w.-]+/|第\\s*\\d+\\s*行|line\\s+\\d+",
+    "volatileContextPattern": "current diff|当前\\s*diff|git diff|uncommitted|working tree|当前分支|生产日志|线上日志|日志|\\blog\\b|stack trace|traceback|报错输出|失败输出|test output|文件\\s*:|/[\\w.-]+/|第\\s*\\d+\\s*行|line\\s+\\d+",
     "candidateBudgets": {
       "critical": { "agents": 8, "skills": 18 },
       "premium": { "agents": 6, "skills": 16 },
@@ -383,8 +383,65 @@
       "economyLowRisk": { "agents": 3, "skills": 8 }
     },
     "cache": {
-      "maxEntries": 200
+      "maxEntries": 200,
+      "routeMaxEntries": 300,
+      "stableRouteKinds": ["release-publishing", "repo-maintenance", "research-only", "product-analysis", "engineering-analysis"],
+      "snapshotMaxAgeHours": 168
     }
+  },
+  "taskKindPolicy": {
+    "release-publishing": {
+      "keywords": ["readme|changelog|release notes?|release\\b|publish|publishing|public repo|github readme|installation steps|发布说明|发布|公开仓库|仓库说明|安装步骤|版本说明|致谢"],
+      "preferredAgents": ["documentation-engineer", "technical-writer", "github-expert", "release-manager", "docs-researcher"],
+      "allowedPhases": ["planning", "research", "review", "deployment", "matched"]
+    },
+    "repo-maintenance": {
+      "keywords": ["doctor|report|config|configuration|cache|snapshot|registry|cleanup|maintenance|dependency|sync|健康状态|配置|缓存|快照|注册表|维护|清理|同步|依赖"],
+      "preferredAgents": ["code-mapper", "architect-reviewer", "documentation-engineer", "devops-engineer"],
+      "allowedPhases": ["planning", "research", "design", "implementation", "testing", "review", "matched"]
+    },
+    "research-only": {
+      "keywords": ["research only|read[- ]?only research|only research|official docs|source verification|do not edit|do not write|no code changes|不要改代码|不要修改|只调研|仅调研|只读调研|官方文档|查资料|只读"],
+      "preferredAgents": ["docs-researcher", "research-analyst", "code-mapper", "reviewer"],
+      "allowedPhases": ["planning", "research", "review", "matched"]
+    },
+    "incident-response": {
+      "keywords": ["incident|outage|production log|prod log|rollback|hotfix|sev[0-9]?|downtime|sre|线上事故|生产事故|线上故障|生产故障|线上日志|生产日志|回滚|紧急修复|宕机|告警"],
+      "preferredAgents": ["sre-engineer", "incident-responder", "debugger", "security-engineer", "devops-engineer"],
+      "allowedPhases": ["planning", "research", "debugging", "testing", "review", "implementation", "matched"]
+    },
+    "orchestration-design": {
+      "keywords": ["subagent-router|router|routing|dispatch|scheduler|scheduling|handoff|fallback|quality gate|judge matrix|goal mode|agent routing|multi-agent|multiple subagents|调度|调度器|路由器|路由|调用速度|调用的速度|算法调度|质量门|回退|委派|编排|多代理|多智能体|多个子代理|goal 模式"],
+      "preferredAgents": ["architect-reviewer", "project-manager", "multi-agent-coordinator", "code-mapper"],
+      "allowedPhases": ["planning", "research", "design", "review", "testing", "matched"]
+    },
+    "product-analysis": {
+      "keywords": ["adoption|churn|funnel|market|用户体验|用户问题|用户|产品|需求|商业|增长|定位|留存|转化|漏斗"],
+      "preferredAgents": ["product-manager", "research-analyst", "risk-manager", "business-analyst"],
+      "allowedPhases": ["planning", "research", "review", "matched"]
+    },
+    "engineering-analysis": {
+      "keywords": ["review|audit|analy[sz]e|inspect|diagnose|map|评审|审查|审计|分析|检查|诊断"],
+      "preferredAgents": ["reviewer", "architect-reviewer", "code-mapper", "debugger"],
+      "allowedPhases": ["planning", "research", "design", "debugging", "testing", "review", "matched"]
+    },
+    "engineering-execution": {
+      "keywords": ["fix|implement|build|create|edit|update|refactor|optimi[sz]e|improve|iterate|execute|修复|实现|创建|修改|改|写|补齐|重构|优化|完善|迭代|执行"],
+      "preferredAgents": [],
+      "allowedPhases": ["planning", "research", "design", "implementation", "debugging", "testing", "review", "deployment", "matched"]
+    }
+  },
+  "highRiskRules": [
+    { "id": "security", "pattern": "security|vulnerability|permission|secret|privacy|compliance|xss|csrf|sql injection|安全|漏洞|权限|隐私|合规|威胁" },
+    { "id": "auth", "pattern": "auth|oauth|token|credential|鉴权|认证|凭证|令牌" },
+    { "id": "production", "pattern": "production|prod\\b|线上|生产" },
+    { "id": "current-diff", "pattern": "current diff|当前\\s*diff|git diff|uncommitted|working tree|当前分支" },
+    { "id": "incident", "pattern": "incident|outage|rollback|downtime|线上事故|生产事故|故障|回滚|宕机" }
+  ],
+  "managedUX": {
+    "explanationStyle": "concise",
+    "maxClarifyingQuestions": 1,
+    "hideInternalFields": true
   },
   "executionProfiles": {
     "single-agent": "One focused subagent can handle the task directly.",

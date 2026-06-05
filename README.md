@@ -1,4 +1,4 @@
-# Codex Subagent Router v11
+# Codex Subagent Router v12
 
 ![Codex Subagent Router hero](assets/codex-subagent-router-v8-hero.png)
 
@@ -18,8 +18,11 @@ The goal is simple: when you explicitly ask Codex to use subagents, the parent C
 - v9 skill repair: configured local skills omitted by the initial candidate budget can be repaired without discarding an otherwise valid GPT-5.5 judgement.
 - v10 orchestration routing: explicit broad multi-agent project work becomes staged, while vague broad work still clarifies first.
 - v11 managed delegation: one-line requests such as "调用合适子代理完成任务" produce a concise user-facing stage/goal plan without exposing internal routing fields.
-- v11 speed work: compact judge prompts, compact default JSON, stable cache keys, route cache, and a skill registry snapshot reduce local prep and token use.
-- Built-in eval, performance, managed UX, skills-phase, judge-matrix, recovery, handoff, skill-repair, doctor, and report commands.
+- v12 task kinds: `release-publishing`, `repo-maintenance`, `research-only`, and `incident-response` improve README/release, maintenance, no-write research, and production incident routing.
+- v12 managed contracts: `managed --json` now includes `executionContract`, `writeBoundaries`, `parentResponsibilities`, `stageInputs`, and `stageOutputs`.
+- v12 config governance: taskKind, risk, cache, model, and managed UX policy are validated by `config-check` and explainable through `config-explain`.
+- v12 speed work: persistent route cache, route-cache statistics, `refresh-skills`, snapshot staleness checks, and cold/warm performance benchmarks reduce repeated local prep.
+- Built-in eval, performance, managed UX, managed-contract, config, route-cache, skills-phase, judge-matrix, recovery, handoff, skill-repair, doctor, and report commands.
 
 ## How It Works
 
@@ -43,7 +46,7 @@ flowchart TD
 The router combines four sources of truth:
 
 - `subagents/registry.json`: VoltAgent agent metadata.
-- `subagents/strategy-config.json`: intent, skill, cost, cache, and candidate-budget policy.
+- `subagents/strategy-config.json`: intent, taskKind, skill, cost, cache, model-risk, managed UX, and candidate-budget policy.
 - `subagents/community-skills-manifest.json`: imported community skills.
 - Local Codex skill discovery from `~/.codex/skills`, `~/.agents/skills`, and plugin caches.
 
@@ -127,6 +130,12 @@ Show a human-readable explanation:
 node subagents/router.mjs judge --explain "开启子代理，审查当前 diff"
 ```
 
+Explain which v12 config policies match a task:
+
+```bash
+node subagents/router.mjs config-explain "开启子代理，根据生产日志处理线上事故并准备回滚"
+```
+
 Use budget controls:
 
 ```bash
@@ -142,11 +151,15 @@ node subagents/router.mjs test
 node subagents/router.mjs eval
 node subagents/router.mjs test-performance
 node subagents/router.mjs test-managed
+node subagents/router.mjs test-managed-contract
 node subagents/router.mjs test-skills-phase
 node subagents/router.mjs test-judge-matrix
 node subagents/router.mjs test-recovery
 node subagents/router.mjs test-handoff
 node subagents/router.mjs test-skill-repair
+node subagents/router.mjs test-config
+node subagents/router.mjs test-config-explain
+node subagents/router.mjs test-route-cache
 node subagents/router.mjs doctor
 node subagents/router.mjs report
 ```
@@ -157,25 +170,40 @@ For the live GPT-5.5 smoke test, use the installed path so local Codex CLI paths
 ~/.codex/subagents/router.mjs test-judge
 ```
 
-## Current v11 Result
+## Current v12 Result
 
-The final v11 verification passed:
+The final v12 verification passed:
 
 - 16/16 regression tests.
-- 77/77 eval cases.
+- 97/97 eval cases.
 - Performance test passed: compact prompt is about 49% smaller than the v10-style estimate; default JSON is about 88% smaller than verbose JSON.
-- Managed delegation test passed: authorized goal requests produce staged plans; vague multi-agent requests ask one clarification question.
+- Managed delegation and managed-contract tests passed: authorized goal requests produce staged plans; high-risk write tasks include validation/review; managed JSON includes stage inputs/outputs and write boundaries without exposing internal budgets.
+- Config tests passed: taskKind policy, high-risk GPT-5.5 rules, configured skills, `config-check`, and `config-explain` are valid.
+- Route-cache tests passed: stable low/medium-risk tasks can hit persistent cache; volatile current diff/log/incident/security tasks bypass cache.
 - Skills-phase and judge-matrix tests passed.
 - Recovery tests passed.
 - Handoff tests passed.
 - Skill-repair tests passed.
 - Doctor/report passed.
+- `refresh-skills` rebuilt the local skill snapshot with 279 skills in the tested environment.
 - Explicit multi-agent project optimization now routes to `staged` instead of over-clarifying.
 - Vague multi-agent project optimization still routes to `clarify-first`.
 - Generic "agent/智能体" wording no longer pulls OpenAI/LangGraph skills unless those technologies are explicitly named.
 - GPT-5.5 critical routing smoke test passed for high-risk current diff auth review.
 
-See [`outputs/subagent-router-v11-final-report.md`](outputs/subagent-router-v11-final-report.md) for the full report.
+See [`outputs/subagent-router-v12-final-report.md`](outputs/subagent-router-v12-final-report.md) for the full report.
+
+## v12 Reliability and UX Changes
+
+- Added `release-publishing`, `repo-maintenance`, `research-only`, and `incident-response` taskKinds.
+- README/release/documentation publishing is no longer treated as DevOps just because GitHub or changelog terms appear.
+- `research-only` and explicit no-write tasks are forced into read-only agent/sandbox behavior and do not generate implementation stages.
+- Production incidents, production logs, rollback, outage, security, auth, and current diff stay on GPT-5.5 and bypass stale caches when volatile.
+- `managed --json` includes an execution contract with write boundaries, parent responsibilities, and stage input/output expectations.
+- Strategy config v12 validates taskKind policy, allowed phases, high-risk coverage, and configured skill existence.
+- `config-check`, `config-explain`, `test-config`, `test-config-explain`, `test-route-cache`, and `test-managed-contract` were added.
+- Persistent route cache records hit rate, bypass reasons, oldest/newest entries, and quarantine count.
+- `refresh-skills` rebuilds the local skill registry snapshot.
 
 ## v11 Reliability and UX Changes
 
@@ -199,15 +227,22 @@ See [`outputs/subagent-router-v11-final-report.md`](outputs/subagent-router-v11-
 
 ## Cache and Local Data
 
-The judgement cache is stored at `~/.codex/subagents/judgement-cache.json`. It stores routing results keyed by a hash of the task and candidate packet. Volatile tasks such as current diffs, logs, stack traces, file/line-specific failures, and test output bypass cache automatically.
+The judgement cache is stored at `~/.codex/subagents/judgement-cache.json`. It stores model judgement results keyed by a hash of the task and candidate packet. The route cache is stored at `~/.codex/subagents/route-cache.json`. It stores stable deterministic route preparation for non-volatile low/medium-risk tasks. Volatile tasks such as current diffs, logs, stack traces, incidents, file/line-specific failures, and test output bypass cache automatically.
 
 To clear local router state:
 
 ```bash
 rm -f ~/.codex/subagents/judgement-cache.json
+rm -f ~/.codex/subagents/route-cache.json
 rm -f ~/.codex/subagents/skill-registry-snapshot.json
 rm -f ~/.codex/subagents/last-eval-results.json
 rm -f ~/.codex/subagents/last-skill-repair-results.json
+```
+
+Refresh the skill snapshot without clearing other state:
+
+```bash
+node subagents/router.mjs refresh-skills
 ```
 
 ## Upstream Projects and Acknowledgements
