@@ -138,6 +138,26 @@ The final v8 verification passed:
 
 See [`outputs/subagent-router-v8-final-report.md`](outputs/subagent-router-v8-final-report.md) for the full report.
 
+## Upstream Projects and Acknowledgements
+
+This repository is an integration and routing layer. It exists because several excellent open-source projects made agent identities and skill instructions reusable:
+
+| Project | Used for | Notes |
+| --- | --- | --- |
+| [VoltAgent/awesome-codex-subagents](https://github.com/VoltAgent/awesome-codex-subagents) | Agent identity source | The generated `subagents/registry.json` is built from VoltAgent-style Codex subagent identities. These identities provide the specialist roles and working methods that this router selects from. |
+| [openai/skills](https://github.com/openai/skills) | Community skill source | Imported skills for official-style workflows such as Figma, Notion, Linear, ASP.NET Core, speech, transcription, and security ownership mapping. |
+| [kid-sid/codex-spellbook](https://github.com/kid-sid/codex-spellbook) | Community skill source | Imported broad engineering skills for API design, React, backend frameworks, databases, Docker, CI/CD, cloud, security, observability, and testing. |
+| [mattpocock/skills](https://github.com/mattpocock/skills) | Community skill source | Imported high-signal engineering workflow skills such as TDD, diagnosis, PRD/issues conversion, architecture improvement, and prototyping. |
+| [jMerta/codex-skills](https://github.com/jMerta/codex-skills) | Community skill source | Imported workflow-oriented skills for AGENTS.md, CI fixes, coding guidelines, docs sync, dependency upgrades, release notes, planning, and triage. |
+
+Thank you to the maintainers and contributors of these projects. This router adds selection, cost policy, quality gates, recovery behavior, evals, and handoff planning on top of their work; it does not claim authorship of the upstream agent or skill content.
+
+The imported sources are tracked in [`subagents/community-skills-manifest.json`](subagents/community-skills-manifest.json), including source labels and repository URLs where available.
+
+## Attribution and License Notes
+
+Before redistributing, republishing, or using this repository in a product, review the licenses and attribution requirements of each upstream project listed above. This repository is a snapshot and integration layer, so upstream licenses may apply to the agent and skill content copied or indexed here.
+
 ## Notes
 
 This repository is a portable snapshot of a local Codex setup. Some commands, especially live judgement and skill discovery, depend on the target machine's Codex installation, available models, plugin cache, and local skills.
