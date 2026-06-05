@@ -1,0 +1,41 @@
+{
+  "name": "codex-subagent-router",
+  "version": "0.1.0+codex.20260605175916",
+  "description": "Quality-first Codex subagent routing for selecting VoltAgent identities, skills, models, and staged delegation plans.",
+  "author": {
+    "name": "sjp121266-ops",
+    "url": "https://github.com/sjp121266-ops"
+  },
+  "repository": "https://github.com/sjp121266-ops/codex-subagent-router-v8",
+  "homepage": "https://github.com/sjp121266-ops/codex-subagent-router-v8",
+  "license": "MIT",
+  "keywords": [
+    "codex",
+    "subagents",
+    "routing",
+    "multi-agent",
+    "skills",
+    "voltagent"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Codex Subagent Router",
+    "shortDescription": "\u81ea\u52a8\u9009\u62e9 Codex \u5b50\u4ee3\u7406\u3001skills\u3001\u6a21\u578b\u548c\u6267\u884c\u9636\u6bb5\u3002",
+    "longDescription": "Codex Subagent Router packages the local v13 routing system as a personal Codex plugin. It helps the parent Codex choose the right VoltAgent identity, runtime role, sandbox, skills, model strength, execution stages, fallback behavior, and managed next action for explicit subagent requests.",
+    "developerName": "sjp121266-ops",
+    "category": "Productivity",
+    "capabilities": [
+      "Skills",
+      "Local routing",
+      "Multi-agent planning"
+    ],
+    "defaultPrompt": [
+      "\u5f00\u542f\u5b50\u4ee3\u7406\uff0c\u8c03\u7528\u5408\u9002 agent \u5b8c\u6210\u4efb\u52a1",
+      "\u7528\u591a\u4ee3\u7406\u5ba1\u67e5\u5e76\u4f18\u5316\u5f53\u524d\u9879\u76ee",
+      "\u89e3\u91ca\u8fd9\u6b21\u5e94\u8be5\u4f7f\u7528\u54ea\u4e9b agents \u548c skills"
+    ],
+    "brandColor": "#2563EB",
+    "composerIcon": "./assets/codex-subagent-router-hero.png",
+    "logo": "./assets/codex-subagent-router-hero.png"
+  }
+}

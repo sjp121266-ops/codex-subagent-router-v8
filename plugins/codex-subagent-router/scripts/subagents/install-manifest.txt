@@ -1,0 +1,6 @@
+installed_at=20260605-171511
+source=$HOME/.codex/subagents/awesome-codex-subagents
+destination=$HOME/.codex/agents
+total=167
+collisions=code-reviewer.toml debugger.toml
+backup=$HOME/.codex/subagents/preserved-agents/.preserved-before-voltagent-20260605-171511

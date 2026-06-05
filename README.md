@@ -88,6 +88,7 @@ The delegated subagent model is selected separately from the routing judge. A ch
 - `subagents/community-skills-manifest.json`: imported community skill manifest.
 - `subagents/registry.json`: VoltAgent agent registry snapshot.
 - `subagents/import-community-skills.mjs`: community skill importer.
+- `plugins/codex-subagent-router/`: personal Codex plugin package for this router.
 - `~/.codex/subagents/skill-registry-snapshot.json`: local runtime snapshot used to avoid repeated plugin-cache scans.
 - `skills/subagent-router/SKILL.md`: Codex global skill instructions.
 - `outputs/`: implementation plans and verification reports.
@@ -106,6 +107,27 @@ cp subagents/community-skills-manifest.json ~/.codex/subagents/community-skills-
 cp subagents/registry.json ~/.codex/subagents/registry.json
 cp skills/subagent-router/SKILL.md ~/.codex/skills/subagent-router/SKILL.md
 chmod +x ~/.codex/subagents/router.mjs
+```
+
+## Install As A Codex Plugin
+
+This repository also includes a local personal plugin package at `plugins/codex-subagent-router/`.
+
+For the default personal marketplace flow:
+
+```bash
+mkdir -p ~/plugins
+rm -rf ~/plugins/codex-subagent-router
+cp -R plugins/codex-subagent-router ~/plugins/codex-subagent-router
+python3 ~/.codex/skills/.system/plugin-creator/scripts/validate_plugin.py ~/plugins/codex-subagent-router
+python3 ~/.codex/skills/.system/plugin-creator/scripts/update_plugin_cachebuster.py ~/plugins/codex-subagent-router
+codex plugin add codex-subagent-router@personal
+```
+
+After installing, start a new Codex thread and try:
+
+```text
+开启子代理，调用合适 agent 完成任务
 ```
 
 ## Basic Usage
