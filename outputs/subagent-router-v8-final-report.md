@@ -49,9 +49,9 @@ v8 已完成 5 个连续 goal：质量 eval、可观测解释、失败恢复、�
 
 ## Files Updated
 
-- `/Users/sjp1212/.codex/subagents/router.mjs`
-- `/Users/sjp1212/.codex/subagents/strategy-config.json`
-- `/Users/sjp1212/.codex/skills/subagent-router/SKILL.md`
+- `$HOME/.codex/subagents/router.mjs`
+- `$HOME/.codex/subagents/strategy-config.json`
+- `$HOME/.codex/skills/subagent-router/SKILL.md`
 
 ## Quality Result
 

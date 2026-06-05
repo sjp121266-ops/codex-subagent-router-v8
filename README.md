@@ -1,6 +1,6 @@
-# Codex Subagent Router v8
+# Codex Subagent Router v9
 
-![Codex Subagent Router v8 hero](assets/codex-subagent-router-v8-hero.png)
+![Codex Subagent Router hero](assets/codex-subagent-router-v8-hero.png)
 
 Quality-first routing for Codex subagents. This repository packages a local router that selects VoltAgent agent identities, Codex skills, community skills, model tiers, recovery behavior, and multi-agent handoff plans for Codex workflows.
 
@@ -14,8 +14,9 @@ The goal is simple: when you explicitly ask Codex to use subagents, the parent C
 - Quality-first model policy: GPT-5.5 for high-risk work, cheaper routing only for safe and obvious tasks.
 - Structured routing output with `finalAgent`, `selectedSkills`, `selectedModel`, `reasoningEffort`, `executionPlan`, and `handoffPlan`.
 - Explainable decisions through `decisionTrace`, `qualityGates`, `rejectedCandidates`, and `skillRationale`.
-- Conservative fallback behavior through `failureClass`, `fallbackSafety`, and `requiresParentReview`.
-- Built-in eval, recovery, handoff, doctor, and report commands.
+- Conservative fallback behavior through `failureClass`, `fallbackSafety`, `requiresParentReview`, `delegationBlocked`, and `approvalState`.
+- v9 skill repair: configured local skills omitted by the initial candidate budget can be repaired without discarding an otherwise valid GPT-5.5 judgement.
+- Built-in eval, recovery, handoff, skill-repair, doctor, and report commands.
 
 ## How It Works
 
@@ -31,7 +32,9 @@ flowchart TD
   F --> I["Agent + skills + model + handoffPlan"]
   G --> I
   H --> I
-  I --> J["Parent Codex delegates explorer / worker stages"]
+  I --> J{"Fallback safety"}
+  J -->|"safe"| K["Parent Codex delegates explorer / worker stages"]
+  J -->|"requires review"| L["parent-review-required / no worker stage"]
 ```
 
 The router combines four sources of truth:
@@ -114,6 +117,7 @@ node subagents/router.mjs test
 node subagents/router.mjs eval
 node subagents/router.mjs test-recovery
 node subagents/router.mjs test-handoff
+node subagents/router.mjs test-skill-repair
 node subagents/router.mjs doctor
 node subagents/router.mjs report
 ```
@@ -124,19 +128,41 @@ For the live GPT-5.5 smoke test, use the installed path so local Codex CLI paths
 ~/.codex/subagents/router.mjs test-judge
 ```
 
-## Current v8 Result
+## Current v9 Result
 
-The final v8 verification passed:
+The final v9 verification passed:
 
 - 16/16 regression tests.
-- 52/52 eval cases.
+- 65/65 eval cases.
 - Recovery tests passed.
 - Handoff tests passed.
+- Skill-repair tests passed.
 - Doctor/report passed.
-- Economy, balanced, premium, and critical budget matrix passed.
-- GPT-5.5 quality-gate smoke test passed.
+- High-risk fallback now blocks automatic worker handoff and requires parent review.
+- GPT-5.5 critical routing smoke test passed for the multi-agent project-audit task.
 
-See [`outputs/subagent-router-v8-final-report.md`](outputs/subagent-router-v8-final-report.md) for the full report.
+See [`outputs/subagent-router-v9-final-report.md`](outputs/subagent-router-v9-final-report.md) for the full report.
+
+## v9 Reliability Changes
+
+- Candidate skills from strong strategy rules are protected from truncation by the initial skill budget.
+- If GPT-5.5 selects a configured, locally available skill that was outside the initial candidate list, the router repairs it, emits `routingWarnings`, and keeps the rest of the judgement.
+- Unknown skills and non-candidate agents still fail safely.
+- `selectedSkillsByPhase` is rebuilt from final `selectedSkills`, so handoff stages cannot receive unselected skills.
+- High-risk fallback results use `parent-review-required` mode and do not include executable `primary` or `implement` stages.
+- Repository-local config, schema, registry, and manifest files are used when running from a clone; runtime cache still lives under `~/.codex/subagents`.
+
+## Cache and Local Data
+
+The judgement cache is stored at `~/.codex/subagents/judgement-cache.json`. It stores routing results keyed by a hash of the task and candidate packet. Volatile tasks such as current diffs, logs, stack traces, file/line-specific failures, and test output bypass cache automatically.
+
+To clear local router state:
+
+```bash
+rm -f ~/.codex/subagents/judgement-cache.json
+rm -f ~/.codex/subagents/last-eval-results.json
+rm -f ~/.codex/subagents/last-skill-repair-results.json
+```
 
 ## Upstream Projects and Acknowledgements
 
@@ -152,7 +178,7 @@ This repository is an integration and routing layer. It exists because several e
 
 Thank you to the maintainers and contributors of these projects. This router adds selection, cost policy, quality gates, recovery behavior, evals, and handoff planning on top of their work; it does not claim authorship of the upstream agent or skill content.
 
-The imported sources are tracked in [`subagents/community-skills-manifest.json`](subagents/community-skills-manifest.json), including source labels and repository URLs where available.
+The imported sources are tracked in [`subagents/community-skills-manifest.json`](subagents/community-skills-manifest.json), including source labels and repository URLs where available. See [`NOTICE.md`](NOTICE.md) for the third-party attribution summary.
 
 ## Attribution and License Notes
 

@@ -25,11 +25,11 @@ Router v2 is implemented and verified.
 ## Verified Commands
 
 ```bash
-node --check /Users/sjp1212/.codex/subagents/router.mjs
-/Users/sjp1212/.codex/subagents/router.mjs rebuild
-/Users/sjp1212/.codex/subagents/router.mjs test
-/Users/sjp1212/.codex/subagents/router.mjs route --brief "开启子代理，修复 API 鉴权问题"
-/Users/sjp1212/.codex/subagents/bin/codex-subagent route --brief "开启子代理，审查当前 diff"
+node --check $HOME/.codex/subagents/router.mjs
+$HOME/.codex/subagents/router.mjs rebuild
+$HOME/.codex/subagents/router.mjs test
+$HOME/.codex/subagents/router.mjs route --brief "开启子代理，修复 API 鉴权问题"
+$HOME/.codex/subagents/bin/codex-subagent route --brief "开启子代理，审查当前 diff"
 ```
 
 ## v2 Fields Verified

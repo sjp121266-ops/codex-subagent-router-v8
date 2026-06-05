@@ -12,7 +12,7 @@ Use this skill only after the user explicitly enables or asks for subagents, mul
 1. Run the cost-aware router:
 
 ```bash
-/Users/sjp1212/.codex/subagents/router.mjs judge --json "<task>"
+$HOME/.codex/subagents/router.mjs judge --json "<task>"
 ```
 
 The router is quality-first and cost-aware:
@@ -29,7 +29,7 @@ The router is quality-first and cost-aware:
 - `candidateBudget` shows how many agent and skill candidates were sent to the judge.
 - `cache` shows whether the routing decision came from cache, missed cache, or bypassed cache.
 - `decisionTrace`, `qualityGates`, `rejectedCandidates`, and `skillRationale` explain the route. Inspect them for medium/high-risk tasks.
-- `fallbackSafety`, `failureClass`, `requiresParentReview`, and `routingWarnings` describe recovery behavior. If `requiresParentReview` is true, do not blindly spawn.
+- `fallbackSafety`, `failureClass`, `requiresParentReview`, `delegationBlocked`, `approvalState`, and `routingWarnings` describe recovery behavior. If `requiresParentReview` or `delegationBlocked` is true, do not blindly spawn.
 - `runtimeRole` maps to the Codex subagent role: `explorer` for read-only work, `worker` for write-capable work.
 - `sandboxMode` is the requested sandbox boundary.
 - `selectedModel` is the model to use for the spawned subagent.
@@ -53,7 +53,7 @@ The router is quality-first and cost-aware:
 - `deterministic` with high confidence is an intentional token-saving route for safe tasks.
 - Any `modelError` means the model judge failed and the result is a fallback. You may still use it when confidence is high, but mention the fallback if routing quality matters.
 
-4. If `confidence` is `low`, `needsParentChoice` is `true`, or `executionPlan.requiresUserClarification` is `true`, do not blindly spawn the recommended agent. Use `deterministic.candidates`, `rationale`, and local context to choose one. If the task is still ambiguous, ask one concise clarification question.
+4. If `confidence` is `low`, `needsParentChoice` is `true`, `delegationBlocked` is `true`, `approvalState` is `required`, or `executionPlan.requiresUserClarification` is `true`, do not blindly spawn the recommended agent. Use `deterministic.candidates`, `rationale`, fallback metadata, and local context to choose one. If the task is still ambiguous or fallback safety is conservative, ask one concise clarification question or retry the route.
 
 5. Load selected skills that directly match the task before delegating. Prefer skills for the current `executionPlan` stage first: planning/research before implementation, testing before review, review last.
 Community skills installed under `community-*` are allowed and should be treated as normal Codex skills. They come from curated GitHub skill repositories and are selected through the same cost-aware router path.
@@ -64,6 +64,7 @@ When `judgeMode` is not `premium-judge`, still trust `selectedSkills` if confide
 - `staged`: run the listed stages in order; usually explorer/planner, then worker, then tests/review.
 - `parallel-review`: spawn the worker and an independent reviewer when write scopes do not overlap.
 - `clarify-first`: ask before spawning.
+- `parent-review-required`: stop automatic delegation; the parent Codex must inspect fallback safety and either retry or manually approve a safer route.
 
 When `handoffPlan.stages` exists, use it as the concrete execution checklist:
 - load each stage's listed `skills` before that stage;
@@ -85,15 +86,18 @@ When `handoffPlan.stages` exists, use it as the concrete execution checklist:
 For fast local checks or when model judgement is unavailable:
 
 ```bash
-/Users/sjp1212/.codex/subagents/router.mjs judge --offline --json "<task>"
+$HOME/.codex/subagents/router.mjs judge --offline --json "<task>"
 ```
 
 ## CLI Fallback
 
-When a task needs stronger process isolation than the current chat subagent tool provides, run:
+When a task needs stronger process isolation than the current chat subagent tool provides, avoid pasting raw `delegationPrompt` text directly into a shell command. Prefer writing the prompt to a temporary file first:
 
 ```bash
-codex exec --sandbox "<sandboxMode>" -m "<selectedModel>" -c model_reasoning_effort='"<reasoningEffort>"' "<delegationPrompt>"
+prompt_file="$(mktemp)"
+jq -r '.delegationPrompt' route.json > "$prompt_file"
+codex exec --sandbox "<sandboxMode>" -m "<selectedModel>" -c model_reasoning_effort='"<reasoningEffort>"' "$(cat "$prompt_file")"
+rm -f "$prompt_file"
 ```
 
 Use `selectedModel` and `reasoningEffort` from the judgement result. Do not use unsupported model names from upstream `.toml`.
@@ -103,7 +107,7 @@ Use `selectedModel` and `reasoningEffort` from the judgement result. Do not use 
 Default is balanced:
 
 ```bash
-/Users/sjp1212/.codex/subagents/router.mjs judge --json --budget balanced "<task>"
+$HOME/.codex/subagents/router.mjs judge --json --budget balanced "<task>"
 ```
 
 Use `--budget economy` only for obvious low-risk tasks. Use `--budget premium` or `--budget critical` when the user explicitly asks for maximum quality or when local context suggests high downside. Use `--no-cache` when the task depends on fresh repository state. Use `--force-model` when deterministic routing should be bypassed for comparison.
@@ -113,12 +117,13 @@ Use `--budget economy` only for obvious low-risk tasks. Use `--budget premium` o
 Use these checks after changing agents, skills, strategy config, schemas, or router logic:
 
 ```bash
-/Users/sjp1212/.codex/subagents/router.mjs test
-/Users/sjp1212/.codex/subagents/router.mjs eval
-/Users/sjp1212/.codex/subagents/router.mjs test-recovery
-/Users/sjp1212/.codex/subagents/router.mjs test-handoff
-/Users/sjp1212/.codex/subagents/router.mjs doctor
-/Users/sjp1212/.codex/subagents/router.mjs report
+$HOME/.codex/subagents/router.mjs test
+$HOME/.codex/subagents/router.mjs eval
+$HOME/.codex/subagents/router.mjs test-recovery
+$HOME/.codex/subagents/router.mjs test-handoff
+$HOME/.codex/subagents/router.mjs test-skill-repair
+$HOME/.codex/subagents/router.mjs doctor
+$HOME/.codex/subagents/router.mjs report
 ```
 
 Use `judge --explain "<task>"` when you need a human-readable explanation of the routing decision.
@@ -130,5 +135,6 @@ Use `judge --explain "<task>"` when you need a human-readable explanation of the
 - For write-capable workers, assign a clear file or subsystem ownership boundary.
 - Do not let subagents overwrite unrelated user changes.
 - Prefer `high` confidence routes for autonomous spawning. Treat `medium` as acceptable when local context confirms the route. Treat `low` as a candidate list, not a decision.
+- Treat `parent-review-required` as a hard stop for automatic delegation.
 - Never downgrade `critical` or `high` importance work to a cheaper execution model. Important work should normally use `gpt-5.5` for both routing judgement and delegated execution.
 - Saving tokens is allowed only when the result quality and risk profile remain acceptable.

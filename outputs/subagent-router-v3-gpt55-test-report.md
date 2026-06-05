@@ -9,17 +9,17 @@ Router v3 is implemented and verified. The default subagent-router skill now use
 - Added `judge` command for GPT-5.5 model-assisted routing.
 - Added `judge --offline` deterministic fallback with the same output shape.
 - Added `test-judge` real GPT-5.5 smoke test.
-- Added JSON schema at `/Users/sjp1212/.codex/subagents/judgement.schema.json`.
-- Updated `/Users/sjp1212/.codex/skills/subagent-router/SKILL.md` to use `judge --json` by default.
-- Moved preserved duplicate agent backups out of `/Users/sjp1212/.codex/agents` to avoid duplicate role warnings.
+- Added JSON schema at `$HOME/.codex/subagents/judgement.schema.json`.
+- Updated `$HOME/.codex/skills/subagent-router/SKILL.md` to use `judge --json` by default.
+- Moved preserved duplicate agent backups out of `$HOME/.codex/agents` to avoid duplicate role warnings.
 
 ## Verification
 
 ```bash
-node --check /Users/sjp1212/.codex/subagents/router.mjs
-/Users/sjp1212/.codex/subagents/router.mjs test
-/Users/sjp1212/.codex/subagents/router.mjs judge --offline --json "开启子代理，审查当前 diff"
-/Users/sjp1212/.codex/subagents/router.mjs test-judge
+node --check $HOME/.codex/subagents/router.mjs
+$HOME/.codex/subagents/router.mjs test
+$HOME/.codex/subagents/router.mjs judge --offline --json "开启子代理，审查当前 diff"
+$HOME/.codex/subagents/router.mjs test-judge
 ```
 
 ## Results

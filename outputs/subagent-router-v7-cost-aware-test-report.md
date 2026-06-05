@@ -24,7 +24,7 @@ v7 已完成质量优先的成本感知路由优化。路由器现在会先用�
   - `cache`
 
 - 新增缓存
-  - 路径：`/Users/sjp1212/.codex/subagents/judgement-cache.json`
+  - 路径：`$HOME/.codex/subagents/judgement-cache.json`
   - 缓存路由决策，不缓存执行结果
   - 当前 diff、日志、stack trace、文件/行号、测试输出等易变上下文自动绕过
 
@@ -34,18 +34,18 @@ v7 已完成质量优先的成本感知路由优化。路由器现在会先用�
   - `--force-model`
 
 - 更新文件
-  - `/Users/sjp1212/.codex/subagents/router.mjs`
-  - `/Users/sjp1212/.codex/subagents/judgement.schema.json`
-  - `/Users/sjp1212/.codex/skills/subagent-router/SKILL.md`
+  - `$HOME/.codex/subagents/router.mjs`
+  - `$HOME/.codex/subagents/judgement.schema.json`
+  - `$HOME/.codex/skills/subagent-router/SKILL.md`
 
 ## Verification
 
 1. Syntax check
-   - Command: `node --check /Users/sjp1212/.codex/subagents/router.mjs`
+   - Command: `node --check $HOME/.codex/subagents/router.mjs`
    - Result: pass
 
 2. Deterministic regression suite
-   - Command: `/Users/sjp1212/.codex/subagents/router.mjs test`
+   - Command: `$HOME/.codex/subagents/router.mjs test`
    - Result: `PASS 16 routing tests in 44ms`
 
 3. Low-risk deterministic route
@@ -74,7 +74,7 @@ v7 已完成质量优先的成本感知路由优化。路由器现在会先用�
      - selected skills included `community-matt-tdd`, `agyb-essentials:lint-and-validate`, `superpowers:test-driven-development`
 
 6. GPT-5.5 quality gate
-   - Command: `/Users/sjp1212/.codex/subagents/router.mjs test-judge`
+   - Command: `$HOME/.codex/subagents/router.mjs test-judge`
    - Result:
      - `pass`: `true`
      - `judgeMode`: `premium-judge`

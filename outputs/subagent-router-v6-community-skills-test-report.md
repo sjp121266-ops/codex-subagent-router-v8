@@ -17,10 +17,10 @@ Total imported community skills: 74
 
 ## Installed Artifacts
 
-- Community skills manifest: `/Users/sjp1212/.codex/subagents/community-skills-manifest.json`
-- Import script: `/Users/sjp1212/.codex/subagents/import-community-skills.mjs`
-- Strategy config: `/Users/sjp1212/.codex/subagents/strategy-config.json`
-- Installed skill directories: `/Users/sjp1212/.codex/skills/community-*`
+- Community skills manifest: `$HOME/.codex/subagents/community-skills-manifest.json`
+- Import script: `$HOME/.codex/subagents/import-community-skills.mjs`
+- Strategy config: `$HOME/.codex/subagents/strategy-config.json`
+- Installed skill directories: `$HOME/.codex/skills/community-*`
 
 ## Strategy Updates
 
@@ -33,10 +33,10 @@ Total imported community skills: 74
 ## Verification
 
 ```bash
-node --check /Users/sjp1212/.codex/subagents/router.mjs
-/Users/sjp1212/.codex/subagents/router.mjs test
-/Users/sjp1212/.codex/subagents/router.mjs test-judge
-/Users/sjp1212/.codex/subagents/router.mjs judge --json "开启子代理，设计 OpenAI Responses API 调用封装"
+node --check $HOME/.codex/subagents/router.mjs
+$HOME/.codex/subagents/router.mjs test
+$HOME/.codex/subagents/router.mjs test-judge
+$HOME/.codex/subagents/router.mjs judge --json "开启子代理，设计 OpenAI Responses API 调用封装"
 ```
 
 ## Results

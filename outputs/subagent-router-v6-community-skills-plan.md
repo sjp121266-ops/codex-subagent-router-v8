@@ -21,8 +21,8 @@ Import high-quality open-source skills from GitHub into the local Codex skill po
 
 ## Import Strategy
 
-- Clone source repositories into `/Users/sjp1212/.codex/subagents/skill-sources`.
-- Install selected skills into `/Users/sjp1212/.codex/skills/community-*`.
+- Clone source repositories into `$HOME/.codex/subagents/skill-sources`.
+- Install selected skills into `$HOME/.codex/skills/community-*`.
 - Rewrite skill frontmatter names to avoid collisions:
   - `community-openai-...`
   - `community-spellbook-...`
@@ -30,7 +30,7 @@ Import high-quality open-source skills from GitHub into the local Codex skill po
   - `community-jmerta-...`
 - Preserve original skill directories, bundled references, and scripts.
 - Add an import note to each skill documenting source repo, commit, and original skill name.
-- Generate `/Users/sjp1212/.codex/subagents/community-skills-manifest.json`.
+- Generate `$HOME/.codex/subagents/community-skills-manifest.json`.
 
 ## Router Strategy Changes
 

@@ -9,7 +9,7 @@ Goal 1 已完成：新增质量优先的结构化 eval 体系，用 52 个 deter
 - 新增 `router.mjs eval [--json]`。
 - 内置 52 个 eval cases。
 - 每个 case 校验 agent/intent/skill/sandbox/runtimeRole/model policy/cache/clarify/test/review 等关键预期。
-- eval 结果写入 `/Users/sjp1212/.codex/subagents/last-eval-results.json`。
+- eval 结果写入 `$HOME/.codex/subagents/last-eval-results.json`。
 - 修复 eval 暴露的规则缺口：OpenAI/LangGraph data-ai、App Intent iOS、GitHub Actions、中文认证/计费、threat model。
 
 ## Verification

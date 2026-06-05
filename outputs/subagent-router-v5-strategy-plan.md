@@ -22,7 +22,7 @@ Upgrade the router into a configurable strategy system that selects:
 
 ### 1. Strategy Config
 
-Create `/Users/sjp1212/.codex/subagents/strategy-config.json`.
+Create `$HOME/.codex/subagents/strategy-config.json`.
 
 It stores:
 

@@ -4,7 +4,8 @@ import path from "node:path";
 import process from "node:process";
 import { execFileSync } from "node:child_process";
 
-const HOME = process.env.HOME || "/Users/sjp1212";
+const HOME = process.env.HOME;
+if (!HOME) throw new Error("HOME is required; set CODEX_HOME explicitly when running in a minimal environment.");
 const CODEX_HOME = process.env.CODEX_HOME || path.join(HOME, ".codex");
 const SOURCE_ROOT = path.join(CODEX_HOME, "subagents", "skill-sources");
 const DEST_ROOT = path.join(CODEX_HOME, "skills");

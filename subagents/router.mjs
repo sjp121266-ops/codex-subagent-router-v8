@@ -4,18 +4,27 @@ import path from "node:path";
 import process from "node:process";
 import crypto from "node:crypto";
 import { execFileSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
-const HOME = process.env.HOME || "/Users/sjp1212";
+const ROUTER_DIR = path.dirname(fileURLToPath(import.meta.url));
+const HOME = process.env.HOME;
+if (!HOME) throw new Error("HOME is required; set CODEX_HOME explicitly when running in a minimal environment.");
 const CODEX_HOME = process.env.CODEX_HOME || path.join(HOME, ".codex");
+const runtimePath = (filename) => path.join(CODEX_HOME, "subagents", filename);
+const bundledPath = (filename) => {
+  const local = path.join(ROUTER_DIR, filename);
+  return fs.existsSync(local) ? local : runtimePath(filename);
+};
 const DEFAULT_REPO = path.join(CODEX_HOME, "subagents", "awesome-codex-subagents");
 const DEFAULT_AGENTS_DIR = path.join(CODEX_HOME, "agents");
-const REGISTRY_PATH = path.join(CODEX_HOME, "subagents", "registry.json");
-const JUDGEMENT_SCHEMA_PATH = path.join(CODEX_HOME, "subagents", "judgement.schema.json");
-const STRATEGY_CONFIG_PATH = path.join(CODEX_HOME, "subagents", "strategy-config.json");
-const COMMUNITY_SKILLS_MANIFEST_PATH = path.join(CODEX_HOME, "subagents", "community-skills-manifest.json");
-const JUDGEMENT_CACHE_PATH = path.join(CODEX_HOME, "subagents", "judgement-cache.json");
-const EVAL_RESULTS_PATH = path.join(CODEX_HOME, "subagents", "last-eval-results.json");
-const CODEX_CLI = "/Applications/Codex.app/Contents/Resources/codex";
+const REGISTRY_PATH = bundledPath("registry.json");
+const JUDGEMENT_SCHEMA_PATH = bundledPath("judgement.schema.json");
+const STRATEGY_CONFIG_PATH = bundledPath("strategy-config.json");
+const COMMUNITY_SKILLS_MANIFEST_PATH = bundledPath("community-skills-manifest.json");
+const JUDGEMENT_CACHE_PATH = runtimePath("judgement-cache.json");
+const EVAL_RESULTS_PATH = runtimePath("last-eval-results.json");
+const SKILL_REPAIR_RESULTS_PATH = runtimePath("last-skill-repair-results.json");
+const CODEX_CLI = process.env.CODEX_CLI || "codex";
 
 const DEFAULT_COST_POLICY = {
   budgets: ["economy", "balanced", "premium", "critical"],
@@ -96,7 +105,7 @@ const DEFAULT_SKILL_RULES = [
     reason: "planning, written implementation plan execution, or multi-agent workflow",
     confidence: "medium",
     skills: ["superpowers:writing-plans", "superpowers:executing-plans", "superpowers:subagent-driven-development"],
-    patterns: [/plan|implement this plan|roadmap|执行计划|实现方案|规划|计划|多代理/i],
+    patterns: [/plan|implement this plan|roadmap|goal|执行计划|实现方案|规划|计划|多代理|多智能体|持续迭代/i],
   },
   {
     reason: "backend API, service boundary, persistence, or authentication work",
@@ -108,7 +117,7 @@ const DEFAULT_SKILL_RULES = [
     reason: "security, privacy, permission, or threat-model risk",
     confidence: "high",
     skills: ["security-best-practices", "security-threat-model", "compound-engineering:ce-code-review"],
-    patterns: [/security|vulnerability|auth|permission|secret|xss|csrf|sql injection|安全|漏洞|权限|隐私/i],
+    patterns: [/security|vulnerability|auth|permission|secret|xss|csrf|sql injection|license|third[- ]party|\/Users|本机路径|安全|漏洞|权限|隐私|许可|许可证/i],
   },
 ];
 
@@ -119,7 +128,7 @@ const INTENT_RULES = [
   {
     id: "review",
     label: "review and risk analysis",
-    patterns: [[/审查|代码审查|review|diff|regression|correctness|security review|pr\b|pull request/i, 45]],
+    patterns: [[/审查|检查|代码审查|review|diff|regression|correctness|security review|pr\b|pull request/i, 45]],
     preferredAgents: ["reviewer", "code-reviewer", "architect-reviewer"],
     categories: ["04-quality-security"],
     preferredSandbox: "read-only",
@@ -143,7 +152,7 @@ const INTENT_RULES = [
   {
     id: "debug",
     label: "debugging or failure investigation",
-    patterns: [[/debug|bug|error|exception|crash|fail|flaky|regression|报错|崩溃|失败|修复|问题/i, 35]],
+    patterns: [[/debug|bug|error|exception|crash|fail|flaky|regression|unavailable|不可用|错误|报错|崩溃|失败|修复|问题/i, 35]],
     preferredAgents: ["debugger", "error-detective", "browser-debugger", "test-automator"],
     categories: ["04-quality-security"],
     preferredSandbox: "workspace-write",
@@ -159,7 +168,7 @@ const INTENT_RULES = [
   {
     id: "security",
     label: "security, privacy, or permission risk",
-    patterns: [[/security|vulnerability|permission|secret|xss|csrf|sql injection|threat model|安全|漏洞|权限|隐私|合规|威胁建模/i, 42]],
+    patterns: [[/security|vulnerability|permission|secret|xss|csrf|sql injection|threat model|license|third[- ]party|\/Users|本机路径|安全|漏洞|权限|隐私|合规|威胁建模|许可|许可证/i, 42]],
     preferredAgents: ["security-auditor", "security-engineer", "penetration-tester", "reviewer"],
     categories: ["03-infrastructure", "04-quality-security"],
     preferredSandbox: "read-only",
@@ -199,7 +208,7 @@ const INTENT_RULES = [
   {
     id: "docs",
     label: "documentation or technical writing",
-    patterns: [[/docs|documentation|readme|changelog|release note|文档|说明|教程|发布说明/i, 40]],
+    patterns: [[/docs|documentation|readme|changelog|release note|report|status output|文档|说明|教程|发布说明|报告|健康状态|输出/i, 40]],
     preferredAgents: ["documentation-engineer", "docs-researcher", "technical-writer", "content-quality-editor"],
     categories: ["06-developer-experience", "12-content-localization"],
     preferredSandbox: "workspace-write",
@@ -215,7 +224,7 @@ const INTENT_RULES = [
   {
     id: "planning",
     label: "planning, architecture, or sequencing",
-    patterns: [[/plan|roadmap|architecture|design|执行计划|实现方案|规划|计划|架构|设计/i, 36]],
+    patterns: [[/plan|roadmap|architecture|design|goal|执行计划|实现方案|规划|计划|架构|设计|多代理|多智能体|持续迭代/i, 36]],
     preferredAgents: ["project-manager", "architect-reviewer", "business-analyst", "code-mapper"],
     categories: ["08-business-product", "04-quality-security", "01-core-development"],
     preferredSandbox: "read-only",
@@ -244,6 +253,7 @@ Usage:
   router.mjs eval [--json]
   router.mjs test-recovery
   router.mjs test-handoff
+  router.mjs test-skill-repair
   router.mjs test-judge
   router.mjs doctor [--json]
   router.mjs report [--json]
@@ -490,6 +500,8 @@ function classifyFailure(errorMessage = "") {
   const text = String(errorMessage);
   if (!text) return "none";
   if (/offline mode/i.test(text)) return "offline";
+  if (/non-candidate skill/i.test(text)) return "invalid-skill-subset";
+  if (/non-candidate agent/i.test(text)) return "invalid-agent-candidate";
   if (/Invalid schema|invalid_json_schema|schema/i.test(text)) return "schema-error";
   if (/model|available models|unknown model|upstream_error/i.test(text)) return "model-unavailable";
   if (/JSON|parse|Unexpected token|output/i.test(text)) return "invalid-output";
@@ -963,9 +975,38 @@ function splitSkillsForRole(skillsByPhase, phases) {
   return unique(phases.flatMap((phase) => skillsByPhase?.[phase] || []));
 }
 
+function writableSandboxFor(role, fallback = "workspace-write") {
+  if (role === "worker") return fallback === "read-only" ? "workspace-write" : fallback;
+  return "read-only";
+}
+
 function clarificationQuestionFor(task, routeLike) {
   const intents = routeLike.matchedIntents?.map((intent) => intent.id).join(", ") || "unknown";
   return `请补充这次子代理任务的目标范围、相关文件/模块或失败现象；当前只识别到 ${intents}，不足以安全派发。`;
+}
+
+function buildParentReviewHandoffPlan(task, reason = "routing fallback requires parent review") {
+  const stage = {
+    id: "parent-review",
+    agent: "parent-codex",
+    role: "explorer",
+    sandboxMode: "read-only",
+    selectedModel: "gpt-5.5",
+    reasoningEffort: "high",
+    skills: [],
+    input: task,
+    expectedOutput: "Inspect fallback metadata before any subagent delegation.",
+    acceptanceCriteria: [
+      "Parent Codex explicitly reviews fallback reason and safety.",
+      "No write-capable subagent is spawned from this fallback result.",
+      "The route is retried or manually approved before execution.",
+    ],
+  };
+  return {
+    mode: "parent-review-required",
+    clarificationQuestion: reason,
+    stages: [stage],
+  };
 }
 
 function buildHandoffPlan(task, routeLike, taskProfile, executionPlan, skillsByPhase) {
@@ -995,7 +1036,12 @@ function buildHandoffPlan(task, routeLike, taskProfile, executionPlan, skillsByP
   const stages = [];
   if (executionPlan.mode === "staged") {
     stages.push(baseStage("explore", "code-mapper", "explorer", "read-only", ["planning", "research", "design"], "Map scope, risks, ownership boundaries, and implementation order.", ["Affected subsystems and risky files are named.", "Worker scope is bounded."]));
-    stages.push(baseStage("implement", agentName, "worker", routeLike.recommended?.sandboxMode || "workspace-write", ["implementation", "debugging"], "Implement the scoped change without touching unrelated files.", ["Changed files match the scoped boundary.", "No unrelated user changes are overwritten."]));
+    const primaryRole = routeLike.recommended?.runtimeRole || "worker";
+    if (primaryRole === "worker") {
+      stages.push(baseStage("implement", agentName, "worker", writableSandboxFor("worker", routeLike.recommended?.sandboxMode || "workspace-write"), ["implementation", "debugging"], "Implement the scoped change without touching unrelated files.", ["Changed files match the scoped boundary.", "No unrelated user changes are overwritten."]));
+    } else {
+      stages.push(baseStage("analyze", agentName, primaryRole, "read-only", ["planning", "research", "review"], "Analyze the scoped change and hand implementation back to the parent.", ["No write-capable work is implied by a read-only agent.", "Findings are specific enough for a worker handoff if needed."]));
+    }
   } else {
     stages.push(baseStage("primary", agentName, routeLike.recommended?.runtimeRole || "worker", routeLike.recommended?.sandboxMode || "workspace-write", ["planning", "research", "implementation", "debugging", "review"], "Complete the selected subagent task.", ["Result matches the user request.", "Residual risk is reported."]));
   }
@@ -1086,11 +1132,11 @@ function fallbackSafetyFor(route, errorMessage, judgePolicy) {
 
 function attachRoutingMetadata(result, route, skillCandidates = [], judgePolicy = {}, fallbackMeta = {}) {
   const skillsByPhase = completeSkillPhases(result.selectedSkillsByPhase || route.selectedSkillsByPhase || {});
-  const executionPlan = {
+  let executionPlan = {
     ...(result.executionPlan || route.executionPlan),
     selectedSkillsByPhase: skillsByPhase,
   };
-  const handoffPlan = buildHandoffPlan(result.task || route.task, {
+  let handoffPlan = buildHandoffPlan(result.task || route.task, {
     ...route,
     recommended: route.candidates?.find((candidate) => candidate.name === result.finalAgent) || route.recommended,
     modelPolicy: {
@@ -1100,6 +1146,17 @@ function attachRoutingMetadata(result, route, skillCandidates = [], judgePolicy 
       modelRationale: result.modelRationale,
     },
   }, result.taskProfile || route.taskProfile, executionPlan, skillsByPhase);
+  const delegationBlocked = Boolean(fallbackMeta.requiresParentReview);
+  const approvalState = delegationBlocked ? "required" : "not-required";
+  if (delegationBlocked) {
+    handoffPlan = buildParentReviewHandoffPlan(result.task || route.task, fallbackMeta.fallbackReason || "fallback requires parent review");
+    executionPlan = {
+      ...executionPlan,
+      mode: "parent-review-required",
+      requiresUserClarification: true,
+      stages: ["Parent Codex reviews fallback metadata before any subagent delegation."],
+    };
+  }
   const enrichedExecutionPlan = {
     ...executionPlan,
     stageDetails: handoffPlan.stages,
@@ -1117,6 +1174,8 @@ function attachRoutingMetadata(result, route, skillCandidates = [], judgePolicy 
     failureClass: fallbackMeta.failureClass || classifyFailure(fallbackMeta.fallbackReason || ""),
     fallbackSafety: fallbackMeta.fallbackSafety || "not-fallback",
     requiresParentReview: Boolean(fallbackMeta.requiresParentReview),
+    delegationBlocked,
+    approvalState,
     routingWarnings: unique([
       ...((result.routingWarnings || [])),
       ...missingConfiguredSkillsForTask(result.task || route.task).map((skill) => `configured skill unavailable and skipped: ${skill}`),
@@ -1161,19 +1220,33 @@ function skillCandidateScore(skill, task) {
   return score;
 }
 
-function buildSkillCandidates(task, limit = 18) {
-  const community = loadCommunitySkillManifest();
-  const direct = skillMatches(task).map((entry) => ({
+function skillRegistryByName() {
+  const byName = new Map();
+  for (const skill of loadSkillRegistry()) {
+    byName.set(skill.name, skill);
+    byName.set(String(skill.name).split(":").at(-1), skill);
+  }
+  return byName;
+}
+
+function enrichConfiguredSkill(entry, community = loadCommunitySkillManifest()) {
+  const communitySkill = community.byName.get(entry.name);
+  return {
     name: entry.name,
-    description: entry.reason,
-    phase: entry.phase,
+    description: entry.description || entry.reason,
+    phase: entry.phase || "implementation",
     ruleId: entry.ruleId,
     reason: entry.reason,
-    confidence: entry.confidence,
-    source: community.byName.get(entry.name)?.source || "strategy",
-    flags: community.byName.get(entry.name)?.flags || [],
-    score: (entry.confidence === "high" ? 120 : 80) + (entry.priority || 0),
-  }));
+    confidence: entry.confidence || "medium",
+    source: communitySkill?.source || entry.source || "strategy",
+    flags: communitySkill?.flags || entry.flags || [],
+    score: entry.score || ((entry.confidence === "high" ? 120 : 80) + (entry.priority || 0)),
+  };
+}
+
+function buildSkillCandidates(task, limit = 18) {
+  const community = loadCommunitySkillManifest();
+  const direct = skillMatches(task).map((entry) => enrichConfiguredSkill(entry, community));
   const directNames = new Set(direct.map((entry) => entry.name));
   const scanned = loadSkillRegistry()
     .map((skill) => {
@@ -1194,7 +1267,7 @@ function buildSkillCandidates(task, limit = 18) {
     .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name))
     .slice(0, Math.max(0, limit - direct.length))
     .map(({ name, description, score, confidence, reason, source, flags }) => ({ name, description, phase: "matched", score, confidence, reason, source, flags }));
-  return [...direct, ...scanned].slice(0, limit);
+  return [...direct, ...scanned];
 }
 
 function routeTask(task, options = {}) {
@@ -1361,8 +1434,9 @@ Confirm or refine the execution plan for how the parent Codex agent should deleg
 Hard rules:
 - Do not solve, execute, inspect files, spawn agents, or modify anything.
 - Choose finalAgent only from agentCandidates.
-- Choose selectedSkills only from skillCandidates.
-- Group selected skills by phase in selectedSkillsByPhase.
+- Choose selectedSkills only as an exact subset of skillCandidates.name strings.
+- Never invent, rename, abbreviate, or normalize skills. Use [] if no exact skillCandidate applies.
+- selectedSkillsByPhase may be empty; if you fill it, every listed skill must already be in selectedSkills.
 - Prefer narrow specialists over generic agents when the task is specific.
 - Prefer explorer/read-only for review, audit, research, and analysis.
 - Prefer worker/workspace-write for implementation, fixes, tests, and code edits.
@@ -1423,15 +1497,56 @@ function fallbackJudgement(task, route, skillCandidates, errorMessage = "", meta
   }, route, skillCandidates, meta, safety);
 }
 
+function repairSelectedSkills(judgement, route, skillCandidates) {
+  const candidateByName = new Map(skillCandidates.map((skill) => [skill.name, skill]));
+  const configuredByName = new Map(skillMatches(route.task).map((skill) => [skill.name, skill]));
+  const registryByName = skillRegistryByName();
+  const repaired = [];
+  const warnings = [];
+
+  for (const skill of judgement.selectedSkills || []) {
+    if (candidateByName.has(skill)) {
+      repaired.push(skill);
+      continue;
+    }
+    const configured = configuredByName.get(skill);
+    const localSkill = registryByName.get(skill) || registryByName.get(String(skill).split(":").at(-1));
+    if (configured && localSkill) {
+      const enriched = enrichConfiguredSkill({
+        ...configured,
+        description: localSkill.description || configured.reason,
+      });
+      skillCandidates.push(enriched);
+      candidateByName.set(skill, enriched);
+      repaired.push(skill);
+      warnings.push(`model selected configured skill outside initial candidate budget; repaired: ${skill}`);
+      continue;
+    }
+    throw new Error(`model selected non-candidate skill: ${skill}`);
+  }
+
+  judgement.selectedSkills = unique(repaired);
+  judgement.routingWarnings = unique([...(judgement.routingWarnings || []), ...warnings]);
+  return { judgement, skillCandidates };
+}
+
+function projectSelectedSkillsByPhase(selectedSkills, skillCandidates) {
+  const candidateByName = new Map(skillCandidates.map((skill) => [skill.name, skill]));
+  const groups = completeSkillPhases();
+  for (const skillName of selectedSkills || []) {
+    const phase = candidateByName.get(skillName)?.phase || "selected";
+    groups[phase] ||= [];
+    groups[phase].push(skillName);
+  }
+  return completeSkillPhases(groups);
+}
+
 function validateJudgement(judgement, route, skillCandidates) {
   const candidateNames = new Set(route.candidates.map((candidate) => candidate.name));
-  const skillNames = new Set(skillCandidates.map((skill) => skill.name));
   if (!candidateNames.has(judgement.finalAgent)) {
     throw new Error(`model selected non-candidate agent: ${judgement.finalAgent}`);
   }
-  for (const skill of judgement.selectedSkills || []) {
-    if (!skillNames.has(skill)) throw new Error(`model selected non-candidate skill: ${skill}`);
-  }
+  ({ judgement, skillCandidates } = repairSelectedSkills(judgement, route, skillCandidates));
   const agent = route.candidates.find((candidate) => candidate.name === judgement.finalAgent);
   if (agent.runtimeRole !== judgement.runtimeRole) judgement.runtimeRole = agent.runtimeRole;
   if (agent.sandboxMode !== judgement.sandboxMode) judgement.sandboxMode = agent.sandboxMode;
@@ -1457,20 +1572,7 @@ function validateJudgement(judgement, route, skillCandidates) {
       mode: "clarify-first",
     };
   }
-  const selectedSet = new Set(judgement.selectedSkills || []);
-  const phaseGroups = {};
-  for (const skill of skillCandidates) {
-    if (selectedSet.has(skill.name)) {
-      const phase = skill.phase || "selected";
-      phaseGroups[phase] ||= [];
-      phaseGroups[phase].push(skill.name);
-    }
-  }
-  const modelGroups = completeSkillPhases(judgement.selectedSkillsByPhase || {});
-  for (const [phase, skills] of Object.entries(phaseGroups)) {
-    modelGroups[phase] = unique([...(modelGroups[phase] || []), ...skills]);
-  }
-  judgement.selectedSkillsByPhase = completeSkillPhases(modelGroups);
+  judgement.selectedSkillsByPhase = projectSelectedSkillsByPhase(judgement.selectedSkills, skillCandidates);
   return { judgement, agent };
 }
 
@@ -1565,6 +1667,7 @@ function runModelJudgement(task, options = {}) {
       needsParentChoice: judgement.needsParentChoice,
       rationale: judgement.rationale,
       riskNotes: judgement.riskNotes,
+      routingWarnings: judgement.routingWarnings,
       deterministic: route,
       skillCandidates,
       delegationPrompt: buildPrompt(fullAgent, task, judgement.selectedSkills, {
@@ -1735,12 +1838,55 @@ function cacheStats() {
   };
 }
 
+function configuredSkillBudgetRisk(config = loadStrategyConfig()) {
+  const budgets = config.costPolicy?.candidateBudgets || DEFAULT_COST_POLICY.candidateBudgets;
+  const smallestBudget = Math.min(...Object.values(budgets).map((budget) => budget.skills).filter(Boolean));
+  const risks = (config.skillRules || [])
+    .map((rule) => ({
+      ruleId: rule.id || "unnamed",
+      skillCount: unique(rule.skills || []).length,
+      smallestBudget,
+    }))
+    .filter((rule) => rule.skillCount > rule.smallestBudget);
+  return {
+    ok: true,
+    riskCount: risks.length,
+    smallestBudget,
+    risks,
+  };
+}
+
+function readLastSkillRepair() {
+  try {
+    const report = JSON.parse(readText(SKILL_REPAIR_RESULTS_PATH));
+    return {
+      generatedAt: report.generatedAt,
+      pass: Boolean(report.pass),
+      repairedSkill: report.repairedSkill,
+      highRiskFallbackBlocked: Boolean(report.highRiskFallbackBlocked),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function commandAvailable(command) {
+  if (command.includes(path.sep)) return fs.existsSync(command);
+  try {
+    execFileSync("which", [command], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function runDoctor(mode = "text") {
   const registry = loadRegistry();
   const skills = loadSkillRegistry();
   const community = loadCommunitySkillManifest();
   const config = loadStrategyConfig();
   const configValidation = validateStrategyConfig(config);
+  const budgetRisk = configuredSkillBudgetRisk(config);
   const skillNames = new Set(skills.flatMap((skill) => [skill.name, skill.name.split(":").at(-1)]));
   const missingSkillNames = unique(config.skillRules.flatMap((rule) => rule.skills || []))
     .filter((name) => !skillNames.has(name) && !skillNames.has(name.split(":").at(-1)));
@@ -1750,15 +1896,19 @@ function runDoctor(mode = "text") {
     { id: "community-skills", ok: community.loaded && community.count > 0, detail: `${community.count} community skills` },
     { id: "strategy-config", ok: configValidation.ok, detail: configValidation.errors.join("; ") || "valid" },
     { id: "judgement-schema", ok: fs.existsSync(JUDGEMENT_SCHEMA_PATH), detail: JUDGEMENT_SCHEMA_PATH },
-    { id: "codex-cli", ok: fs.existsSync(CODEX_CLI), detail: CODEX_CLI },
+    { id: "codex-cli", ok: commandAvailable(CODEX_CLI), detail: CODEX_CLI },
     { id: "configured-skills-exist", ok: missingSkillNames.length === 0, detail: missingSkillNames.length ? `missing: ${missingSkillNames.slice(0, 12).join(", ")}` : "all configured skills found" },
+    { id: "skill-budget-risk", ok: budgetRisk.ok, detail: budgetRisk.riskCount ? `${budgetRisk.riskCount} rules exceed smallest skill budget; v9 repair keeps configured skills eligible` : "no configured rule exceeds smallest skill budget" },
     { id: "cache-readable", ok: Boolean(readJudgementCache()), detail: `${cacheStats().entries} entries` },
   ];
   const report = {
     generatedAt: new Date().toISOString(),
     ok: checks.every((check) => check.ok),
     checks,
-    warnings: configValidation.warnings,
+    warnings: unique([
+      ...configValidation.warnings,
+      ...budgetRisk.risks.map((risk) => `skill rule ${risk.ruleId} has ${risk.skillCount} skills over smallest budget ${risk.smallestBudget}; configured skills are protected from truncation`),
+    ]),
   };
   if (mode === "json") console.log(JSON.stringify(report, null, 2));
   else {
@@ -1774,6 +1924,8 @@ function runReport(mode = "text") {
   const skills = loadSkillRegistry();
   const community = loadCommunitySkillManifest();
   const config = loadStrategyConfig();
+  const budgetRisk = configuredSkillBudgetRisk(config);
+  const lastSkillRepair = readLastSkillRepair();
   let lastEval = null;
   try {
     const evalReport = JSON.parse(readText(EVAL_RESULTS_PATH));
@@ -1794,16 +1946,25 @@ function runReport(mode = "text") {
     communitySkills: community.count,
     strategyVersion: config.version,
     strategySource: config.source,
+    schemaSource: JUDGEMENT_SCHEMA_PATH,
+    registrySource: REGISTRY_PATH,
     cache: cacheStats(),
+    skillBudgetRisk: {
+      riskCount: budgetRisk.riskCount,
+      smallestBudget: budgetRisk.smallestBudget,
+    },
     lastEval,
+    lastSkillRepair,
   };
   if (mode === "json") console.log(JSON.stringify(report, null, 2));
   else {
     console.log(`Agents: ${report.agents}`);
     console.log(`Skills: ${report.skills} (${report.communitySkills} community)`);
     console.log(`Strategy: v${report.strategyVersion} from ${report.strategySource}`);
+    console.log(`Skill budget risk: ${report.skillBudgetRisk.riskCount} rules over smallest budget ${report.skillBudgetRisk.smallestBudget}`);
     console.log(`Cache: ${report.cache.entries} entries`);
     console.log(`Last eval: ${lastEval ? `${lastEval.passed}/${lastEval.total} (${lastEval.passRate}%)` : "not run"}`);
+    console.log(`Last skill repair: ${lastSkillRepair ? `${lastSkillRepair.pass ? "pass" : "fail"} (${lastSkillRepair.repairedSkill})` : "not run"}`);
   }
 }
 
@@ -1864,6 +2025,19 @@ const EVAL_CASES = [
   { id: "budget-economy-mini", task: "开启子代理，补齐单元测试覆盖率", options: { budget: "economy", forceModel: true }, expected: { judgeMode: "mini-judge", judgeModel: "gpt-5.4-mini" } },
   { id: "community-figma", task: "开启子代理，根据 Figma 设计稿实现页面", expected: { skillsInclude: ["community-openai-figma-implement-design"] } },
   { id: "community-release", task: "开启子代理，生成 release notes 和 changelog", expected: { skillsInclude: ["community-jmerta-release-notes"] } },
+  { id: "v9-multi-agent-project-audit", task: "开启子代理，使用多智能体对这个项目进行审查优化并持续迭代", expected: { intentIncludes: ["review", "planning"], judgeModel: "gpt-5.5", skillsInclude: ["superpowers:writing-plans"], requiresReview: true } },
+  { id: "v9-skill-budget-planning", task: "开启子代理，写好详细计划方案然后使用 goal 模式实现", expected: { intentIncludes: ["planning"], skillsInclude: ["superpowers:writing-plans"], judgeModel: "gpt-5.5" } },
+  { id: "v9-high-risk-fallback-auth", task: "开启子代理，critical 模式修复生产 API 鉴权和权限漏洞", options: { budget: "critical" }, expected: { intentIncludes: ["backend", "security"], judgeModel: "gpt-5.5", selectedModel: "gpt-5.5", requiresTests: true, requiresReview: true } },
+  { id: "v9-public-readme-release", task: "开启子代理，完善公开 GitHub README 发布说明和安装步骤", expected: { intentIncludes: ["docs", "github"], skillsInclude: ["github:github"] } },
+  { id: "v9-license-notice", task: "开启子代理，审查开源 LICENSE 和第三方致谢风险", expected: { intentIncludes: ["review", "security"], judgeModel: "gpt-5.5", requiresReview: true } },
+  { id: "v9-cache-docs", task: "开启子代理，说明 judgement cache 内容、位置和清理方式", expected: { intentIncludes: ["docs"], role: "worker" } },
+  { id: "v9-schema-contract", task: "开启子代理，审查 judge schema 和最终 handoff contract", expected: { intentIncludes: ["review"], judgeModel: "gpt-5.5", requiresReview: true } },
+  { id: "v9-fallback-recovery", task: "开启子代理，测试 schema 错误和模型不可用时的保守恢复", expected: { intentIncludes: ["testing", "debug"], requiresTests: true } },
+  { id: "v9-ambiguous-multiagent", task: "开启子代理，多代理帮我优化一下这个", expected: { executionMode: "clarify-first", needsParentChoice: true, judgeModel: "gpt-5.5" } },
+  { id: "v9-community-skill-selection", task: "开启子代理，设计 LangGraph 与 OpenAI Agents SDK 的调度策略", expected: { intentIncludes: ["data-ai", "planning"], skillsInclude: ["community-spellbook-openai-agents"], judgeModel: "gpt-5.5" } },
+  { id: "v9-release-hygiene", task: "开启子代理，检查公开仓库是否包含 /Users 本机路径", expected: { intentIncludes: ["security", "review"], judgeModel: "gpt-5.5", requiresReview: true } },
+  { id: "v9-report-command", task: "开启子代理，增强 router report 健康状态输出", expected: { intentIncludes: ["docs"] } },
+  { id: "v9-doctor-command", task: "开启子代理，增强 doctor 检查配置和技能候选风险", expected: { intentIncludes: ["review"] } },
 ];
 
 function evaluateCase(testCase) {
@@ -1922,6 +2096,7 @@ function runEval(mode = "text") {
     qualityRiskSummary: failed.map((result) => ({ id: result.id, failures: result.failures })),
     results,
   };
+  fs.mkdirSync(path.dirname(EVAL_RESULTS_PATH), { recursive: true });
   fs.writeFileSync(EVAL_RESULTS_PATH, `${JSON.stringify(report, null, 2)}\n`);
   if (mode === "json") {
     console.log(JSON.stringify(report, null, 2));
@@ -2184,7 +2359,33 @@ function runHandoffTests() {
   ];
   const results = [];
   for (const testCase of cases) {
-    const result = runModelJudgement(testCase.task, { offline: true, noCache: true });
+    const route = routeTask(testCase.task, { candidateLimit: 8 });
+    const result = attachRoutingMetadata({
+      task: testCase.task,
+      modelUsed: false,
+      model: null,
+      judgeMode: "deterministic",
+      judgeModel: "none",
+      costRationale: ["handoff test uses deterministic route without fallback"],
+      candidateBudget: { agents: route.candidates.length, skills: route.suggestedSkills.length },
+      cache: { hit: false, eligible: false },
+      finalAgent: route.recommended.name,
+      runtimeRole: route.recommended.runtimeRole,
+      sandboxMode: route.recommended.sandboxMode,
+      selectedSkills: route.suggestedSkills,
+      selectedSkillsByPhase: route.selectedSkillsByPhase,
+      importanceLevel: route.modelPolicy.importanceLevel,
+      selectedModel: route.modelPolicy.selectedModel,
+      reasoningEffort: route.modelPolicy.reasoningEffort,
+      modelRationale: route.modelPolicy.modelRationale,
+      taskProfile: route.taskProfile,
+      executionPlan: route.executionPlan,
+      confidence: route.confidence,
+      needsParentChoice: route.needsParentChoice,
+      rationale: route.reasons,
+      riskNotes: [],
+      deterministic: route,
+    }, route, buildSkillCandidates(testCase.task, 18), computeJudgePolicy(testCase.task, route, { offline: true }));
     const stageIds = result.handoffPlan.stages.map((stage) => stage.id);
     for (const stage of testCase.needsStage) assert(stageIds.includes(stage), `${testCase.id}: missing handoff stage ${stage}; got ${stageIds.join(", ")}`);
     for (const stage of result.handoffPlan.stages) {
@@ -2206,6 +2407,81 @@ function runHandoffTests() {
     results.push({ id: testCase.id, stages: stageIds, mode: result.executionPlan.mode });
   }
   console.log(JSON.stringify({ pass: true, results }, null, 2));
+}
+
+function runSkillRepairTests() {
+  const task = "现在使用多智能体子代理，去对我们项目进行审查优化，然后持续迭代。确定好几个大方向goal，写好详细的计划方案，然后使用goal模式去实现。";
+  const route = routeTask(task, { candidateLimit: 8 });
+  const allCandidates = buildSkillCandidates(task, 18);
+  const truncatedCandidates = allCandidates.filter((skill) => skill.name !== "superpowers:writing-plans");
+  const rawJudgement = {
+    task,
+    modelUsed: true,
+    model: "gpt-5.5",
+    judgeMode: "premium-judge",
+    judgeModel: "gpt-5.5",
+    costRationale: ["test"],
+    candidateBudget: { agents: 8, skills: 18 },
+    cache: { hit: false, eligible: false },
+    finalAgent: route.recommended.name,
+    runtimeRole: route.recommended.runtimeRole,
+    sandboxMode: route.recommended.sandboxMode,
+    selectedSkills: ["superpowers:writing-plans"],
+    selectedSkillsByPhase: completeSkillPhases({ planning: ["superpowers:writing-plans", "non-selected-extra"] }),
+    importanceLevel: "critical",
+    selectedModel: "gpt-5.4-mini",
+    reasoningEffort: "low",
+    modelRationale: ["test attempted downgrade"],
+    taskProfile: route.taskProfile,
+    executionPlan: route.executionPlan,
+    confidence: "high",
+    needsParentChoice: false,
+    rationale: ["test judgement"],
+    riskNotes: [],
+  };
+  const { judgement } = validateJudgement(rawJudgement, route, truncatedCandidates);
+  assert(judgement.selectedSkills.includes("superpowers:writing-plans"), "configured skill should be repaired into selectedSkills");
+  assert(judgement.routingWarnings.some((warning) => warning.includes("superpowers:writing-plans")), "repair should emit routing warning");
+  assert(judgement.selectedModel === "gpt-5.5", "critical policy should prevent model downgrade");
+  assert(judgement.reasoningEffort === "high", "critical policy should require high reasoning");
+  assert(judgement.selectedSkillsByPhase.planning.includes("superpowers:writing-plans"), "selected skill should project into planning phase");
+  assert(!Object.values(judgement.selectedSkillsByPhase).flat().includes("non-selected-extra"), "phase map must not include unselected skills");
+
+  let invalidSkillFailed = false;
+  try {
+    validateJudgement({ ...rawJudgement, selectedSkills: ["not-a-real-skill"] }, route, truncatedCandidates);
+  } catch (error) {
+    invalidSkillFailed = classifyFailure(error.message) === "invalid-skill-subset";
+  }
+  assert(invalidSkillFailed, "unknown non-candidate skill should still fail");
+
+  let invalidAgentFailed = false;
+  try {
+    validateJudgement({ ...rawJudgement, finalAgent: "not-a-real-agent" }, route, truncatedCandidates);
+  } catch (error) {
+    invalidAgentFailed = classifyFailure(error.message) === "invalid-agent-candidate";
+  }
+  assert(invalidAgentFailed, "non-candidate agent should still fail");
+
+  const blockedFallback = runModelJudgement("开启子代理，审查当前 diff 里的生产鉴权漏洞", { offline: true, noCache: true });
+  const blockedStageIds = blockedFallback.handoffPlan.stages.map((stage) => stage.id);
+  assert(blockedFallback.delegationBlocked, "high-risk fallback should block delegation");
+  assert(blockedFallback.approvalState === "required", "high-risk fallback should require approval");
+  assert(blockedFallback.executionPlan.mode === "parent-review-required", "high-risk fallback should use parent-review-required mode");
+  assert(blockedStageIds.includes("parent-review"), "blocked fallback should include parent-review stage");
+  assert(!blockedStageIds.includes("implement") && !blockedStageIds.includes("primary"), "blocked fallback must not include executable worker stages");
+
+  const report = {
+    generatedAt: new Date().toISOString(),
+    pass: true,
+    repairedSkill: "superpowers:writing-plans",
+    invalidSkillFailed,
+    invalidAgentFailed,
+    highRiskFallbackBlocked: true,
+  };
+  fs.mkdirSync(path.dirname(SKILL_REPAIR_RESULTS_PATH), { recursive: true });
+  fs.writeFileSync(SKILL_REPAIR_RESULTS_PATH, `${JSON.stringify(report, null, 2)}\n`);
+  console.log(JSON.stringify(report, null, 2));
 }
 
 function main() {
@@ -2307,6 +2583,10 @@ function main() {
   }
   if (command === "test-handoff") {
     runHandoffTests();
+    return;
+  }
+  if (command === "test-skill-repair") {
+    runSkillRepairTests();
     return;
   }
   if (command === "doctor") {

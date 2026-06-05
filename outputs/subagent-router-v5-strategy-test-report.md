@@ -6,7 +6,7 @@ Router v5 adds configurable strategy rules, phased skills, task profiling, and e
 
 ## Implemented
 
-- Added `/Users/sjp1212/.codex/subagents/strategy-config.json`
+- Added `$HOME/.codex/subagents/strategy-config.json`
 - Migrated skills rules into configurable `skillRules`
 - Added phased skills:
   - planning
@@ -37,10 +37,10 @@ Router v5 adds configurable strategy rules, phased skills, task profiling, and e
 ## Verification
 
 ```bash
-node --check /Users/sjp1212/.codex/subagents/router.mjs
-/Users/sjp1212/.codex/subagents/router.mjs test
-/Users/sjp1212/.codex/subagents/router.mjs judge --offline --json "开启子代理，修复 Docker 部署失败"
-/Users/sjp1212/.codex/subagents/router.mjs test-judge
+node --check $HOME/.codex/subagents/router.mjs
+$HOME/.codex/subagents/router.mjs test
+$HOME/.codex/subagents/router.mjs judge --offline --json "开启子代理，修复 Docker 部署失败"
+$HOME/.codex/subagents/router.mjs test-judge
 ```
 
 ## Results

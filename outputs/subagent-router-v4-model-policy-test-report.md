@@ -29,11 +29,11 @@ Router v4 adds automatic subagent runtime model and reasoning effort selection.
 ## Verification
 
 ```bash
-node --check /Users/sjp1212/.codex/subagents/router.mjs
-/Users/sjp1212/.codex/subagents/router.mjs test
-/Users/sjp1212/.codex/subagents/router.mjs judge --offline --json "开启子代理，修正 README 里的一个拼写错误"
-/Users/sjp1212/.codex/subagents/router.mjs judge --offline --json "开启子代理，修复生产环境 API 鉴权漏洞"
-/Users/sjp1212/.codex/subagents/router.mjs test-judge
+node --check $HOME/.codex/subagents/router.mjs
+$HOME/.codex/subagents/router.mjs test
+$HOME/.codex/subagents/router.mjs judge --offline --json "开启子代理，修正 README 里的一个拼写错误"
+$HOME/.codex/subagents/router.mjs judge --offline --json "开启子代理，修复生产环境 API 鉴权漏洞"
+$HOME/.codex/subagents/router.mjs test-judge
 ```
 
 ## Results

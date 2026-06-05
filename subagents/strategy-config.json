@@ -1,5 +1,5 @@
 {
-  "version": 2,
+  "version": 3,
   "skillRules": [
     {
       "id": "frontend",
@@ -58,7 +58,7 @@
         "github:gh-address-comments"
       ],
       "patterns": [
-        "审查|代码审查|review|diff|pull request|\\bpr\\b"
+        "审查|检查|代码审查|review|diff|pull request|\\bpr\\b"
       ]
     },
     {
@@ -73,7 +73,7 @@
         "agyb-essentials:systematic-debugging"
       ],
       "patterns": [
-        "debug|bug|error|exception|crash|fail|flaky|regression|报错|崩溃|失败|修复|问题"
+        "debug|bug|error|exception|crash|fail|flaky|regression|unavailable|不可用|错误|报错|崩溃|失败|修复|问题"
       ]
     },
     {
@@ -103,7 +103,7 @@
         "superpowers:subagent-driven-development"
       ],
       "patterns": [
-        "plan|implement this plan|roadmap|执行计划|实现方案|规划|计划|多代理"
+        "plan|implement this plan|roadmap|goal|执行计划|实现方案|规划|计划|多代理|多智能体|持续迭代"
       ]
     },
     {
@@ -132,7 +132,7 @@
         "compound-engineering:ce-code-review"
       ],
       "patterns": [
-        "security|vulnerability|auth|permission|secret|xss|csrf|sql injection|安全|漏洞|权限|隐私"
+        "security|vulnerability|auth|permission|secret|xss|csrf|sql injection|license|third[- ]party|/Users|本机路径|安全|漏洞|权限|隐私|许可|许可证"
       ]
     },
     {
@@ -163,7 +163,7 @@
         "superpowers:brainstorming"
       ],
       "patterns": [
-        "research|docs|documentation|调研|文档|查资料|资料|官方文档"
+        "research|docs|documentation|report|status output|调研|文档|查资料|资料|官方文档|报告|健康状态|输出"
       ]
     },
     {
@@ -265,7 +265,7 @@
         "compound-engineering:ce-code-review"
       ],
       "patterns": [
-        "security|vulnerability|threat|auth|permission|secret|privacy|安全|漏洞|威胁|权限|隐私|鉴权"
+        "security|vulnerability|threat|auth|permission|secret|privacy|license|third[- ]party|/Users|本机路径|安全|漏洞|威胁|权限|隐私|鉴权|许可|许可证"
       ]
     },
     {
@@ -315,7 +315,7 @@
         "community-matt-to-issues"
       ],
       "patterns": [
-        "architecture|system design|prd|issue|planning|refactor|架构|系统设计|需求|计划|重构|拆解"
+        "architecture|system design|prd|issue|planning|refactor|goal|multi-agent|架构|系统设计|需求|计划|重构|拆解|多代理|多智能体|持续迭代"
       ]
     },
     {
