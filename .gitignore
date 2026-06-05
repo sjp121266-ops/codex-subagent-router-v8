@@ -1,0 +1,8 @@
+.DS_Store
+.omx/
+work/
+node_modules/
+.cache/
+*.log
+subagents/judgement-cache.json
+subagents/.judgement-*.json

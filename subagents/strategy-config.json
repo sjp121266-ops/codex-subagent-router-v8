@@ -1,0 +1,395 @@
+{
+  "version": 2,
+  "skillRules": [
+    {
+      "id": "frontend",
+      "phase": "implementation",
+      "priority": 90,
+      "confidence": "high",
+      "reason": "frontend implementation, UI behavior, or browser-facing debugging",
+      "skills": [
+        "build-web-apps:frontend-app-builder",
+        "build-web-apps:frontend-testing-debugging",
+        "compound-engineering:ce-frontend-design"
+      ],
+      "patterns": [
+        "front[- ]?end|react|vue|angular|next\\.?js|ui\\b|css|tailwind|browser|页面|前端|组件|样式|交互|可访问"
+      ]
+    },
+    {
+      "id": "ios",
+      "phase": "implementation",
+      "priority": 92,
+      "confidence": "high",
+      "reason": "iOS, SwiftUI, Simulator, or Apple-platform work",
+      "skills": [
+        "build-ios-apps:ios-app-intents",
+        "build-ios-apps:swiftui-ui-patterns",
+        "build-ios-apps:ios-debugger-agent",
+        "build-ios-apps:ios-simulator-browser"
+      ],
+      "patterns": [
+        "ios|iphone|ipad|swiftui|swift\\b|xcode|simulator|app intent|苹果|移动端"
+      ]
+    },
+    {
+      "id": "github",
+      "phase": "review",
+      "priority": 75,
+      "confidence": "high",
+      "reason": "GitHub, pull request, issue, or CI workflow work",
+      "skills": [
+        "github:github",
+        "github:gh-fix-ci",
+        "github:gh-address-comments"
+      ],
+      "patterns": [
+        "github|pull request|\\bpr\\b|issue|ci\\b|workflow|actions|review comment|合并请求|代码审查|流水线"
+      ]
+    },
+    {
+      "id": "review",
+      "phase": "review",
+      "priority": 95,
+      "confidence": "high",
+      "reason": "code review, diff inspection, or risk-focused review",
+      "skills": [
+        "compound-engineering:ce-code-review",
+        "github:gh-address-comments"
+      ],
+      "patterns": [
+        "审查|代码审查|review|diff|pull request|\\bpr\\b"
+      ]
+    },
+    {
+      "id": "debug",
+      "phase": "debugging",
+      "priority": 85,
+      "confidence": "high",
+      "reason": "debugging, failure reproduction, or regression investigation",
+      "skills": [
+        "superpowers:systematic-debugging",
+        "compound-engineering:ce-debug",
+        "agyb-essentials:systematic-debugging"
+      ],
+      "patterns": [
+        "debug|bug|error|exception|crash|fail|flaky|regression|报错|崩溃|失败|修复|问题"
+      ]
+    },
+    {
+      "id": "testing",
+      "phase": "testing",
+      "priority": 88,
+      "confidence": "high",
+      "reason": "test automation, coverage, or verification workflow",
+      "skills": [
+        "superpowers:test-driven-development",
+        "agyb-essentials:lint-and-validate",
+        "build-web-apps:frontend-testing-debugging"
+      ],
+      "patterns": [
+        "test|qa|coverage|pytest|vitest|jest|playwright|测试|用例|覆盖率|自动化测试"
+      ]
+    },
+    {
+      "id": "planning",
+      "phase": "planning",
+      "priority": 80,
+      "confidence": "medium",
+      "reason": "planning, written implementation plan execution, or multi-agent workflow",
+      "skills": [
+        "superpowers:writing-plans",
+        "superpowers:executing-plans",
+        "superpowers:subagent-driven-development"
+      ],
+      "patterns": [
+        "plan|implement this plan|roadmap|执行计划|实现方案|规划|计划|多代理"
+      ]
+    },
+    {
+      "id": "backend",
+      "phase": "implementation",
+      "priority": 86,
+      "confidence": "high",
+      "reason": "backend API, service boundary, persistence, or authentication work",
+      "skills": [
+        "agyb-full-stack-developer:api-patterns",
+        "agyb-full-stack-developer:backend-dev-guidelines"
+      ],
+      "patterns": [
+        "api|backend|server|auth|database|postgres|redis|queue|后端|接口|鉴权|数据库|服务端"
+      ]
+    },
+    {
+      "id": "security",
+      "phase": "review",
+      "priority": 100,
+      "confidence": "high",
+      "reason": "security, privacy, permission, or threat-model risk",
+      "skills": [
+        "security-best-practices",
+        "security-threat-model",
+        "compound-engineering:ce-code-review"
+      ],
+      "patterns": [
+        "security|vulnerability|auth|permission|secret|xss|csrf|sql injection|安全|漏洞|权限|隐私"
+      ]
+    },
+    {
+      "id": "deployment",
+      "phase": "deployment",
+      "priority": 84,
+      "confidence": "high",
+      "reason": "deployment, infrastructure, CI/CD, or operations work",
+      "skills": [
+        "github:gh-fix-ci",
+        "cloudflare-deploy",
+        "vercel-deploy",
+        "netlify-deploy"
+      ],
+      "patterns": [
+        "deploy|docker|kubernetes|k8s|terraform|ci|cd|pipeline|部署|容器|运维|流水线"
+      ]
+    },
+    {
+      "id": "research",
+      "phase": "research",
+      "priority": 70,
+      "confidence": "medium",
+      "reason": "documentation-backed research or external verification",
+      "skills": [
+        "openai-docs",
+        "compound-engineering:ce-slack-research",
+        "superpowers:brainstorming"
+      ],
+      "patterns": [
+        "research|docs|documentation|调研|文档|查资料|资料|官方文档"
+      ]
+    },
+    {
+      "id": "community-react-frontend",
+      "phase": "implementation",
+      "priority": 98,
+      "confidence": "high",
+      "reason": "best community React/frontend/Tailwind guidance",
+      "skills": [
+        "community-spellbook-react",
+        "community-spellbook-frontend",
+        "community-spellbook-tailwind",
+        "community-jmerta-ui-ux-pro-max"
+      ],
+      "patterns": [
+        "react|frontend|tailwind|component|hook|suspense|前端|组件|样式|交互|布局"
+      ]
+    },
+    {
+      "id": "community-openai-ai",
+      "phase": "implementation",
+      "priority": 99,
+      "confidence": "high",
+      "reason": "best community OpenAI API, Agents, and LangGraph guidance",
+      "skills": [
+        "community-spellbook-openai-api",
+        "community-spellbook-openai-agents",
+        "community-spellbook-langgraph",
+        "openai-docs"
+      ],
+      "patterns": [
+        "openai|agents sdk|responses api|llm|langgraph|agent|大模型|智能体|模型|responses"
+      ]
+    },
+    {
+      "id": "community-backend-api",
+      "phase": "implementation",
+      "priority": 94,
+      "confidence": "high",
+      "reason": "best community backend/API/framework guidance",
+      "skills": [
+        "community-spellbook-api-design",
+        "community-spellbook-fastapi",
+        "community-spellbook-python",
+        "community-spellbook-typescript",
+        "community-spellbook-go"
+      ],
+      "patterns": [
+        "api|backend|fastapi|python|typescript|node|go|后端|接口|服务端"
+      ]
+    },
+    {
+      "id": "community-database-data",
+      "phase": "implementation",
+      "priority": 93,
+      "confidence": "high",
+      "reason": "best community database, PostgreSQL, SQLAlchemy, Redis, and data pipeline guidance",
+      "skills": [
+        "community-spellbook-database-design",
+        "community-spellbook-postgresql",
+        "community-spellbook-sqlalchemy",
+        "community-spellbook-redis",
+        "community-spellbook-data-pipelines"
+      ],
+      "patterns": [
+        "database|postgres|postgresql|sqlalchemy|redis|migration|index|query|dbt|airflow|数据库|索引|迁移|查询"
+      ]
+    },
+    {
+      "id": "community-cloud-devops",
+      "phase": "deployment",
+      "priority": 95,
+      "confidence": "high",
+      "reason": "best community cloud, Docker, CI/CD, deployment, and infrastructure guidance",
+      "skills": [
+        "community-spellbook-docker",
+        "community-spellbook-ci-cd",
+        "community-spellbook-containerization",
+        "community-spellbook-infrastructure-as-code",
+        "community-spellbook-deployment-strategies",
+        "community-spellbook-aws",
+        "community-spellbook-azure"
+      ],
+      "patterns": [
+        "docker|container|kubernetes|terraform|aws|azure|ci|cd|deploy|deployment|infra|部署|容器|流水线|基础设施"
+      ]
+    },
+    {
+      "id": "community-security-review",
+      "phase": "review",
+      "priority": 105,
+      "confidence": "high",
+      "reason": "best community security, threat, and ownership review guidance",
+      "skills": [
+        "community-spellbook-security",
+        "security-best-practices",
+        "security-threat-model",
+        "community-openai-security-ownership-map",
+        "compound-engineering:ce-code-review"
+      ],
+      "patterns": [
+        "security|vulnerability|threat|auth|permission|secret|privacy|安全|漏洞|威胁|权限|隐私|鉴权"
+      ]
+    },
+    {
+      "id": "community-observability-incident",
+      "phase": "debugging",
+      "priority": 92,
+      "confidence": "high",
+      "reason": "best community observability, performance, and incident response guidance",
+      "skills": [
+        "community-spellbook-observability",
+        "community-spellbook-incident-response",
+        "community-spellbook-performance",
+        "community-matt-diagnose"
+      ],
+      "patterns": [
+        "observability|logging|metrics|tracing|incident|performance|slow|latency|监控|日志|指标|链路|事故|性能|延迟"
+      ]
+    },
+    {
+      "id": "community-testing-quality",
+      "phase": "testing",
+      "priority": 96,
+      "confidence": "high",
+      "reason": "best community testing, TDD, unit, integration, and test strategy guidance",
+      "skills": [
+        "community-matt-tdd",
+        "community-spellbook-test-strategy",
+        "community-spellbook-unit-testing",
+        "community-spellbook-integration-testing",
+        "community-spellbook-testing"
+      ],
+      "patterns": [
+        "test|testing|tdd|unit|integration|pytest|vitest|jest|coverage|测试|单测|集成测试|覆盖率"
+      ]
+    },
+    {
+      "id": "community-architecture-planning",
+      "phase": "planning",
+      "priority": 97,
+      "confidence": "high",
+      "reason": "best community system design, architecture, and plan-to-issues guidance",
+      "skills": [
+        "community-spellbook-system-design",
+        "community-matt-improve-codebase-architecture",
+        "community-jmerta-plan-work",
+        "community-matt-to-prd",
+        "community-matt-to-issues"
+      ],
+      "patterns": [
+        "architecture|system design|prd|issue|planning|refactor|架构|系统设计|需求|计划|重构|拆解"
+      ]
+    },
+    {
+      "id": "community-workflow-git",
+      "phase": "planning",
+      "priority": 82,
+      "confidence": "medium",
+      "reason": "best community Codex workflow, AGENTS.md, CI, release, and docs synchronization guidance",
+      "skills": [
+        "community-jmerta-agents-md",
+        "community-jmerta-ci-fix",
+        "community-jmerta-coding-guidelines-gen",
+        "community-jmerta-coding-guidelines-verify",
+        "community-jmerta-docs-sync",
+        "community-jmerta-release-notes",
+        "community-jmerta-dependency-upgrader"
+      ],
+      "patterns": [
+        "agents.md|AGENTS|ci|github actions|release notes|changelog|dependency|docs sync|编码规范|发布说明|依赖|文档同步"
+      ]
+    },
+    {
+      "id": "community-figma-design",
+      "phase": "design",
+      "priority": 90,
+      "confidence": "high",
+      "reason": "official community Figma design-to-code guidance",
+      "skills": [
+        "community-openai-figma",
+        "community-openai-figma-generate-design",
+        "community-openai-figma-implement-design",
+        "community-openai-figma-create-design-system-rules",
+        "community-openai-figma-code-connect-components"
+      ],
+      "patterns": [
+        "figma|design system|design-to-code|设计稿|设计系统|视觉|原型"
+      ]
+    },
+    {
+      "id": "community-media-docs",
+      "phase": "research",
+      "priority": 72,
+      "confidence": "medium",
+      "reason": "official community speech/transcription and documentation support",
+      "skills": [
+        "community-openai-transcribe",
+        "community-openai-speech",
+        "community-openai-notion-research-documentation",
+        "community-openai-notion-spec-to-implementation"
+      ],
+      "patterns": [
+        "transcribe|speech|audio|voiceover|notion|meeting|音频|转写|语音|会议|知识库"
+      ]
+    }
+  ],
+  "costPolicy": {
+    "budgets": ["economy", "balanced", "premium", "critical"],
+    "highRiskIntents": ["security", "review", "planning", "devops", "data-ai"],
+    "volatileContextPattern": "current diff|当前\\s*diff|git diff|uncommitted|working tree|当前分支|日志|log\\b|stack trace|traceback|报错输出|失败输出|test output|文件\\s*:|/[\\w.-]+/|第\\s*\\d+\\s*行|line\\s+\\d+",
+    "candidateBudgets": {
+      "critical": { "agents": 8, "skills": 18 },
+      "premium": { "agents": 6, "skills": 16 },
+      "balanced": { "agents": 5, "skills": 12 },
+      "economy": { "agents": 4, "skills": 10 },
+      "economyLowRisk": { "agents": 3, "skills": 8 }
+    },
+    "cache": {
+      "maxEntries": 200
+    }
+  },
+  "executionProfiles": {
+    "single-agent": "One focused subagent can handle the task directly.",
+    "staged": "Use an explorer or planner first, then a worker, then verification.",
+    "parallel-review": "Run implementation and independent review or verification as separate work.",
+    "clarify-first": "Ask for one clarification before spawning because the route is low confidence."
+  }
+}

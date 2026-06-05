@@ -1,0 +1,900 @@
+{
+  "generatedAt": "2026-06-05T10:16:22.488Z",
+  "count": 74,
+  "skipped": [
+    {
+      "source": "matt",
+      "rel": "skills/engineering/ubiquitous-language",
+      "reason": "SKILL.md missing"
+    }
+  ],
+  "installed": [
+    {
+      "source": "openai",
+      "repo": "https://github.com/openai/skills.git",
+      "commit": "a8924c2",
+      "originalName": "aspnet-core",
+      "installedName": "community-openai-aspnet-core",
+      "description": "Build, review, refactor, or architect ASP.NET Core web applications using current official guidance for .NET web development. Use when working on Blazor Web Apps, Razor Pages, MVC, Minimal APIs, controller-based Web APIs, SignalR, gRPC, middleware, dependency injection, configuration, authentication, authorization, testing, performance, deployment, or ASP.NET Core upgrades.",
+      "sourcePath": "skills/.curated/aspnet-core",
+      "installedPath": "/Users/sjp1212/.codex/skills/community-openai-aspnet-core",
+      "flags": [
+        "secret-handling"
+      ]
+    },
+    {
+      "source": "openai",
+      "repo": "https://github.com/openai/skills.git",
+      "commit": "a8924c2",
+      "originalName": "figma",
+      "installedName": "community-openai-figma",
+      "description": "Use the Figma MCP server to fetch design context, screenshots, variables, and assets from Figma, and to translate Figma nodes into production code. Trigger when a task involves Figma URLs, node IDs, design-to-code implementation, or Figma MCP setup and troubleshooting.",
+      "sourcePath": "skills/.curated/figma",
+      "installedPath": "/Users/sjp1212/.codex/skills/community-openai-figma",
+      "flags": [
+        "secret-handling"
+      ]
+    },
+    {
+      "source": "openai",
+      "repo": "https://github.com/openai/skills.git",
+      "commit": "a8924c2",
+      "originalName": "figma-code-connect-components",
+      "installedName": "community-openai-figma-code-connect-components",
+      "description": "Connects Figma design components to code components using Code Connect mapping tools. Use when user says \"code connect\", \"connect this component to code\", \"map this component\", \"link component to code\", \"create code connect mapping\", or wants to establish mappings between Figma designs and code implementations. For canvas writes via `use_figma`, use `figma-use`.",
+      "sourcePath": "skills/.curated/figma-code-connect-components",
+      "installedPath": "/Users/sjp1212/.codex/skills/community-openai-figma-code-connect-components",
+      "flags": []
+    },
+    {
+      "source": "openai",
+      "repo": "https://github.com/openai/skills.git",
+      "commit": "a8924c2",
+      "originalName": "figma-create-design-system-rules",
+      "installedName": "community-openai-figma-create-design-system-rules",
+      "description": "Generates custom design system rules for the user's codebase. Use when user says \"create design system rules\", \"generate rules for my project\", \"set up design rules\", \"customize design system guidelines\", or wants to establish project-specific conventions for Figma-to-code workflows. Requires Figma MCP server connection.",
+      "sourcePath": "skills/.curated/figma-create-design-system-rules",
+      "installedPath": "/Users/sjp1212/.codex/skills/community-openai-figma-create-design-system-rules",
+      "flags": [
+        "secret-handling"
+      ]
+    },
+    {
+      "source": "openai",
+      "repo": "https://github.com/openai/skills.git",
+      "commit": "a8924c2",
+      "originalName": "figma-generate-design",
+      "installedName": "community-openai-figma-generate-design",
+      "description": "Use this skill alongside figma-use when the task involves translating an application page, view, or multi-section layout into Figma. Triggers: 'write to Figma', 'create in Figma from code', 'push page to Figma', 'take this app/page and build it in Figma', 'create a screen', 'build a landing page in Figma', 'update the Figma screen to match code'. This is the preferred workflow skill whenever the user wants to build or update a full page, screen, or view in Figma from code or a description. Discovers design system components, variables, and styles via search_design_system, imports them, and assembles screens incrementally section-by-section using design system tokens instead of hardcoded values.",
+      "sourcePath": "skills/.curated/figma-generate-design",
+      "installedPath": "/Users/sjp1212/.codex/skills/community-openai-figma-generate-design",
+      "flags": [
+        "secret-handling"
+      ]
+    },
+    {
+      "source": "openai",
+      "repo": "https://github.com/openai/skills.git",
+      "commit": "a8924c2",
+      "originalName": "figma-implement-design",
+      "installedName": "community-openai-figma-implement-design",
+      "description": "Translates Figma designs into production-ready application code with 1:1 visual fidelity. Use when implementing UI code from Figma files, when user mentions \"implement design\", \"generate code\", \"implement component\", provides Figma URLs, or asks to build components matching Figma specs. For Figma canvas writes via `use_figma`, use `figma-use`.",
+      "sourcePath": "skills/.curated/figma-implement-design",
+      "installedPath": "/Users/sjp1212/.codex/skills/community-openai-figma-implement-design",
+      "flags": [
+        "secret-handling"
+      ]
+    },
+    {
+      "source": "openai",
+      "repo": "https://github.com/openai/skills.git",
+      "commit": "a8924c2",
+      "originalName": "linear",
+      "installedName": "community-openai-linear",
+      "description": "Manage issues, projects & team workflows in Linear. Use when the user wants to read, create or updates tickets in Linear.",
+      "sourcePath": "skills/.curated/linear",
+      "installedPath": "/Users/sjp1212/.codex/skills/community-openai-linear",
+      "flags": [
+        "secret-handling"
+      ]
+    },
+    {
+      "source": "openai",
+      "repo": "https://github.com/openai/skills.git",
+      "commit": "a8924c2",
+      "originalName": "notion-knowledge-capture",
+      "installedName": "community-openai-notion-knowledge-capture",
+      "description": "Capture conversations and decisions into structured Notion pages; use when turning chats/notes into wiki entries, how-tos, decisions, or FAQs with proper linking.",
+      "sourcePath": "skills/.curated/notion-knowledge-capture",
+      "installedPath": "/Users/sjp1212/.codex/skills/community-openai-notion-knowledge-capture",
+      "flags": []
+    },
+    {
+      "source": "openai",
+      "repo": "https://github.com/openai/skills.git",
+      "commit": "a8924c2",
+      "originalName": "notion-meeting-intelligence",
+      "installedName": "community-openai-notion-meeting-intelligence",
+      "description": "Prepare meeting materials with Notion context and Codex research; use when gathering context, drafting agendas/pre-reads, and tailoring materials to attendees.",
+      "sourcePath": "skills/.curated/notion-meeting-intelligence",
+      "installedPath": "/Users/sjp1212/.codex/skills/community-openai-notion-meeting-intelligence",
+      "flags": []
+    },
+    {
+      "source": "openai",
+      "repo": "https://github.com/openai/skills.git",
+      "commit": "a8924c2",
+      "originalName": "notion-research-documentation",
+      "installedName": "community-openai-notion-research-documentation",
+      "description": "Research across Notion and synthesize into structured documentation; use when gathering info from multiple Notion sources to produce briefs, comparisons, or reports with citations.",
+      "sourcePath": "skills/.curated/notion-research-documentation",
+      "installedPath": "/Users/sjp1212/.codex/skills/community-openai-notion-research-documentation",
+      "flags": []
+    },
+    {
+      "source": "openai",
+      "repo": "https://github.com/openai/skills.git",
+      "commit": "a8924c2",
+      "originalName": "notion-spec-to-implementation",
+      "installedName": "community-openai-notion-spec-to-implementation",
+      "description": "Turn Notion specs into implementation plans, tasks, and progress tracking; use when implementing PRDs/feature specs and creating Notion plans + tasks from them.",
+      "sourcePath": "skills/.curated/notion-spec-to-implementation",
+      "installedPath": "/Users/sjp1212/.codex/skills/community-openai-notion-spec-to-implementation",
+      "flags": []
+    },
+    {
+      "source": "openai",
+      "repo": "https://github.com/openai/skills.git",
+      "commit": "a8924c2",
+      "originalName": "security-ownership-map",
+      "installedName": "community-openai-security-ownership-map",
+      "description": "Analyze git repositories to build a security ownership topology (people-to-file), compute bus factor and sensitive-code ownership, and export CSV/JSON for graph databases and visualization. Trigger only when the user explicitly wants a security-oriented ownership or bus-factor analysis grounded in git history (for example: orphaned sensitive code, security maintainers, CODEOWNERS reality checks for risk, sensitive hotspots, or ownership clusters). Do not trigger for general maintainer lists or non-security ownership questions.",
+      "sourcePath": "skills/.curated/security-ownership-map",
+      "installedPath": "/Users/sjp1212/.codex/skills/community-openai-security-ownership-map",
+      "flags": [
+        "secret-handling"
+      ]
+    },
+    {
+      "source": "openai",
+      "repo": "https://github.com/openai/skills.git",
+      "commit": "a8924c2",
+      "originalName": "speech",
+      "installedName": "community-openai-speech",
+      "description": "Use when the user asks for text-to-speech narration or voiceover, accessibility reads, audio prompts, or batch speech generation via the OpenAI Audio API; run the bundled CLI (`scripts/text_to_speech.py`) with built-in voices and require `OPENAI_API_KEY` for live calls. Custom voice creation is out of scope.",
+      "sourcePath": "skills/.curated/speech",
+      "installedPath": "/Users/sjp1212/.codex/skills/community-openai-speech",
+      "flags": [
+        "secret-handling"
+      ]
+    },
+    {
+      "source": "openai",
+      "repo": "https://github.com/openai/skills.git",
+      "commit": "a8924c2",
+      "originalName": "transcribe",
+      "installedName": "community-openai-transcribe",
+      "description": "Transcribe audio files to text with optional diarization and known-speaker hints. Use when a user asks to transcribe speech from audio/video, extract text from recordings, or label speakers in interviews or meetings.",
+      "sourcePath": "skills/.curated/transcribe",
+      "installedPath": "/Users/sjp1212/.codex/skills/community-openai-transcribe",
+      "flags": [
+        "secret-handling"
+      ]
+    },
+    {
+      "source": "openai",
+      "repo": "https://github.com/openai/skills.git",
+      "commit": "a8924c2",
+      "originalName": "winui-app",
+      "installedName": "community-openai-winui-app",
+      "description": "Bootstrap, develop, and design modern WinUI 3 desktop applications with C# and the Windows App SDK using official Microsoft guidance, WinUI Gallery patterns, Windows App SDK samples, and CommunityToolkit components. Use when creating a brand new app, preparing a machine for WinUI, reviewing, refactoring, planning, troubleshooting, environment-checking, or setting up WinUI 3 XAML, controls, navigation, windowing, theming, accessibility, responsiveness, performance, deployment, or related Windows app design and development work.",
+      "sourcePath": "skills/.curated/winui-app",
+      "installedPath": "/Users/sjp1212/.codex/skills/community-openai-winui-app",
+      "flags": []
+    },
+    {
+      "source": "spellbook",
+      "repo": "https://github.com/kid-sid/codex-spellbook.git",
+      "commit": "c8c7cac",
+      "originalName": "api-design",
+      "installedName": "community-spellbook-api-design",
+      "description": "REST API design patterns for resource naming, HTTP methods, status codes, pagination strategy, error envelopes, versioning, and rate limiting. Use when designing, reviewing, or refactoring HTTP APIs and endpoint contracts.",
+      "sourcePath": "skills/api-design",
+      "installedPath": "/Users/sjp1212/.codex/skills/community-spellbook-api-design",
+      "flags": [
+        "secret-handling"
+      ]
+    },
+    {
+      "source": "spellbook",
+      "repo": "https://github.com/kid-sid/codex-spellbook.git",
+      "commit": "c8c7cac",
+      "originalName": "aws",
+      "installedName": "community-spellbook-aws",
+      "description": "Use when writing boto3 or AWS SDK v3 code — configuring IAM auth, reading/writing S3, designing DynamoDB access patterns, writing Lambda handlers, processing SQS batches, or troubleshooting credential and throttling errors.",
+      "sourcePath": "skills/aws",
+      "installedPath": "/Users/sjp1212/.codex/skills/community-spellbook-aws",
+      "flags": [
+        "secret-handling"
+      ]
+    },
+    {
+      "source": "spellbook",
+      "repo": "https://github.com/kid-sid/codex-spellbook.git",
+      "commit": "c8c7cac",
+      "originalName": "azure",
+      "installedName": "community-spellbook-azure",
+      "description": "Use when writing Python code that integrates with Azure Blob Storage, AI Search, Document Intelligence, or Key Vault — or when configuring Managed Identity auth, designing a hybrid search index, or troubleshooting Azure SDK retry behavior.",
+      "sourcePath": "skills/azure",
+      "installedPath": "/Users/sjp1212/.codex/skills/community-spellbook-azure",
+      "flags": [
+        "secret-handling"
+      ]
+    },
+    {
+      "source": "spellbook",
+      "repo": "https://github.com/kid-sid/codex-spellbook.git",
+      "commit": "c8c7cac",
+      "originalName": "caching",
+      "installedName": "community-spellbook-caching",
+      "description": "Use when adding or debugging caching in a service — choosing a cache strategy, designing TTLs, preventing stampedes, reasoning about invalidation, or configuring HTTP Cache-Control headers.",
+      "sourcePath": "skills/caching",
+      "installedPath": "/Users/sjp1212/.codex/skills/community-spellbook-caching",
+      "flags": [
+        "secret-handling"
+      ]
+    },
+    {
+      "source": "spellbook",
+      "repo": "https://github.com/kid-sid/codex-spellbook.git",
+      "commit": "c8c7cac",
+      "originalName": "ci-cd",
+      "installedName": "community-spellbook-ci-cd",
+      "description": "Use when setting up or debugging GitHub Actions pipelines — adding quality gates, configuring OIDC cloud auth, building matrix test runs, publishing artifacts to GHCR/PyPI/npm, or promoting builds from staging to production.",
+      "sourcePath": "skills/ci-cd",
+      "installedPath": "/Users/sjp1212/.codex/skills/community-spellbook-ci-cd",
+      "flags": [
+        "secret-handling"
+      ]
+    },
+    {
+      "source": "spellbook",
+      "repo": "https://github.com/kid-sid/codex-spellbook.git",
+      "commit": "c8c7cac",
+      "originalName": "containerization",
+      "installedName": "community-spellbook-containerization",
+      "description": "Use when writing Dockerfiles, setting up docker-compose for local dev, configuring Kubernetes resources (Deployment, Service, Ingress, HPA), sizing pod resource limits, or packaging a service with Helm.",
+      "sourcePath": "skills/containerization",
+      "installedPath": "/Users/sjp1212/.codex/skills/community-spellbook-containerization",
+      "flags": [
+        "secret-handling"
+      ]
+    },
+    {
+      "source": "spellbook",
+      "repo": "https://github.com/kid-sid/codex-spellbook.git",
+      "commit": "c8c7cac",
+      "originalName": "data-pipelines",
+      "installedName": "community-spellbook-data-pipelines",
+      "description": "Use when building or debugging data pipelines with Airflow or Prefect, writing dbt models or tests, designing incremental loads, implementing idempotent ETL/ELT jobs, validating data quality, or orchestrating multi-step data workflows.",
+      "sourcePath": "skills/data-pipelines",
+      "installedPath": "/Users/sjp1212/.codex/skills/community-spellbook-data-pipelines",
+      "flags": [
+        "secret-handling"
+      ]
+    },
+    {
+      "source": "spellbook",
+      "repo": "https://github.com/kid-sid/codex-spellbook.git",
+      "commit": "c8c7cac",
+      "originalName": "database-design",
+      "installedName": "community-spellbook-database-design",
+      "description": "Use when designing a schema, adding indexes to fix slow queries, writing a zero-downtime migration, diagnosing N+1 issues with EXPLAIN ANALYZE, or configuring connection pooling for a PostgreSQL-backed service.",
+      "sourcePath": "skills/database-design",
+      "installedPath": "/Users/sjp1212/.codex/skills/community-spellbook-database-design",
+      "flags": []
+    },
+    {
+      "source": "spellbook",
+      "repo": "https://github.com/kid-sid/codex-spellbook.git",
+      "commit": "c8c7cac",
+      "originalName": "deployment-strategies",
+      "installedName": "community-spellbook-deployment-strategies",
+      "description": "Use when choosing a deployment strategy for a release, setting up canary or blue/green rollouts, adding feature flags to decouple deployment from release, coordinating a zero-downtime database migration, or defining rollback criteria and procedures.",
+      "sourcePath": "skills/deployment-strategies",
+      "installedPath": "/Users/sjp1212/.codex/skills/community-spellbook-deployment-strategies",
+      "flags": []
+    },
+    {
+      "source": "spellbook",
+      "repo": "https://github.com/kid-sid/codex-spellbook.git",
+      "commit": "c8c7cac",
+      "originalName": "docker",
+      "installedName": "community-spellbook-docker",
+      "description": "Containerization guidance for multi-stage builds, non-root execution, dockerignore hygiene, layer caching, healthchecks, and secret handling. Use when writing or reviewing Dockerfiles and container images.",
+      "sourcePath": "skills/docker",
+      "installedPath": "/Users/sjp1212/.codex/skills/community-spellbook-docker",
+      "flags": [
+        "secret-handling"
+      ]
+    },
+    {
+      "source": "spellbook",
+      "repo": "https://github.com/kid-sid/codex-spellbook.git",
+      "commit": "c8c7cac",
+      "originalName": "event-driven",
+      "installedName": "community-spellbook-event-driven",
+      "description": "Use when designing or debugging an event-driven system — choosing Kafka partitioning strategies, implementing the outbox pattern, handling dead-letter queues, ensuring idempotent consumers, or making event sourcing decisions.",
+      "sourcePath": "skills/event-driven",
+      "installedPath": "/Users/sjp1212/.codex/skills/community-spellbook-event-driven",
+      "flags": []
+    },
+    {
+      "source": "spellbook",
+      "repo": "https://github.com/kid-sid/codex-spellbook.git",
+      "commit": "c8c7cac",
+      "originalName": "fastapi",
+      "installedName": "community-spellbook-fastapi",
+      "description": "Use when structuring a FastAPI application, designing dependency injection chains, defining Pydantic v2 schemas, adding JWT authentication, or writing async route tests with httpx.",
+      "sourcePath": "skills/fastapi",
+      "installedPath": "/Users/sjp1212/.codex/skills/community-spellbook-fastapi",
+      "flags": [
+        "secret-handling"
+      ]
+    },
+    {
+      "source": "spellbook",
+      "repo": "https://github.com/kid-sid/codex-spellbook.git",
+      "commit": "c8c7cac",
+      "originalName": "feature-flags",
+      "installedName": "community-spellbook-feature-flags",
+      "description": "Use when adding feature flag support to a service, designing a percentage-based rollout, setting up A/B experiments or multivariate tests, choosing between LaunchDarkly, Unleash, and OpenFeature, writing tests for flag-gated code, or managing flag lifecycle and cleanup.",
+      "sourcePath": "skills/feature-flags",
+      "installedPath": "/Users/sjp1212/.codex/skills/community-spellbook-feature-flags",
+      "flags": [
+        "secret-handling"
+      ]
+    },
+    {
+      "source": "spellbook",
+      "repo": "https://github.com/kid-sid/codex-spellbook.git",
+      "commit": "c8c7cac",
+      "originalName": "frontend",
+      "installedName": "community-spellbook-frontend",
+      "description": "Use when designing React component structure, deciding where state should live, implementing data fetching with TanStack Query, building validated forms, or optimizing rendering performance.",
+      "sourcePath": "skills/frontend",
+      "installedPath": "/Users/sjp1212/.codex/skills/community-spellbook-frontend",
+      "flags": [
+        "secret-handling"
+      ]
+    },
+    {
+      "source": "spellbook",
+      "repo": "https://github.com/kid-sid/codex-spellbook.git",
+      "commit": "c8c7cac",
+      "originalName": "go",
+      "installedName": "community-spellbook-go",
+      "description": "Use when writing or debugging non-trivial Go — error handling patterns, goroutine/channel design, interface composition, generics, context propagation, or Go-specific idioms like table-driven tests and functional options.",
+      "sourcePath": "skills/go",
+      "installedPath": "/Users/sjp1212/.codex/skills/community-spellbook-go",
+      "flags": [
+        "secret-handling"
+      ]
+    },
+    {
+      "source": "spellbook",
+      "repo": "https://github.com/kid-sid/codex-spellbook.git",
+      "commit": "c8c7cac",
+      "originalName": "incident-response",
+      "installedName": "community-spellbook-incident-response",
+      "description": "Use when triaging a production alert, writing a postmortem, creating or updating a runbook, classifying incident severity, or setting up on-call escalation paths.",
+      "sourcePath": "skills/incident-response",
+      "installedPath": "/Users/sjp1212/.codex/skills/community-spellbook-incident-response",
+      "flags": []
+    },
+    {
+      "source": "spellbook",
+      "repo": "https://github.com/kid-sid/codex-spellbook.git",
+      "commit": "c8c7cac",
+      "originalName": "infrastructure-as-code",
+      "installedName": "community-spellbook-infrastructure-as-code",
+      "description": "Use when writing Terraform for cloud resources, setting up remote state, structuring modules for reuse, managing multiple environments, reviewing a plan before apply, or importing and resolving state drift.",
+      "sourcePath": "skills/infrastructure-as-code",
+      "installedPath": "/Users/sjp1212/.codex/skills/community-spellbook-infrastructure-as-code",
+      "flags": [
+        "secret-handling"
+      ]
+    },
+    {
+      "source": "spellbook",
+      "repo": "https://github.com/kid-sid/codex-spellbook.git",
+      "commit": "c8c7cac",
+      "originalName": "integration-testing",
+      "installedName": "community-spellbook-integration-testing",
+      "description": "Integration testing patterns for database state, API contracts, service boundaries, and component wiring. Use when testing how multiple parts of a system work together without mocks.",
+      "sourcePath": "skills/integration-testing",
+      "installedPath": "/Users/sjp1212/.codex/skills/community-spellbook-integration-testing",
+      "flags": []
+    },
+    {
+      "source": "spellbook",
+      "repo": "https://github.com/kid-sid/codex-spellbook.git",
+      "commit": "c8c7cac",
+      "originalName": "langgraph",
+      "installedName": "community-spellbook-langgraph",
+      "description": "Use when building or debugging LangGraph workflows — designing state graphs, adding conditional routing, wiring checkpointers, streaming tokens, implementing human-in-the-loop interrupts, or coordinating multi-agent subgraphs.",
+      "sourcePath": "skills/langgraph",
+      "installedPath": "/Users/sjp1212/.codex/skills/community-spellbook-langgraph",
+      "flags": [
+        "secret-handling"
+      ]
+    },
+    {
+      "source": "spellbook",
+      "repo": "https://github.com/kid-sid/codex-spellbook.git",
+      "commit": "c8c7cac",
+      "originalName": "microservices",
+      "installedName": "community-spellbook-microservices",
+      "description": "Use when decomposing a monolith, designing inter-service communication, implementing circuit breakers or sagas, reasoning about data ownership across services, or setting up an API gateway for a distributed system.",
+      "sourcePath": "skills/microservices",
+      "installedPath": "/Users/sjp1212/.codex/skills/community-spellbook-microservices",
+      "flags": []
+    },
+    {
+      "source": "spellbook",
+      "repo": "https://github.com/kid-sid/codex-spellbook.git",
+      "commit": "c8c7cac",
+      "originalName": "observability",
+      "installedName": "community-spellbook-observability",
+      "description": "Use when adding structured logging, instrumenting Prometheus metrics, wiring up distributed tracing with OpenTelemetry, writing alerting rules, defining SLOs and error budgets, or building a Grafana golden-signals dashboard.",
+      "sourcePath": "skills/observability",
+      "installedPath": "/Users/sjp1212/.codex/skills/community-spellbook-observability",
+      "flags": [
+        "secret-handling"
+      ]
+    },
+    {
+      "source": "spellbook",
+      "repo": "https://github.com/kid-sid/codex-spellbook.git",
+      "commit": "c8c7cac",
+      "originalName": "openai-agents",
+      "installedName": "community-spellbook-openai-agents",
+      "description": "Use when building or debugging OpenAI Agents SDK workflows — defining agents with tools and handoffs, wiring typed context, streaming responses, adding guardrails, or integrating with the Agentex ADK.",
+      "sourcePath": "skills/openai-agents",
+      "installedPath": "/Users/sjp1212/.codex/skills/community-spellbook-openai-agents",
+      "flags": [
+        "secret-handling"
+      ]
+    },
+    {
+      "source": "spellbook",
+      "repo": "https://github.com/kid-sid/codex-spellbook.git",
+      "commit": "c8c7cac",
+      "originalName": "openai-api",
+      "installedName": "community-spellbook-openai-api",
+      "description": "Build against the OpenAI API with current model selection, Responses API patterns, Codex model guidance, streaming, structured outputs, retries, and key management. Use when integrating OpenAI or Codex models into an app, service, CLI, or agent workflow.",
+      "sourcePath": "skills/openai-api",
+      "installedPath": "/Users/sjp1212/.codex/skills/community-spellbook-openai-api",
+      "flags": [
+        "secret-handling"
+      ]
+    },
+    {
+      "source": "spellbook",
+      "repo": "https://github.com/kid-sid/codex-spellbook.git",
+      "commit": "c8c7cac",
+      "originalName": "performance",
+      "installedName": "community-spellbook-performance",
+      "description": "Use when diagnosing a slow endpoint, fixing N+1 queries, adding a caching layer, offloading CPU-bound work to threads, or defining a latency budget for a service.",
+      "sourcePath": "skills/performance",
+      "installedPath": "/Users/sjp1212/.codex/skills/community-spellbook-performance",
+      "flags": []
+    },
+    {
+      "source": "spellbook",
+      "repo": "https://github.com/kid-sid/codex-spellbook.git",
+      "commit": "c8c7cac",
+      "originalName": "postgresql",
+      "installedName": "community-spellbook-postgresql",
+      "description": "Use when writing complex PostgreSQL queries, diagnosing slow queries with EXPLAIN ANALYZE, designing indexes, handling concurrent writes, or planning safe schema migrations on large tables.",
+      "sourcePath": "skills/postgresql",
+      "installedPath": "/Users/sjp1212/.codex/skills/community-spellbook-postgresql",
+      "flags": [
+        "secret-handling"
+      ]
+    },
+    {
+      "source": "spellbook",
+      "repo": "https://github.com/kid-sid/codex-spellbook.git",
+      "commit": "c8c7cac",
+      "originalName": "python",
+      "installedName": "community-spellbook-python",
+      "description": "Python engineering guidance for type hints, pydantic validation, httpx usage, pytest conventions, pyproject structure, async patterns, and lightweight dependency injection. Use when building or reviewing Python services and libraries.",
+      "sourcePath": "skills/python",
+      "installedPath": "/Users/sjp1212/.codex/skills/community-spellbook-python",
+      "flags": []
+    },
+    {
+      "source": "spellbook",
+      "repo": "https://github.com/kid-sid/codex-spellbook.git",
+      "commit": "c8c7cac",
+      "originalName": "react",
+      "installedName": "community-spellbook-react",
+      "description": "Use when building advanced React features — designing custom hooks, using Suspense or error boundaries, working in Next.js App Router with Server Components or Server Actions, applying TypeScript generics, or building animated UI with Framer Motion, View Transitions, or scroll-driven animations.",
+      "sourcePath": "skills/react",
+      "installedPath": "/Users/sjp1212/.codex/skills/community-spellbook-react",
+      "flags": []
+    },
+    {
+      "source": "spellbook",
+      "repo": "https://github.com/kid-sid/codex-spellbook.git",
+      "commit": "c8c7cac",
+      "originalName": "redis",
+      "installedName": "community-spellbook-redis",
+      "description": "Use when choosing a Redis data structure for a use case, implementing caching or rate limiting, building pub/sub or Streams-based real-time messaging, or writing atomic operations like distributed locks.",
+      "sourcePath": "skills/redis",
+      "installedPath": "/Users/sjp1212/.codex/skills/community-spellbook-redis",
+      "flags": [
+        "secret-handling"
+      ]
+    },
+    {
+      "source": "spellbook",
+      "repo": "https://github.com/kid-sid/codex-spellbook.git",
+      "commit": "c8c7cac",
+      "originalName": "security",
+      "installedName": "community-spellbook-security",
+      "description": "Application security guidance covering OWASP Top 10 mitigations, secrets handling, boundary validation, SQL injection prevention, JWT usage, dependency scanning, and STRIDE threat modeling. Use for audits, auth changes, or any security-sensitive code.",
+      "sourcePath": "skills/security",
+      "installedPath": "/Users/sjp1212/.codex/skills/community-spellbook-security",
+      "flags": [
+        "secret-handling"
+      ]
+    },
+    {
+      "source": "spellbook",
+      "repo": "https://github.com/kid-sid/codex-spellbook.git",
+      "commit": "c8c7cac",
+      "originalName": "sqlalchemy",
+      "installedName": "community-spellbook-sqlalchemy",
+      "description": "Use when using async SQLAlchemy 2.0 — defining models, writing queries, managing async sessions, loading relationships without N+1, or setting up and debugging Alembic migrations.",
+      "sourcePath": "skills/sqlalchemy",
+      "installedPath": "/Users/sjp1212/.codex/skills/community-spellbook-sqlalchemy",
+      "flags": []
+    },
+    {
+      "source": "spellbook",
+      "repo": "https://github.com/kid-sid/codex-spellbook.git",
+      "commit": "c8c7cac",
+      "originalName": "system-design",
+      "installedName": "community-spellbook-system-design",
+      "description": "Use when designing a new service from scratch, writing a tech spec or RFC, selecting a database or communication pattern, estimating capacity, or reviewing a design for scalability and reliability gaps.",
+      "sourcePath": "skills/system-design",
+      "installedPath": "/Users/sjp1212/.codex/skills/community-spellbook-system-design",
+      "flags": [
+        "secret-handling"
+      ]
+    },
+    {
+      "source": "spellbook",
+      "repo": "https://github.com/kid-sid/codex-spellbook.git",
+      "commit": "c8c7cac",
+      "originalName": "tailwind",
+      "installedName": "community-spellbook-tailwind",
+      "description": "Use when composing Tailwind utilities, building responsive or dark-mode layouts, defining component variants with cva, resolving conflicting classes with tailwind-merge, or configuring a custom theme.",
+      "sourcePath": "skills/tailwind",
+      "installedPath": "/Users/sjp1212/.codex/skills/community-spellbook-tailwind",
+      "flags": [
+        "secret-handling"
+      ]
+    },
+    {
+      "source": "spellbook",
+      "repo": "https://github.com/kid-sid/codex-spellbook.git",
+      "commit": "c8c7cac",
+      "originalName": "test-strategy",
+      "installedName": "community-spellbook-test-strategy",
+      "description": "Use when choosing a testing model for a new project, auditing a test suite that is slow or provides low confidence, setting coverage targets, or writing a QA test plan for a release.",
+      "sourcePath": "skills/test-strategy",
+      "installedPath": "/Users/sjp1212/.codex/skills/community-spellbook-test-strategy",
+      "flags": [
+        "secret-handling"
+      ]
+    },
+    {
+      "source": "spellbook",
+      "repo": "https://github.com/kid-sid/codex-spellbook.git",
+      "commit": "c8c7cac",
+      "originalName": "testing",
+      "installedName": "community-spellbook-testing",
+      "description": "Testing patterns for AAA structure, naming, mocks versus real dependencies, coverage targets, TDD flow, parameterized tests, and flake prevention. Use when writing, reviewing, or repairing automated test suites.",
+      "sourcePath": "skills/testing",
+      "installedPath": "/Users/sjp1212/.codex/skills/community-spellbook-testing",
+      "flags": []
+    },
+    {
+      "source": "spellbook",
+      "repo": "https://github.com/kid-sid/codex-spellbook.git",
+      "commit": "c8c7cac",
+      "originalName": "typescript",
+      "installedName": "community-spellbook-typescript",
+      "description": "TypeScript guidance for strict mode, Zod runtime validation, eliminating any, discriminated unions, explicit error modeling, module format choices, path aliases, and Vitest. Use when building or reviewing TypeScript services and applications.",
+      "sourcePath": "skills/typescript",
+      "installedPath": "/Users/sjp1212/.codex/skills/community-spellbook-typescript",
+      "flags": []
+    },
+    {
+      "source": "spellbook",
+      "repo": "https://github.com/kid-sid/codex-spellbook.git",
+      "commit": "c8c7cac",
+      "originalName": "unit-testing",
+      "installedName": "community-spellbook-unit-testing",
+      "description": "Use when writing unit tests for a function or module, mocking external dependencies, practising TDD on new business logic, or enforcing a coverage target across a codebase in Python, TypeScript, or Go.",
+      "sourcePath": "skills/unit-testing",
+      "installedPath": "/Users/sjp1212/.codex/skills/community-spellbook-unit-testing",
+      "flags": []
+    },
+    {
+      "source": "spellbook",
+      "repo": "https://github.com/kid-sid/codex-spellbook.git",
+      "commit": "c8c7cac",
+      "originalName": "websockets-sse",
+      "installedName": "community-spellbook-websockets-sse",
+      "description": "Use when building real-time features with WebSockets or SSE — choosing between the two, implementing connection management and heartbeats, scaling broadcasts across workers with Redis, handling backpressure, writing tests for streaming endpoints, or debugging connection drops and missed events.",
+      "sourcePath": "skills/websockets-sse",
+      "installedPath": "/Users/sjp1212/.codex/skills/community-spellbook-websockets-sse",
+      "flags": [
+        "secret-handling"
+      ]
+    },
+    {
+      "source": "matt",
+      "repo": "https://github.com/mattpocock/skills.git",
+      "commit": "aaf2453",
+      "originalName": "diagnose",
+      "installedName": "community-matt-diagnose",
+      "description": "Disciplined diagnosis loop for hard bugs and performance regressions. Reproduce → minimise → hypothesise → instrument → fix → regression-test. Use when user says \"diagnose this\" / \"debug this\", reports a bug, says something is broken/throwing/failing, or describes a performance regression.",
+      "sourcePath": "skills/engineering/diagnose",
+      "installedPath": "/Users/sjp1212/.codex/skills/community-matt-diagnose",
+      "flags": []
+    },
+    {
+      "source": "matt",
+      "repo": "https://github.com/mattpocock/skills.git",
+      "commit": "aaf2453",
+      "originalName": "grill-with-docs",
+      "installedName": "community-matt-grill-with-docs",
+      "description": "Grilling session that challenges your plan against the existing domain model, sharpens terminology, and updates documentation (CONTEXT.md, ADRs) inline as decisions crystallise. Use when user wants to stress-test a plan against their project's language and documented decisions.",
+      "sourcePath": "skills/engineering/grill-with-docs",
+      "installedPath": "/Users/sjp1212/.codex/skills/community-matt-grill-with-docs",
+      "flags": []
+    },
+    {
+      "source": "matt",
+      "repo": "https://github.com/mattpocock/skills.git",
+      "commit": "aaf2453",
+      "originalName": "improve-codebase-architecture",
+      "installedName": "community-matt-improve-codebase-architecture",
+      "description": "Find deepening opportunities in a codebase, informed by the domain language in CONTEXT.md and the decisions in docs/adr/. Use when the user wants to improve architecture, find refactoring opportunities, consolidate tightly-coupled modules, or make a codebase more testable and AI-navigable.",
+      "sourcePath": "skills/engineering/improve-codebase-architecture",
+      "installedPath": "/Users/sjp1212/.codex/skills/community-matt-improve-codebase-architecture",
+      "flags": []
+    },
+    {
+      "source": "matt",
+      "repo": "https://github.com/mattpocock/skills.git",
+      "commit": "aaf2453",
+      "originalName": "prototype",
+      "installedName": "community-matt-prototype",
+      "description": "Build a throwaway prototype to flesh out a design before committing to it. Routes between two branches — a runnable terminal app for state/business-logic questions, or several radically different UI variations toggleable from one route. Use when the user wants to prototype, sanity-check a data model or state machine, mock up a UI, explore design options, or says \"prototype this\", \"let me play with it\", \"try a few designs\".",
+      "sourcePath": "skills/engineering/prototype",
+      "installedPath": "/Users/sjp1212/.codex/skills/community-matt-prototype",
+      "flags": []
+    },
+    {
+      "source": "matt",
+      "repo": "https://github.com/mattpocock/skills.git",
+      "commit": "aaf2453",
+      "originalName": "tdd",
+      "installedName": "community-matt-tdd",
+      "description": "Test-driven development with red-green-refactor loop. Use when user wants to build features or fix bugs using TDD, mentions \"red-green-refactor\", wants integration tests, or asks for test-first development.",
+      "sourcePath": "skills/engineering/tdd",
+      "installedPath": "/Users/sjp1212/.codex/skills/community-matt-tdd",
+      "flags": []
+    },
+    {
+      "source": "matt",
+      "repo": "https://github.com/mattpocock/skills.git",
+      "commit": "aaf2453",
+      "originalName": "to-issues",
+      "installedName": "community-matt-to-issues",
+      "description": "Break a plan, spec, or PRD into independently-grabbable issues on the project issue tracker using tracer-bullet vertical slices. Use when user wants to convert a plan into issues, create implementation tickets, or break down work into issues.",
+      "sourcePath": "skills/engineering/to-issues",
+      "installedPath": "/Users/sjp1212/.codex/skills/community-matt-to-issues",
+      "flags": []
+    },
+    {
+      "source": "matt",
+      "repo": "https://github.com/mattpocock/skills.git",
+      "commit": "aaf2453",
+      "originalName": "to-prd",
+      "installedName": "community-matt-to-prd",
+      "description": "Turn the current conversation context into a PRD and publish it to the project issue tracker. Use when user wants to create a PRD from the current context.",
+      "sourcePath": "skills/engineering/to-prd",
+      "installedPath": "/Users/sjp1212/.codex/skills/community-matt-to-prd",
+      "flags": []
+    },
+    {
+      "source": "matt",
+      "repo": "https://github.com/mattpocock/skills.git",
+      "commit": "aaf2453",
+      "originalName": "triage",
+      "installedName": "community-matt-triage",
+      "description": "Triage issues through a state machine driven by triage roles. Use when user wants to create an issue, triage issues, review incoming bugs or feature requests, prepare issues for an AFK agent, or manage issue workflow.",
+      "sourcePath": "skills/engineering/triage",
+      "installedPath": "/Users/sjp1212/.codex/skills/community-matt-triage",
+      "flags": []
+    },
+    {
+      "source": "matt",
+      "repo": "https://github.com/mattpocock/skills.git",
+      "commit": "aaf2453",
+      "originalName": "review",
+      "installedName": "community-matt-review",
+      "description": "Review the changes since a fixed point (commit, branch, tag, or merge-base) along two axes — Standards (does the code follow this repo's documented coding standards?) and Spec (does the code match what the originating issue/PRD asked for?). Runs both reviews in parallel sub-agents and reports them side by side. Use when the user wants to review a branch, a PR, work-in-progress changes, or asks to \"review since X\".",
+      "sourcePath": "skills/in-progress/review",
+      "installedPath": "/Users/sjp1212/.codex/skills/community-matt-review",
+      "flags": []
+    },
+    {
+      "source": "matt",
+      "repo": "https://github.com/mattpocock/skills.git",
+      "commit": "aaf2453",
+      "originalName": "write-a-skill",
+      "installedName": "community-matt-write-a-skill",
+      "description": "Create new agent skills with proper structure, progressive disclosure, and bundled resources. Use when user wants to create, write, or build a new skill.",
+      "sourcePath": "skills/productivity/write-a-skill",
+      "installedPath": "/Users/sjp1212/.codex/skills/community-matt-write-a-skill",
+      "flags": [
+        "secret-handling"
+      ]
+    },
+    {
+      "source": "jmerta",
+      "repo": "https://github.com/jMerta/codex-skills.git",
+      "commit": "1be063d",
+      "originalName": "agents-md",
+      "installedName": "community-jmerta-agents-md",
+      "description": "Create or update root and nested AGENTS.md files that document scoped conventions, monorepo module maps, cross-domain workflows, and (optionally) per-module feature maps (feature -> paths, entrypoints, tests, docs). Use when the user asks for AGENTS.md, nested agent instructions, or a module/feature map.",
+      "sourcePath": "agents-md",
+      "installedPath": "/Users/sjp1212/.codex/skills/community-jmerta-agents-md",
+      "flags": []
+    },
+    {
+      "source": "jmerta",
+      "repo": "https://github.com/jMerta/codex-skills.git",
+      "commit": "1be063d",
+      "originalName": "bug-triage",
+      "installedName": "community-jmerta-bug-triage",
+      "description": "Reproduce, isolate, and fix a bug (or failing build/test), then summarize root cause, fix, and verification steps. Use when the user reports a bug, regression, or failing build/test and wants a fix.",
+      "sourcePath": "bug-triage",
+      "installedPath": "/Users/sjp1212/.codex/skills/community-jmerta-bug-triage",
+      "flags": []
+    },
+    {
+      "source": "jmerta",
+      "repo": "https://github.com/jMerta/codex-skills.git",
+      "commit": "1be063d",
+      "originalName": "ci-fix",
+      "installedName": "community-jmerta-ci-fix",
+      "description": "Fix GitHub Actions CI failures using GitHub CLI (gh): inspect runs/logs, identify root cause, patch workflows/code, rerun jobs, and summarize verification. Use when GitHub Actions CI is failing or needs diagnosis.",
+      "sourcePath": "ci-fix",
+      "installedPath": "/Users/sjp1212/.codex/skills/community-jmerta-ci-fix",
+      "flags": [
+        "secret-handling"
+      ]
+    },
+    {
+      "source": "jmerta",
+      "repo": "https://github.com/jMerta/codex-skills.git",
+      "commit": "1be063d",
+      "originalName": "coding-guidelines-gen",
+      "installedName": "community-jmerta-coding-guidelines-gen",
+      "description": "Generate nested AGENTS.md coding guidelines per module (monorepo-aware), detect languages/tooling, ask architecture preferences, and set up missing formatters/linters (Spotless for JVM). Use when the user wants module-scoped AGENTS.md coding guidelines or to set up missing formatters/linters.",
+      "sourcePath": "coding-guidelines-gen",
+      "installedPath": "/Users/sjp1212/.codex/skills/community-jmerta-coding-guidelines-gen",
+      "flags": []
+    },
+    {
+      "source": "jmerta",
+      "repo": "https://github.com/jMerta/codex-skills.git",
+      "commit": "1be063d",
+      "originalName": "coding-guidelines-verify",
+      "installedName": "community-jmerta-coding-guidelines-verify",
+      "description": "Verify changes follow nearest-scoped AGENTS.md rules: group changed files by nested scope, auto-fix formatting, run lint/tests, and report violations. Use when the user wants scoped compliance checks for changed files.",
+      "sourcePath": "coding-guidelines-verify",
+      "installedPath": "/Users/sjp1212/.codex/skills/community-jmerta-coding-guidelines-verify",
+      "flags": []
+    },
+    {
+      "source": "jmerta",
+      "repo": "https://github.com/jMerta/codex-skills.git",
+      "commit": "1be063d",
+      "originalName": "dependency-upgrader",
+      "installedName": "community-jmerta-dependency-upgrader",
+      "description": "Upgrade dependencies for Java/Kotlin (Gradle/Maven) and TypeScript/Node projects with minimal risk: plan the bump, apply changes incrementally, run tests/builds, and document breaking changes. Use when the user asks to bump deps, update frameworks, or address CVEs.",
+      "sourcePath": "dependency-upgrader",
+      "installedPath": "/Users/sjp1212/.codex/skills/community-jmerta-dependency-upgrader",
+      "flags": []
+    },
+    {
+      "source": "jmerta",
+      "repo": "https://github.com/jMerta/codex-skills.git",
+      "commit": "1be063d",
+      "originalName": "docs-sync",
+      "installedName": "community-jmerta-docs-sync",
+      "description": "Keep documentation in sync with code changes across README, docs sites, API docs, runbooks, and configuration. Use when the user asks to update docs, ensure docs match behavior, or prepare docs for a release/PR.",
+      "sourcePath": "docs-sync",
+      "installedPath": "/Users/sjp1212/.codex/skills/community-jmerta-docs-sync",
+      "flags": []
+    },
+    {
+      "source": "jmerta",
+      "repo": "https://github.com/jMerta/codex-skills.git",
+      "commit": "1be063d",
+      "originalName": "plan-work",
+      "installedName": "community-jmerta-plan-work",
+      "description": "Plan work before coding: do repo research, analyze options/risks, and ask clarifying questions before proposing an implementation plan. Use when the user asks for a plan, design/approach, scope breakdown, or implementation steps.",
+      "sourcePath": "plan-work",
+      "installedPath": "/Users/sjp1212/.codex/skills/community-jmerta-plan-work",
+      "flags": []
+    },
+    {
+      "source": "jmerta",
+      "repo": "https://github.com/jMerta/codex-skills.git",
+      "commit": "1be063d",
+      "originalName": "regex-builder",
+      "installedName": "community-jmerta-regex-builder",
+      "description": "Build, test, and explain regular expressions against sample text or files using CLI tools (rg, python) and specific regex flavors. Use when asked to craft, debug, or validate regexes or search patterns.",
+      "sourcePath": "regex-builder",
+      "installedPath": "/Users/sjp1212/.codex/skills/community-jmerta-regex-builder",
+      "flags": []
+    },
+    {
+      "source": "jmerta",
+      "repo": "https://github.com/jMerta/codex-skills.git",
+      "commit": "1be063d",
+      "originalName": "release-notes",
+      "installedName": "community-jmerta-release-notes",
+      "description": "Draft release notes and changelog entries from git history or merged PRs between two refs (tags/SHAs/branches), including breaking changes, migrations, and upgrade steps. Use when the user asks for release notes, changelog updates, or a GitHub Release draft.",
+      "sourcePath": "release-notes",
+      "installedPath": "/Users/sjp1212/.codex/skills/community-jmerta-release-notes",
+      "flags": []
+    },
+    {
+      "source": "jmerta",
+      "repo": "https://github.com/jMerta/codex-skills.git",
+      "commit": "1be063d",
+      "originalName": "ui-ux-pro-max",
+      "installedName": "community-jmerta-ui-ux-pro-max",
+      "description": "Use when designing, building, or refining frontend UI/UX: layouts, components, visual systems, typography, color, and UX patterns for websites, landing pages, dashboards, and product interfaces. Provides searchable styles, palettes, font pairings, charts, and stack best practices (React, Next.js, Vue, Svelte, SwiftUI, React Native, Flutter, Tailwind).",
+      "sourcePath": "ui-ux-pro-max",
+      "installedPath": "/Users/sjp1212/.codex/skills/community-jmerta-ui-ux-pro-max",
+      "flags": []
+    },
+    {
+      "source": "jmerta",
+      "repo": "https://github.com/jMerta/codex-skills.git",
+      "commit": "1be063d",
+      "originalName": "vps-checkup",
+      "installedName": "community-jmerta-vps-checkup",
+      "description": "SSH into an Ubuntu VPS (Docker) for a read-only health/security/update report (UFW + fail2ban) and propose fixes; apply updates/restarts only with explicit confirmation. Use when the user wants a read-only VPS health/security check.",
+      "sourcePath": "vps-checkup",
+      "installedPath": "/Users/sjp1212/.codex/skills/community-jmerta-vps-checkup",
+      "flags": [
+        "sudo",
+        "secret-handling"
+      ]
+    }
+  ]
+}
