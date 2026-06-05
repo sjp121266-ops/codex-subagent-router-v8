@@ -21,7 +21,7 @@
   "interface": {
     "displayName": "Codex Subagent Router",
     "shortDescription": "\u81ea\u52a8\u9009\u62e9 Codex \u5b50\u4ee3\u7406\u3001skills\u3001\u6a21\u578b\u548c\u6267\u884c\u9636\u6bb5\u3002",
-    "longDescription": "Codex Subagent Router packages the local v13 routing system as a personal Codex plugin. It helps the parent Codex choose the right VoltAgent identity, runtime role, sandbox, skills, model strength, execution stages, fallback behavior, and managed next action for explicit subagent requests.",
+    "longDescription": "Codex Subagent Router packages the local v14 routing system as a personal Codex plugin. It helps the parent Codex choose the right VoltAgent identity, runtime role, sandbox, skills, model strength, execution adapter, execution stages, fallback behavior, and managed next action for explicit subagent requests.",
     "developerName": "sjp121266-ops",
     "category": "Productivity",
     "capabilities": [

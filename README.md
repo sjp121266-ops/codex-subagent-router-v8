@@ -58,6 +58,8 @@ The router combines four sources of truth:
 
 The router does not execute work by itself. It returns a routing decision for the parent Codex: which agent identity to use, which skills to load, which model and reasoning effort to request, and which handoff stages are safe. The parent Codex remains responsible for loading the relevant skill instructions, spawning any subagent, integrating the result, protecting unrelated user changes, and running final verification before reporting completion.
 
+Native custom-name spawning is host-dependent. When the current Codex surface cannot directly spawn a VoltAgent name such as `security-auditor` or `react-specialist`, `managed --json` now exposes an `executionAdapter` and falls back to a generic `explorer` or `worker` bridge. The selected VoltAgent identity is still preserved by injecting the generated `delegationPrompt` into that generic role, so routing quality and skill choice remain intact; only the transport layer changes.
+
 Selected skills are execution guidance, not automatic actions. They do not override system, developer, user, AGENTS.md, sandbox, approval, or final-review requirements.
 
 ## Clarify-First Behavior
@@ -231,6 +233,13 @@ The final v13 verification passed:
 
 See [`outputs/subagent-router-v13-final-report.md`](outputs/subagent-router-v13-final-report.md) for the full report.
 
+## v14 Execution Adapter Changes
+
+- `managed --json` now includes `executionAdapter`, which tells the parent Codex whether to use native custom-agent spawn, the generic explorer/worker bridge, or `codex exec` isolation.
+- `nextAction.spawn.executionAdapter` mirrors the immediate stage transport so parent Codex can act without inspecting verbose internals.
+- `doctor`, `report`, and `test-execution-adapter` now cover the custom-agent spawn boundary.
+- See [`outputs/subagent-router-v14-execution-adapter-report.md`](outputs/subagent-router-v14-execution-adapter-report.md) for the focused report.
+
 ## v13 Reliability and UX Changes
 
 - `agentRoster` explains the usable agent lineup for the task: primary, mapper, implementer, validator, reviewer, fallbacks, and missing preferred-agent fallbacks.
@@ -318,4 +327,4 @@ Before redistributing, republishing, or using this repository in a product, revi
 
 This repository is a portable snapshot of a local Codex setup. Some commands, especially live judgement and skill discovery, depend on the target machine's Codex installation, available models, plugin cache, and local skills.
 
-High-risk work is intentionally conservative. If a model judge fails for high-risk tasks, the router marks the result as requiring parent review instead of silently treating a fallback as safe.
+High-risk work is intentionally conservative. If a model judge fails for high-risk tasks, the router marks the result as requiring parent review instead of silently treating a fallback as safe. If native custom-agent spawning is unavailable, the bridge path remains safe but the parent Codex must keep final integration and verification responsibility.

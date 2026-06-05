@@ -346,6 +346,7 @@ Usage:
   router.mjs test-managed-contract
   router.mjs test-agent-roster
   router.mjs test-managed-readiness
+  router.mjs test-execution-adapter
   router.mjs test-cache-maintenance
   router.mjs cache-status [--json]
   router.mjs cache-prune [--json] [--all|--route|--judgement] [--older-than-hours N]
@@ -2577,6 +2578,18 @@ function managedDelegationPlan(result) {
         sandboxMode: firstExecutableStage?.sandboxMode || result.sandboxMode,
         skillsToLoad: firstExecutableStage?.skills || selectedSkills,
       };
+  const executionAdapter = detectExecutionAdapter({
+    agent: nextAction.agent || firstExecutableStage?.agent || result.finalAgent,
+    role: nextAction.role || firstExecutableStage?.role || result.runtimeRole,
+    sandboxMode: nextAction.sandboxMode || firstExecutableStage?.sandboxMode || result.sandboxMode,
+  });
+  if (nextAction.type === "spawn") {
+    nextAction.executionAdapter = {
+      mode: executionAdapter.mode,
+      bridgeRole: executionAdapter.bridgeRole,
+      promptInjectionRequired: executionAdapter.promptInjectionRequired,
+    };
+  }
   const stageSkillLoadingOrder = stageDetails.map((stage) => ({
     stageId: stage.id,
     agent: stage.agent,
@@ -2591,6 +2604,7 @@ function managedDelegationPlan(result) {
     reasoningEffort: result.reasoningEffort,
     skills: selectedSkills,
     agentRoster: result.agentRoster,
+    executionAdapter,
     delegationReadiness: {
       state: readinessState,
       reason: readinessState === "ready"
@@ -2607,7 +2621,8 @@ function managedDelegationPlan(result) {
       whyNoQuestionNow: asksNow
         ? "One clarification or parent review is needed before autonomous delegation."
         : "The task has enough scope and the route is confident enough to proceed without interrupting you.",
-      whenCodexWillAsk: "Codex asks only for destructive actions, credentials, production changes, or if one missing detail blocks safe delegation.",
+      whenCodexWillAsk: "Codex asks only for destructive actions, credentials, production changes, unsupported native spawn requirements, or if one missing detail blocks safe delegation.",
+      executionAdapter: executionAdapter.userImpact,
     },
     clarificationQuestion: asksNow ? (result.executionPlan?.clarificationQuestion || result.handoffPlan?.clarificationQuestion || "请补充一个关键范围或目标，以便安全派发子代理。") : "",
     executionContract: {
@@ -2618,10 +2633,12 @@ function managedDelegationPlan(result) {
       mustReview: Boolean(result.executionPlan?.requiresReview),
       maxClarifyingQuestions: loadStrategyConfig().managedUX?.maxClarifyingQuestions ?? 1,
       fallbackBehavior: result.delegationBlocked ? "parent-review-required before any spawn" : "proceed stage-by-stage while preserving boundaries",
+      executionAdapterMode: executionAdapter.mode,
     },
     writeBoundaries,
     parentResponsibilities: [
       "Load only the selected skills needed for the current stage.",
+      "Use native custom-agent spawning when available; otherwise inject delegationPrompt into the indicated generic explorer/worker role.",
       "Keep final integration, user-facing summary, and verification evidence in the parent Codex.",
       "Stop or switch to parent review for destructive, credential-gated, production, or unclear write actions.",
       "Check repository status before writing and do not overwrite unrelated user changes.",
@@ -2947,6 +2964,37 @@ function commandAvailable(command) {
   }
 }
 
+function truthyEnv(name) {
+  return /^(1|true|yes|on)$/i.test(String(process.env[name] || ""));
+}
+
+function detectExecutionAdapter(stage = {}) {
+  const nativeCustomAgents = truthyEnv("CODEX_NATIVE_CUSTOM_AGENTS") || truthyEnv("CODEX_SUBAGENT_NATIVE_SPAWN");
+  const codexCliAvailable = commandAvailable(CODEX_CLI);
+  const genericRole = stage.role === "explorer" ? "explorer" : "worker";
+  const mode = nativeCustomAgents ? "native-custom-agent" : "generic-role-bridge";
+  return {
+    mode,
+    nativeCustomAgents,
+    bridgeAvailable: true,
+    bridgeRole: genericRole,
+    codexExecAvailable: codexCliAvailable,
+    selectedAgentIdentity: stage.agent || null,
+    promptInjectionRequired: !nativeCustomAgents,
+    effectOnQuality: nativeCustomAgents
+      ? "none; the selected VoltAgent identity can be spawned directly by name"
+      : "low; the selected VoltAgent identity is preserved through delegationPrompt injection into the generic role",
+    userImpact: nativeCustomAgents
+      ? "Codex can spawn the selected custom agent name directly."
+      : "Codex uses the same selected identity and skills, but runs them through a generic explorer/worker carrier.",
+    fallbackOrder: [
+      "native custom agent spawn when the host exposes it",
+      "generic explorer/worker bridge with injected VoltAgent identity",
+      "codex exec sandboxed subprocess when stronger isolation is needed",
+    ],
+  };
+}
+
 function runDoctor(mode = "text") {
   const registry = loadRegistry();
   const skills = loadSkillRegistry();
@@ -2955,6 +3003,7 @@ function runDoctor(mode = "text") {
   const configValidation = validateStrategyConfig(config);
   const budgetRisk = configuredSkillBudgetRisk(config);
   const snapshot = skillSnapshotStats();
+  const executionAdapter = detectExecutionAdapter({ role: "worker", agent: "documentation-engineer" });
   const skillNames = new Set(skills.flatMap((skill) => [skill.name, skill.name.split(":").at(-1)]));
   const missingSkillNames = unique(config.skillRules.flatMap((rule) => rule.skills || []))
     .filter((name) => !skillNames.has(name) && !skillNames.has(name.split(":").at(-1)));
@@ -2972,6 +3021,7 @@ function runDoctor(mode = "text") {
     { id: "skill-registry-snapshot", ok: snapshot.exists && snapshot.readable && snapshot.count > 0, detail: snapshot.exists ? `${snapshot.count} skills, generated ${snapshot.generatedAt || "unknown"}${snapshot.stale ? " (stale; run refresh-skills)" : ""}` : "missing; will be rebuilt on next registry load" },
     { id: "config-v13", ok: configValidation.ok && Number(config.version) >= 13 && Boolean(config.taskKindPolicy?.["incident-response"]), detail: configValidation.ok ? `v${config.version} with ${Object.keys(config.taskKindPolicy || {}).length} task kinds` : configValidation.errors.join("; ") },
     { id: "agent-roster-v13", ok: Boolean(routeTask("开启子代理，调用合适子代理优化 subagent-router 调度算法和调用速度", { candidateLimit: 8 }).agentRoster?.primary?.name), detail: "route outputs include agent roster and fallback candidates" },
+    { id: "execution-adapter-v14", ok: executionAdapter.bridgeAvailable && (executionAdapter.nativeCustomAgents || executionAdapter.codexExecAvailable), detail: `${executionAdapter.mode}; codex exec ${executionAdapter.codexExecAvailable ? "available" : "missing"}` },
   ];
   const report = {
     generatedAt: new Date().toISOString(),
@@ -2997,6 +3047,7 @@ function runReport(mode = "text") {
   const community = loadCommunitySkillManifest();
   const config = loadStrategyConfig();
   const budgetRisk = configuredSkillBudgetRisk(config);
+  const executionAdapter = detectExecutionAdapter({ role: "worker", agent: "documentation-engineer" });
   const lastSkillRepair = readLastSkillRepair();
   let lastEval = null;
   try {
@@ -3035,6 +3086,7 @@ function runReport(mode = "text") {
       available: Boolean(routeTask("开启子代理，完善公开 GitHub README 发布说明和安装步骤", { candidateLimit: 8 }).agentRoster?.primary?.name),
       samplePrimary: routeTask("开启子代理，完善公开 GitHub README 发布说明和安装步骤", { candidateLimit: 8 }).agentRoster?.primary?.name || null,
     },
+    executionAdapter,
   };
   if (mode === "json") console.log(JSON.stringify(report, null, 2));
   else {
@@ -3049,6 +3101,7 @@ function runReport(mode = "text") {
     if (lastEval?.bucketStats) console.log(`Eval buckets: ${Object.keys(lastEval.bucketStats).length}`);
     console.log(`Last skill repair: ${lastSkillRepair ? `${lastSkillRepair.pass ? "pass" : "fail"} (${lastSkillRepair.repairedSkill})` : "not run"}`);
     console.log(`Agent roster: ${report.agentRoster.available ? `available (sample ${report.agentRoster.samplePrimary})` : "missing"}`);
+    console.log(`Execution adapter: ${report.executionAdapter.mode} (${report.executionAdapter.userImpact})`);
   }
 }
 
@@ -3683,6 +3736,33 @@ function runManagedReadinessTests() {
   }, null, 2));
 }
 
+function runExecutionAdapterTests() {
+  const ready = managedDelegationPlan(deterministicManagedResult("开启子代理，调用合适子代理，用 goal 模式持续实现"));
+  assert(ready.executionAdapter, "managed plan must expose executionAdapter");
+  assert(["native-custom-agent", "generic-role-bridge"].includes(ready.executionAdapter.mode), `unexpected adapter mode ${ready.executionAdapter.mode}`);
+  assert(ready.executionAdapter.bridgeAvailable, "generic explorer/worker bridge must be available");
+  assert(ready.executionAdapter.bridgeRole === ready.nextAction.role, "adapter bridgeRole should match next action role");
+  assert(ready.nextAction.executionAdapter?.mode === ready.executionAdapter.mode, "nextAction must carry adapter mode");
+  assert(ready.executionContract.executionAdapterMode === ready.executionAdapter.mode, "executionContract must carry adapter mode");
+  assert(ready.parentResponsibilities.some((item) => item.includes("delegationPrompt")), "parent responsibilities must explain delegationPrompt bridge");
+
+  const readOnly = managedDelegationPlan(deterministicManagedResult("开启子代理，只读调研当前项目的缓存实现，不要改代码"));
+  if (readOnly.nextAction.type === "spawn") {
+    assert(readOnly.executionAdapter.bridgeRole === "explorer", "read-only route should bridge through explorer");
+  }
+
+  console.log(JSON.stringify({
+    pass: true,
+    adapter: {
+      mode: ready.executionAdapter.mode,
+      bridgeRole: ready.executionAdapter.bridgeRole,
+      promptInjectionRequired: ready.executionAdapter.promptInjectionRequired,
+      codexExecAvailable: ready.executionAdapter.codexExecAvailable,
+    },
+    readOnlyAdapter: readOnly.executionAdapter,
+  }, null, 2));
+}
+
 function runCacheMaintenanceTests() {
   const originalJudgement = fs.existsSync(JUDGEMENT_CACHE_PATH) ? readText(JUDGEMENT_CACHE_PATH) : "";
   const originalRoute = fs.existsSync(ROUTE_CACHE_PATH) ? readText(ROUTE_CACHE_PATH) : "";
@@ -4276,6 +4356,10 @@ function main() {
   }
   if (command === "test-managed-readiness") {
     runManagedReadinessTests();
+    return;
+  }
+  if (command === "test-execution-adapter") {
+    runExecutionAdapterTests();
     return;
   }
   if (command === "test-cache-maintenance") {

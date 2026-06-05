@@ -114,7 +114,8 @@ When `managed --json` returns v13 readiness fields:
 - if `delegationReadiness.canSpawnNow` is true, follow `nextAction` and spawn that stage first;
 - if `nextAction.type` is `ask-clarification`, ask exactly one concise question and then rerun managed routing with the answer;
 - if `nextAction.type` is `parent-review`, do not spawn a write-capable subagent until the parent Codex has reviewed fallback safety;
-- load `stageSkillLoadingOrder[].loadBeforeStage` before starting that stage.
+- load `stageSkillLoadingOrder[].loadBeforeStage` before starting that stage;
+- inspect `executionAdapter` before spawning. Use native custom-agent spawn only when `executionAdapter.mode` is `native-custom-agent`; otherwise use the indicated generic `executionAdapter.bridgeRole` and inject `delegationPrompt`.
 
 For continuous goal work, report each stage in this fixed structure:
 - goal;
@@ -125,13 +126,13 @@ For continuous goal work, report each stage in this fixed structure:
 - next goal trigger.
 
 8. Spawn the subagent:
-- Use `explorer` when `runtimeRole` is `explorer`.
-- Use `worker` when `runtimeRole` is `worker`.
+- Prefer native custom-agent spawning when the host supports it and `executionAdapter.mode` is `native-custom-agent`.
+- Otherwise use the generic bridge: `explorer` when `executionAdapter.bridgeRole` is `explorer`, or `worker` when it is `worker`.
 - Pass `selectedModel` to the subagent spawn tool when it accepts model overrides.
 - Pass `reasoningEffort` to the subagent spawn tool when it accepts reasoning effort overrides.
 - Pass `delegationPrompt` as the subagent task.
 
-9. If the current environment cannot spawn custom-named agents directly, still use the chosen VoltAgent identity by injecting `delegationPrompt` into the generic Codex `explorer` or `worker`.
+9. If the current environment cannot spawn custom-named agents directly, this is not a routing failure. Still use the chosen VoltAgent identity by injecting `delegationPrompt` into the generic Codex `explorer` or `worker`. The selected agent, skills, model, sandbox, stages, and quality gates remain the source of truth; only the execution transport changes.
 
 ## Offline Fallback
 
@@ -184,6 +185,7 @@ Use these checks after changing agents, skills, strategy config, schemas, or rou
 "$SUBAGENT_ROUTER" test-route-cache
 "$SUBAGENT_ROUTER" test-agent-roster
 "$SUBAGENT_ROUTER" test-managed-readiness
+"$SUBAGENT_ROUTER" test-execution-adapter
 "$SUBAGENT_ROUTER" test-cache-maintenance
 "$SUBAGENT_ROUTER" config-check
 "$SUBAGENT_ROUTER" doctor
