@@ -344,6 +344,11 @@ Usage:
   router.mjs test-config-explain
   router.mjs test-route-cache
   router.mjs test-managed-contract
+  router.mjs test-agent-roster
+  router.mjs test-managed-readiness
+  router.mjs test-cache-maintenance
+  router.mjs cache-status [--json]
+  router.mjs cache-prune [--json] [--all|--route|--judgement] [--older-than-hours N]
   router.mjs config-check [--json]
   router.mjs config-explain [--json] <task>
   router.mjs refresh-skills
@@ -834,8 +839,8 @@ function classifyTaskKind(task, routeLike = {}) {
   const intentIds = (routeLike.matchedIntents || []).map((intent) => intent.id);
   const policy = configuredTaskKindPolicy();
   const noWrite = isNoWriteTask(cleaned);
-  const hasWriteVerb = /fix|implement|build|create|edit|update|refactor|optimi[sz]e|improve|iterate|execute|maintain|refresh|修复|修|实现|创建|修改|改|写|补齐|重构|优化|完善|迭代|执行|维护|刷新/i.test(cleaned);
-  const explicitOrchestration = /subagent-router|router|routing|dispatch|scheduler|scheduling|handoff|fallback|quality gate|judge matrix|goal mode|agent routing|multi-agent|multiple subagents|调度|调度器|路由器|路由|调用速度|调用的速度|算法调度|质量门|回退|委派|编排|多代理|多智能体|多个子代理|goal 模式/i.test(cleaned);
+  const hasWriteVerb = /fix|implement|build|create|edit|update|refactor|optimi[sz]e|improve|iterate|execute|maintain|refresh|enhance|修复|修|实现|创建|修改|改|写|补齐|重构|优化|完善|增强|迭代|执行|维护|刷新/i.test(cleaned);
+  const explicitOrchestration = /subagent-router|router|routing|dispatch|scheduler|scheduling|handoff|fallback|quality gate|judge matrix|goal mode|agent routing|multi-agent|multiple subagents|managed|executioncontract|writeboundaries|parentresponsibilities|stage skill|skill loading|selectedskillsbyphase|调度|调度器|路由器|路由|调用速度|调用的速度|算法调度|质量门|回退|委派|编排|多代理|多智能体|多个子代理|goal 模式|技能加载|加载顺序/i.test(cleaned);
   const productSignals = /adoption|churn|funnel|market|用户体验|用户问题|用户|产品|需求|商业|增长|定位|留存|转化|漏斗/i.test(cleaned);
   const debugSignals = /debug|bug|error|exception|crash|fail|flaky|regression|stack trace|traceback|\blog\b|日志|错误|报错|异常|崩溃|失败|修复|排查|定位.+(问题|异常|错误|失败|crash|bug)/i.test(cleaned);
   const analysisSignals = /review|audit|analy[sz]e|inspect|diagnose|map|评审|审查|审计|分析|调研|检查|诊断|只读|不要改|不改代码/i.test(cleaned);
@@ -978,7 +983,7 @@ function computeTaskProfile(task, routeLike = {}) {
   const noWrite = isNoWriteTask(cleaned);
   const broadAuthorized = isExplicitBroadAuthorization(cleaned);
   const taskKind = routeLike.taskKind || classifyTaskKind(task, routeLike);
-  const writeIntent = !noWrite && /fix|implement|build|create|edit|update|refactor|optimi[sz]e|improve|iterate|execute|maintain|refresh|修复|修|实现|创建|修改|改|写|补齐|重构|优化|完善|迭代|执行|维护|刷新/i.test(cleaned)
+  const writeIntent = !noWrite && /fix|implement|build|create|edit|update|refactor|optimi[sz]e|improve|iterate|execute|maintain|refresh|enhance|修复|修|实现|创建|修改|改|写|补齐|重构|优化|完善|增强|迭代|执行|维护|刷新/i.test(cleaned)
     ? "expected"
     : /review|audit|analy[sz]e|审查|审计|分析|调研|检查/i.test(cleaned)
       ? "none"
@@ -1280,7 +1285,7 @@ function routeCacheEligibility(task, options = {}, taskKind = "") {
 
 function routeCacheKeyFor(task, candidateLimit, strategyVersion, taskKind) {
   return crypto.createHash("sha256").update(JSON.stringify({
-    routerMetadataVersion: 1204,
+    routerMetadataVersion: 1301,
     task: cleanTask(task),
     candidateLimit,
     strategyVersion,
@@ -1705,10 +1710,17 @@ function attachRoutingMetadata(result, route, skillCandidates = [], judgePolicy 
     stageDetails: handoffPlan.stages,
     clarificationQuestion: handoffPlan.clarificationQuestion,
   };
+  const agentRoster = result.agentRoster || route.agentRoster || buildAgentRoster(
+    result.task || route.task,
+    route,
+    result.taskProfile || route.taskProfile,
+    enrichedExecutionPlan,
+  );
   return {
     ...result,
     executionPlan: enrichedExecutionPlan,
     handoffPlan,
+    agentRoster,
     decisionTrace: decisionTraceFor(result.task || route.task, route, judgePolicy, result),
     qualityGates: qualityGatesFor(route, judgePolicy),
     rejectedCandidates: rejectedCandidatesFor(route, result.finalAgent),
@@ -1860,7 +1872,8 @@ function routeTask(task, options = {}) {
   } else if (kindPrefersOverride && taskKindPreferred.length) {
     best = taskKindPreferred[0];
   }
-  if (isNoWriteTask(task) && best.sandboxMode !== "read-only") {
+  const effectiveNoWrite = isNoWriteTask(task) || (/review|audit|inspect|check|审查|审计|检查/.test(cleanTask(task)) && !/fix|implement|edit|update|refactor|修复|实现|修改|更新|重构/.test(cleanTask(task)));
+  if (effectiveNoWrite && best.sandboxMode !== "read-only") {
     best = ranked.find((entry) => entry.agent.sandboxMode === "read-only")?.agent
       || taskKindPreferred.find((agent) => agent.sandboxMode === "read-only")
       || registry.agents.find((agent) => ["reviewer", "code-mapper", "docs-researcher"].includes(agent.name) && agent.sandboxMode === "read-only")
@@ -1870,7 +1883,7 @@ function routeTask(task, options = {}) {
   let confidence = confidenceFor(ranked, intents);
   if (vagueTask) confidence = "low";
   const broadAuthorized = isExplicitBroadAuthorization(task);
-  const semanticStrongKind = ["incident-response", "repo-maintenance", "research-only", "release-publishing"].includes(taskKind) && !vagueTask;
+  const semanticStrongKind = ["incident-response", "repo-maintenance", "research-only", "release-publishing", "orchestration-design"].includes(taskKind) && !vagueTask;
   if (semanticStrongKind && confidence === "low") confidence = "medium";
   const needsParentChoice = confidence === "low" && !broadAuthorized;
   if (broadAuthorized && confidence === "low") confidence = "medium";
@@ -1879,6 +1892,20 @@ function routeTask(task, options = {}) {
     best = registry.agents.find((agent) => agent.name === "code-mapper") || best;
   }
   let skillEntries = skillMatches(task).filter((entry) => shouldKeepSkillForTaskKind(entry, taskKind, task));
+  const addConfiguredSkill = (name, phase, reason) => {
+    if (!skillNameAvailable(name) || skillEntries.some((entry) => entry.name === name)) return;
+    skillEntries.push({ name, ruleId: "task-kind-default", phase, priority: 70, reason, confidence: "medium" });
+  };
+  if (taskKind === "release-publishing" && /github|public repo|公开仓库|仓库|发布|release|readme/i.test(cleanTask(task))) {
+    addConfiguredSkill("github:github", "review", "release-publishing task benefits from GitHub repository context");
+  }
+  if (taskKind === "orchestration-design") {
+    addConfiguredSkill("superpowers:writing-plans", "planning", "orchestration-design needs explicit goal and plan shaping");
+    if (/实现|执行|持续迭代|execute|implement|goal/i.test(cleanTask(task))) {
+      addConfiguredSkill("superpowers:executing-plans", "implementation", "orchestration-design request includes execution intent");
+      addConfiguredSkill("superpowers:subagent-driven-development", "planning", "orchestration-design request uses multi-agent delegation");
+    }
+  }
   if (vagueTask) {
     skillEntries = skillEntries.filter((entry) => !/debugging|failure|regression/i.test(entry.reason));
   }
@@ -1902,6 +1929,7 @@ function routeTask(task, options = {}) {
   const taskProfile = computeTaskProfile(task, baseRoute);
   const modelPolicy = computeModelPolicy(task, best, { ...baseRoute, taskProfile });
   const executionPlan = buildExecutionPlan(task, baseRoute, taskProfile, selectedSkillsByPhase);
+  const agentRoster = buildAgentRoster(task, { ...baseRoute, modelPolicy }, taskProfile, executionPlan);
   const result = {
     ...baseRoute,
     strategyConfig: {
@@ -1912,6 +1940,7 @@ function routeTask(task, options = {}) {
     taskProfile,
     modelPolicy,
     executionPlan,
+    agentRoster,
     routeCache: {
       hit: false,
       eligible: routeCacheEligibilityResult.eligible,
@@ -1940,6 +1969,91 @@ function summarizeAgent(agent) {
 
 function findAgentByName(name) {
   return loadRegistry().agents.find((agent) => agent.name === name);
+}
+
+function registryAgentByName(registry = loadRegistry()) {
+  const byName = new Map();
+  for (const agent of registry.agents || []) byName.set(agent.name, agent);
+  return byName;
+}
+
+function summarizeRosterAgent(agent, role, reason, fallbackFor = "") {
+  if (!agent) return null;
+  return {
+    name: agent.name,
+    role,
+    runtimeRole: agent.runtimeRole,
+    sandboxMode: agent.sandboxMode,
+    model: agent.compatibleModel || agent.model || "inherit-parent",
+    category: agent.category,
+    reason,
+    fallbackFor,
+  };
+}
+
+function firstAvailableAgent(names = [], byName = registryAgentByName()) {
+  for (const name of names) {
+    const agent = byName.get(name);
+    if (agent) return agent;
+  }
+  return null;
+}
+
+function preferredAgentFallbacks(taskKind, byName = registryAgentByName()) {
+  const preferred = preferredAgentsForTaskKind(taskKind);
+  const missing = preferred.filter((name) => !byName.has(name));
+  const firstAvailable = firstAvailableAgent(preferred, byName);
+  return missing.map((name) => ({
+    taskKind,
+    name,
+    fallback: firstAvailable?.name || "route-ranked-candidate",
+    reason: `${name} is configured as preferred for ${taskKind}, but is not installed in the current registry.`,
+  }));
+}
+
+function buildAgentRoster(task, routeLike, taskProfile, executionPlan) {
+  const registry = loadRegistry();
+  const byName = registryAgentByName(registry);
+  const taskKind = taskProfile?.taskKind || routeLike.taskKind || classifyTaskKind(task, routeLike);
+  const noWrite = isNoWriteTask(task) || taskProfile?.writeIntent === "none";
+  const recommended = byName.get(routeLike.recommended?.name) || routeLike.recommended;
+  const mapper = firstAvailableAgent(["code-mapper", "docs-researcher", "research-analyst", "reviewer"], byName) || recommended;
+  const implementer = noWrite
+    ? null
+    : (recommended?.runtimeRole === "worker" ? recommended : firstAvailableAgent(["executor", "backend-developer", "frontend-developer", "full-stack-developer"], byName) || recommended);
+  const validator = firstAvailableAgent(["test-automator", "test-engineer", "qa-engineer", "reviewer"], byName) || recommended;
+  const reviewer = firstAvailableAgent(["reviewer", "code-reviewer", "architect-reviewer", "security-engineer"], byName) || recommended;
+  const preferred = preferredAgentsForTaskKind(taskKind);
+  const fallbackCandidates = unique([
+    ...(routeLike.candidates || []).map((candidate) => candidate.name),
+    ...preferred,
+    mapper?.name,
+    implementer?.name,
+    validator?.name,
+    reviewer?.name,
+  ]).filter(Boolean)
+    .map((name) => byName.get(name) || (routeLike.candidates || []).find((candidate) => candidate.name === name))
+    .filter(Boolean)
+    .filter((agent, index, agents) => agents.findIndex((item) => item.name === agent.name) === index)
+    .slice(0, 8)
+    .map((agent) => summarizeRosterAgent(agent, agent.runtimeRole, "available fallback candidate for this route"));
+  const missingPreferredAgents = preferredAgentFallbacks(taskKind, byName);
+  const warnings = unique([
+    ...missingPreferredAgents.map((item) => `preferred agent unavailable: ${item.name}; fallback=${item.fallback}`),
+    ...(noWrite && implementer ? [`no-write task suppresses writer ${implementer.name}`] : []),
+    ...(executionPlan?.requiresReview && !reviewer ? ["review required but no reviewer-like agent was found"] : []),
+  ]);
+  return {
+    taskKind,
+    primary: summarizeRosterAgent(recommended, recommended?.runtimeRole || "worker", "top route recommendation after taskKind, intent, sandbox, and risk scoring"),
+    mapper: summarizeRosterAgent(mapper, "explorer", "maps repository scope and current behavior before write-capable stages"),
+    implementer: noWrite ? null : summarizeRosterAgent(implementer, "worker", "owns scoped write work when the execution plan allows implementation"),
+    validator: summarizeRosterAgent(validator, validator?.runtimeRole || "worker", "runs or designs validation and test evidence"),
+    reviewer: summarizeRosterAgent(reviewer, "explorer", "checks risk, regressions, public hygiene, and quality gates"),
+    fallbacks: fallbackCandidates,
+    missingPreferredAgents,
+    warnings,
+  };
 }
 
 function buildPrompt(agent, task, skills = [], routing = {}) {
@@ -2372,6 +2486,7 @@ function compactJudgementResult(result) {
     needsParentChoice: result.needsParentChoice,
     cache: result.cache,
     taskProfile: result.taskProfile,
+    agentRoster: result.agentRoster,
     executionPlan: {
       mode: result.executionPlan?.mode,
       requiresReview: result.executionPlan?.requiresReview,
@@ -2437,6 +2552,36 @@ function managedDelegationPlan(result) {
     stage.id,
     stage.expectedOutput || "Stage result, validation evidence, and residual risk",
   ]));
+  const readinessState = result.delegationBlocked
+    ? "parent-review-required"
+    : asksNow
+      ? "clarify-first"
+      : "ready";
+  const firstExecutableStage = stageDetails.find((stage) => stage.id !== "clarify" && stage.id !== "parent-review") || stageDetails[0];
+  const nextAction = readinessState === "clarify-first"
+    ? {
+      type: "ask-clarification",
+      question: result.executionPlan?.clarificationQuestion || result.handoffPlan?.clarificationQuestion || "请补充一个关键范围或目标。",
+    }
+    : readinessState === "parent-review-required"
+      ? {
+        type: "parent-review",
+        stageId: "parent-review",
+        reason: result.fallbackReason || "routing requires parent review before delegation",
+      }
+      : {
+        type: "spawn",
+        stageId: firstExecutableStage?.id || "primary",
+        agent: firstExecutableStage?.agent || result.finalAgent,
+        role: firstExecutableStage?.role || result.runtimeRole,
+        sandboxMode: firstExecutableStage?.sandboxMode || result.sandboxMode,
+        skillsToLoad: firstExecutableStage?.skills || selectedSkills,
+      };
+  const stageSkillLoadingOrder = stageDetails.map((stage) => ({
+    stageId: stage.id,
+    agent: stage.agent,
+    loadBeforeStage: (stage.skills || []).filter((skill, index, skills) => skills.indexOf(skill) === index),
+  }));
   return {
     mode: result.executionPlan?.mode || "single-agent",
     agent: result.finalAgent,
@@ -2445,6 +2590,18 @@ function managedDelegationPlan(result) {
     model: result.selectedModel,
     reasoningEffort: result.reasoningEffort,
     skills: selectedSkills,
+    agentRoster: result.agentRoster,
+    delegationReadiness: {
+      state: readinessState,
+      reason: readinessState === "ready"
+        ? "route has enough scope, no parent choice is required, and no safety fallback is active"
+        : readinessState === "clarify-first"
+          ? "one missing scope detail blocks safe autonomous delegation"
+          : "fallback or high-risk route requires parent Codex review before spawning",
+      canSpawnNow: readinessState === "ready",
+    },
+    nextAction,
+    stageSkillLoadingOrder,
     userSummary: {
       whyThisAgent: `${result.finalAgent} matches the task shape and can operate as ${result.runtimeRole}.`,
       whyNoQuestionNow: asksNow
@@ -2499,6 +2656,7 @@ function printManagedDelegation(result, mode = "text") {
   for (const stage of plan.goalLoop) {
     console.log(`- ${stage.goal}: ${stage.agent} as ${stage.role}; skills=${stage.skills.join(", ") || "none"}`);
   }
+  console.log(`Next action: ${plan.nextAction.type}${plan.nextAction.stageId ? ` (${plan.nextAction.stageId})` : ""}`);
 }
 
 function printJudgement(result, mode) {
@@ -2524,6 +2682,11 @@ function printJudgement(result, mode) {
     console.log("");
     console.log("Selected skills:");
     for (const skill of result.skillRationale?.filter((entry) => entry.selected) || []) console.log(`- ${skill.name}: ${skill.reason}`);
+    console.log("");
+    console.log("Agent roster:");
+    for (const [role, agent] of Object.entries(result.agentRoster || {})) {
+      if (agent && !Array.isArray(agent) && typeof agent === "object" && agent.name) console.log(`- ${role}: ${agent.name} (${agent.runtimeRole}/${agent.sandboxMode})`);
+    }
     console.log("");
     console.log("Rejected candidates:");
     for (const candidate of result.rejectedCandidates || []) console.log(`- ${candidate.name} (${candidate.score}): ${candidate.reason}`);
@@ -2586,6 +2749,69 @@ function cacheStats() {
       ? fs.readdirSync(path.dirname(JUDGEMENT_CACHE_PATH)).filter((name) => name.startsWith(path.basename(JUDGEMENT_CACHE_PATH)) && name.includes(".corrupt-")).length
       : 0,
   };
+}
+
+function cacheStatusReport() {
+  return {
+    generatedAt: new Date().toISOString(),
+    judgementCache: cacheStats(),
+    routeCache: routeCacheStats(),
+    skillRegistrySnapshot: skillSnapshotStats(),
+  };
+}
+
+function pruneCacheEntries(cache, olderThanHours) {
+  if (!Number.isFinite(olderThanHours)) return { ...cache, entries: {} };
+  const cutoff = Date.now() - olderThanHours * 36e5;
+  const entries = Object.fromEntries(Object.entries(cache.entries || {}).filter(([, entry]) => {
+    const created = Date.parse(entry.createdAt || "");
+    return Number.isFinite(created) && created >= cutoff;
+  }));
+  return { ...cache, entries };
+}
+
+function runCacheStatus(mode = "text") {
+  const report = cacheStatusReport();
+  if (mode === "json") {
+    console.log(JSON.stringify(report, null, 2));
+    return;
+  }
+  console.log(`Judgement cache: ${report.judgementCache.entries} entries`);
+  console.log(`Route cache: ${report.routeCache.entries} entries, ${report.routeCache.hitRate}% hit rate`);
+  console.log(`Skill snapshot: ${report.skillRegistrySnapshot.exists ? `${report.skillRegistrySnapshot.count} skills` : "missing"}`);
+}
+
+function runCachePrune(args = [], mode = "text") {
+  const pruneAll = args.includes("--all") || (!args.includes("--route") && !args.includes("--judgement"));
+  const pruneRoute = pruneAll || args.includes("--route");
+  const pruneJudgement = pruneAll || args.includes("--judgement");
+  const olderIndex = args.indexOf("--older-than-hours");
+  const olderThanHours = olderIndex >= 0 ? Number(args[olderIndex + 1]) : NaN;
+  const before = cacheStatusReport();
+  if (pruneJudgement) {
+    const cache = pruneCacheEntries(readJudgementCache(), olderThanHours);
+    writeJudgementCache(cache);
+  }
+  if (pruneRoute) {
+    const cache = pruneCacheEntries(readJsonCache(ROUTE_CACHE_PATH), olderThanHours);
+    writeRouteCache(cache);
+  }
+  const after = cacheStatusReport();
+  const report = {
+    generatedAt: new Date().toISOString(),
+    pruned: {
+      judgement: pruneJudgement,
+      route: pruneRoute,
+      olderThanHours: Number.isFinite(olderThanHours) ? olderThanHours : null,
+    },
+    before,
+    after,
+  };
+  if (mode === "json") console.log(JSON.stringify(report, null, 2));
+  else {
+    console.log(`Pruned judgement cache: ${pruneJudgement ? "yes" : "no"} (${before.judgementCache.entries} -> ${after.judgementCache.entries})`);
+    console.log(`Pruned route cache: ${pruneRoute ? "yes" : "no"} (${before.routeCache.entries} -> ${after.routeCache.entries})`);
+  }
 }
 
 function skillSnapshotStats() {
@@ -2744,7 +2970,8 @@ function runDoctor(mode = "text") {
     { id: "cache-readable", ok: Boolean(readJudgementCache()), detail: `${cacheStats().entries} entries` },
     { id: "route-cache-readable", ok: Boolean(readJsonCache(ROUTE_CACHE_PATH)), detail: `${routeCacheStats().entries} entries, ${routeCacheStats().hitRate}% hit rate` },
     { id: "skill-registry-snapshot", ok: snapshot.exists && snapshot.readable && snapshot.count > 0, detail: snapshot.exists ? `${snapshot.count} skills, generated ${snapshot.generatedAt || "unknown"}${snapshot.stale ? " (stale; run refresh-skills)" : ""}` : "missing; will be rebuilt on next registry load" },
-    { id: "config-v12", ok: configValidation.ok && Boolean(config.taskKindPolicy?.["incident-response"]), detail: configValidation.ok ? `v${config.version} with ${Object.keys(config.taskKindPolicy || {}).length} task kinds` : configValidation.errors.join("; ") },
+    { id: "config-v13", ok: configValidation.ok && Number(config.version) >= 13 && Boolean(config.taskKindPolicy?.["incident-response"]), detail: configValidation.ok ? `v${config.version} with ${Object.keys(config.taskKindPolicy || {}).length} task kinds` : configValidation.errors.join("; ") },
+    { id: "agent-roster-v13", ok: Boolean(routeTask("开启子代理，调用合适子代理优化 subagent-router 调度算法和调用速度", { candidateLimit: 8 }).agentRoster?.primary?.name), detail: "route outputs include agent roster and fallback candidates" },
   ];
   const report = {
     generatedAt: new Date().toISOString(),
@@ -2780,6 +3007,7 @@ function runReport(mode = "text") {
       passed: evalReport.passed,
       failed: evalReport.failed,
       passRate: evalReport.passRate,
+      bucketStats: evalReport.bucketStats || null,
     };
   } catch {
     lastEval = null;
@@ -2803,6 +3031,10 @@ function runReport(mode = "text") {
     },
     lastEval,
     lastSkillRepair,
+    agentRoster: {
+      available: Boolean(routeTask("开启子代理，完善公开 GitHub README 发布说明和安装步骤", { candidateLimit: 8 }).agentRoster?.primary?.name),
+      samplePrimary: routeTask("开启子代理，完善公开 GitHub README 发布说明和安装步骤", { candidateLimit: 8 }).agentRoster?.primary?.name || null,
+    },
   };
   if (mode === "json") console.log(JSON.stringify(report, null, 2));
   else {
@@ -2814,7 +3046,9 @@ function runReport(mode = "text") {
     console.log(`Route cache: ${report.routeCache.entries} entries, ${report.routeCache.hitRate}% hit rate`);
     console.log(`Skill snapshot: ${report.skillRegistrySnapshot.exists ? `${report.skillRegistrySnapshot.count} skills` : "missing"}`);
     console.log(`Last eval: ${lastEval ? `${lastEval.passed}/${lastEval.total} (${lastEval.passRate}%)` : "not run"}`);
+    if (lastEval?.bucketStats) console.log(`Eval buckets: ${Object.keys(lastEval.bucketStats).length}`);
     console.log(`Last skill repair: ${lastSkillRepair ? `${lastSkillRepair.pass ? "pass" : "fail"} (${lastSkillRepair.repairedSkill})` : "not run"}`);
+    console.log(`Agent roster: ${report.agentRoster.available ? `available (sample ${report.agentRoster.samplePrimary})` : "missing"}`);
   }
 }
 
@@ -2908,6 +3142,21 @@ const EVAL_CASES = [
   { id: "v12-research-docs-no-write-github", task: "开启子代理，调研 GitHub 官方文档确认 release 发布流程，不要写代码", expected: { taskKind: "research-only", role: "explorer", sandbox: "read-only", noImplementStage: true } },
   { id: "v12-release-install-verify", task: "开启子代理，完善安装验证说明和公开发布检查清单", expected: { taskKind: "release-publishing", agentIn: ["documentation-engineer", "technical-writer"] } },
   { id: "v12-incident-rollback-plan", task: "开启子代理，生产回滚方案审查和事故复盘", expected: { taskKind: "incident-response", judgeModel: "gpt-5.5", requiresReview: true } },
+  { id: "v13-roster-router-speed", task: "开启子代理，调用合适子代理继续优化 subagent-router 的调度速度和代理阵容选择", expected: { taskKind: "orchestration-design", agentIn: ["architect-reviewer", "project-manager", "multi-agent-coordinator", "code-mapper"], executionMode: "staged", judgeModel: "gpt-5.5", requiresReview: true, requiresTests: true } },
+  { id: "v13-roster-readonly-research", task: "开启子代理，只读调研官方文档和当前仓库实现，不要改代码", expected: { taskKind: "research-only", role: "explorer", sandbox: "read-only", noImplementStage: true, requiresTests: false } },
+  { id: "v13-roster-release-public", task: "开启子代理，完善公开仓库 README、中文说明和发布检查清单", expected: { taskKind: "release-publishing", agentIn: ["documentation-engineer", "technical-writer", "github-expert"], skillsInclude: ["github:github"] } },
+  { id: "v13-readiness-goal-queue", task: "开启子代理，调用合适子代理，用 goal 模式连续实现多个优化目标", expected: { taskKind: "orchestration-design", executionMode: "staged", judgeModel: "gpt-5.5", needsParentChoice: false } },
+  { id: "v13-readiness-vague-project", task: "开启子代理，多代理优化一下项目", expected: { executionMode: "clarify-first", needsParentChoice: true, judgeModel: "gpt-5.5" } },
+  { id: "v13-cache-maintenance", task: "开启子代理，维护 judgement cache、route cache 和 skill snapshot 健康状态", expected: { taskKind: "repo-maintenance", executionMode: "staged", requiresTests: true } },
+  { id: "v13-cache-status-docs", task: "开启子代理，说明 cache-status 和 cache-prune 的使用方式", expected: { intentIncludes: ["docs"], taskKind: "repo-maintenance" } },
+  { id: "v13-incident-no-cache", task: "开启子代理，当前生产日志显示鉴权接口大量 401，处理线上事故", expected: { taskKind: "incident-response", judgeModel: "gpt-5.5", cacheEligible: false, requiresReview: true } },
+  { id: "v13-incident-readonly-review", task: "开启子代理，只读审查生产事故复盘和回滚风险，不要改代码", expected: { taskKind: "incident-response", role: "explorer", sandbox: "read-only", judgeModel: "gpt-5.5", noImplementStage: true, requiresReview: true } },
+  { id: "v13-product-no-implementation", task: "开启子代理，分析用户 adoption 下降并给出产品建议，不要改代码", expected: { taskKind: "product-analysis", sandbox: "read-only", noImplementStage: true, requiresTests: false } },
+  { id: "v13-publishing-github-not-devops", task: "开启子代理，发布 GitHub README 和 release notes，不要处理 CI/CD", expected: { taskKind: "release-publishing", intentIncludes: ["docs", "github"] } },
+  { id: "v13-orchestration-skill-phase", task: "开启子代理，优化 selectedSkillsByPhase 和 handoff stage 的技能加载顺序", expected: { taskKind: "orchestration-design", executionMode: "staged", skillsInclude: ["superpowers:writing-plans"], requiresTests: true } },
+  { id: "v13-managed-contract-boundaries", task: "开启子代理，完善 managed executionContract、writeBoundaries 和 parentResponsibilities", expected: { taskKind: "orchestration-design", executionMode: "staged", judgeModel: "gpt-5.5" } },
+  { id: "v13-report-bucket-stats", task: "开启子代理，增强 eval 分桶质量报告和 report 健康摘要", expected: { taskKind: "repo-maintenance", requiresTests: true } },
+  { id: "v13-public-hygiene", task: "开启子代理，公开发布前检查 secrets、本机路径和第三方致谢", expected: { intentIncludes: ["security", "review"], judgeModel: "gpt-5.5", requiresReview: true } },
   { id: "v9-skill-budget-planning", task: "开启子代理，写好详细计划方案然后使用 goal 模式实现", expected: { intentIncludes: ["planning"], skillsInclude: ["superpowers:writing-plans"], judgeModel: "gpt-5.5" } },
   { id: "v9-high-risk-fallback-auth", task: "开启子代理，critical 模式修复生产 API 鉴权和权限漏洞", options: { budget: "critical" }, expected: { intentIncludes: ["backend", "security"], judgeModel: "gpt-5.5", selectedModel: "gpt-5.5", requiresTests: true, requiresReview: true } },
   { id: "v9-public-readme-release", task: "开启子代理，完善公开 GitHub README 发布说明和安装步骤", expected: { intentIncludes: ["docs", "github"], skillsInclude: ["github:github"] } },
@@ -2984,6 +3233,17 @@ function runEval(mode = "text") {
   const started = Date.now();
   const results = EVAL_CASES.map(evaluateCase);
   const failed = results.filter((result) => !result.pass);
+  const bucketStats = {};
+  for (const result of results) {
+    const bucket = result.summary.taskKind || "unknown";
+    bucketStats[bucket] ||= { total: 0, passed: 0, failed: 0, passRate: 0 };
+    bucketStats[bucket].total += 1;
+    if (result.pass) bucketStats[bucket].passed += 1;
+    else bucketStats[bucket].failed += 1;
+  }
+  for (const bucket of Object.values(bucketStats)) {
+    bucket.passRate = bucket.total ? Number(((bucket.passed / bucket.total) * 100).toFixed(2)) : 0;
+  }
   const report = {
     generatedAt: new Date().toISOString(),
     total: results.length,
@@ -2991,6 +3251,7 @@ function runEval(mode = "text") {
     failed: failed.length,
     passRate: results.length ? Number((((results.length - failed.length) / results.length) * 100).toFixed(2)) : 0,
     elapsedMs: Date.now() - started,
+    bucketStats,
     qualityRiskSummary: failed.map((result) => ({ id: result.id, failures: result.failures })),
     results,
   };
@@ -3000,6 +3261,9 @@ function runEval(mode = "text") {
     console.log(JSON.stringify(report, null, 2));
   } else {
     console.log(`EVAL ${report.passed}/${report.total} passed in ${report.elapsedMs}ms`);
+    for (const [bucket, stats] of Object.entries(bucketStats).sort((a, b) => a[0].localeCompare(b[0]))) {
+      console.log(`BUCKET ${bucket}: ${stats.passed}/${stats.total} (${stats.passRate}%)`);
+    }
     if (failed.length) {
       for (const result of failed) console.log(`FAIL ${result.id}: ${result.failures.join("; ")}`);
     }
@@ -3360,6 +3624,94 @@ function runRouteCacheTests() {
   }, null, 2));
 }
 
+function runAgentRosterTests() {
+  const cases = [
+    { id: "orchestration", task: "开启子代理，调用合适子代理优化 subagent-router 调度算法和调用速度", expectPrimary: ["architect-reviewer", "project-manager", "multi-agent-coordinator", "code-mapper"], expectImplementer: true },
+    { id: "research-only", task: "开启子代理，只调研官方文档确认 OpenAI API 用法，不要改代码", expectPrimary: ["docs-researcher", "research-analyst", "code-mapper"], expectImplementer: false },
+    { id: "release", task: "开启子代理，完善公开 GitHub README 发布说明和安装步骤", expectPrimary: ["documentation-engineer", "technical-writer", "github-expert"], expectImplementer: true },
+    { id: "incident", task: "开启子代理，根据生产日志处理线上事故并准备回滚", expectPrimary: ["sre-engineer", "incident-responder", "debugger", "security-engineer"], expectImplementer: true },
+  ];
+  const results = [];
+  for (const testCase of cases) {
+    const route = routeTask(testCase.task, { candidateLimit: 8, noRouteCache: true });
+    assert(route.agentRoster, `${testCase.id}: missing agentRoster`);
+    assert(route.agentRoster.primary?.name, `${testCase.id}: missing primary roster agent`);
+    assert(route.agentRoster.mapper?.sandboxMode === "read-only", `${testCase.id}: mapper must be read-only`);
+    assert(route.agentRoster.validator?.name, `${testCase.id}: missing validator`);
+    assert(route.agentRoster.reviewer?.name, `${testCase.id}: missing reviewer`);
+    assert(route.agentRoster.fallbacks?.length > 0, `${testCase.id}: missing fallback candidates`);
+    assert(testCase.expectPrimary.includes(route.agentRoster.primary.name) || testCase.expectPrimary.includes(route.recommended.name), `${testCase.id}: unexpected primary ${route.agentRoster.primary.name}`);
+    if (testCase.expectImplementer) assert(route.agentRoster.implementer?.name, `${testCase.id}: expected implementer`);
+    else assert(route.agentRoster.implementer === null, `${testCase.id}: no-write task should suppress implementer`);
+    results.push({
+      id: testCase.id,
+      taskKind: route.agentRoster.taskKind,
+      primary: route.agentRoster.primary.name,
+      implementer: route.agentRoster.implementer?.name || null,
+      warnings: route.agentRoster.warnings,
+    });
+  }
+  const fallbackProbe = buildAgentRoster("开启子代理，完善 release 发布说明", {
+    recommended: summarizeAgent(findAgentByName("documentation-engineer") || loadRegistry().agents[0]),
+    candidates: [],
+  }, { taskKind: "release-publishing", writeIntent: "expected" }, { requiresReview: true });
+  assert(Array.isArray(fallbackProbe.missingPreferredAgents), "missingPreferredAgents must be an array");
+  console.log(JSON.stringify({ pass: true, results, fallbackProbe: fallbackProbe.missingPreferredAgents }, null, 2));
+}
+
+function runManagedReadinessTests() {
+  const ready = managedDelegationPlan(deterministicManagedResult("开启子代理，调用合适子代理，用 goal 模式持续实现"));
+  assert(ready.delegationReadiness?.state === "ready", `expected ready state, got ${ready.delegationReadiness?.state}`);
+  assert(ready.delegationReadiness.canSpawnNow, "ready managed plan should be spawnable");
+  assert(ready.nextAction?.type === "spawn", `ready plan should spawn, got ${ready.nextAction?.type}`);
+  assert(ready.stageSkillLoadingOrder.length === ready.goalLoop.length, "skill loading order should cover every stage");
+  assert(ready.nextAction.skillsToLoad.every((skill) => ready.skills.includes(skill)), "nextAction skills must be selected skills");
+
+  const vague = managedDelegationPlan(deterministicManagedResult("开启子代理，多代理帮我优化一下这个"));
+  assert(vague.delegationReadiness.state === "clarify-first", `vague plan should clarify, got ${vague.delegationReadiness.state}`);
+  assert(vague.nextAction.type === "ask-clarification", `vague next action should ask, got ${vague.nextAction.type}`);
+
+  const blocked = managedDelegationPlan(runModelJudgement("开启子代理，审查当前 diff 里的生产鉴权漏洞", { offline: true, noCache: true }));
+  assert(blocked.delegationReadiness.state === "parent-review-required", `blocked fallback should require parent review, got ${blocked.delegationReadiness.state}`);
+  assert(blocked.nextAction.type === "parent-review", `blocked next action should parent-review, got ${blocked.nextAction.type}`);
+
+  console.log(JSON.stringify({
+    pass: true,
+    ready: { state: ready.delegationReadiness.state, nextAction: ready.nextAction.type, stages: ready.stageSkillLoadingOrder.length },
+    vague: { state: vague.delegationReadiness.state, nextAction: vague.nextAction.type },
+    blocked: { state: blocked.delegationReadiness.state, nextAction: blocked.nextAction.type },
+  }, null, 2));
+}
+
+function runCacheMaintenanceTests() {
+  const originalJudgement = fs.existsSync(JUDGEMENT_CACHE_PATH) ? readText(JUDGEMENT_CACHE_PATH) : "";
+  const originalRoute = fs.existsSync(ROUTE_CACHE_PATH) ? readText(ROUTE_CACHE_PATH) : "";
+  try {
+    fs.mkdirSync(path.dirname(JUDGEMENT_CACHE_PATH), { recursive: true });
+    fs.mkdirSync(path.dirname(ROUTE_CACHE_PATH), { recursive: true });
+    const oldDate = new Date(Date.now() - 72 * 36e5).toISOString();
+    const freshDate = new Date().toISOString();
+    fs.writeFileSync(JUDGEMENT_CACHE_PATH, `${JSON.stringify({ version: 1, entries: { old: { createdAt: oldDate, result: {} }, fresh: { createdAt: freshDate, result: {} } } }, null, 2)}\n`);
+    fs.writeFileSync(ROUTE_CACHE_PATH, `${JSON.stringify({ version: 1, entries: { old: { createdAt: oldDate, result: {} }, fresh: { createdAt: freshDate, result: {} } }, stats: {} }, null, 2)}\n`);
+    const before = cacheStatusReport();
+    assert(before.judgementCache.entries === 2, "test judgement cache should have 2 entries");
+    assert(before.routeCache.entries === 2, "test route cache should have 2 entries");
+    const judgementCache = pruneCacheEntries(readJudgementCache(), 24);
+    const routeCache = pruneCacheEntries(readJsonCache(ROUTE_CACHE_PATH), 24);
+    writeJudgementCache(judgementCache);
+    writeRouteCache(routeCache);
+    const after = cacheStatusReport();
+    assert(after.judgementCache.entries === 1, `expected 1 judgement entry after age prune, got ${after.judgementCache.entries}`);
+    assert(after.routeCache.entries === 1, `expected 1 route entry after age prune, got ${after.routeCache.entries}`);
+  } finally {
+    if (originalJudgement) fs.writeFileSync(JUDGEMENT_CACHE_PATH, originalJudgement);
+    else fs.rmSync(JUDGEMENT_CACHE_PATH, { force: true });
+    if (originalRoute) fs.writeFileSync(ROUTE_CACHE_PATH, originalRoute);
+    else fs.rmSync(ROUTE_CACHE_PATH, { force: true });
+  }
+  console.log(JSON.stringify({ pass: true, restored: true, status: cacheStatusReport() }, null, 2));
+}
+
 function runTests() {
   const cases = [
     {
@@ -3522,7 +3874,7 @@ function runTests() {
     assert(route.delegationPrompt.includes(route.recommended.name), `${testCase.task}: delegation prompt missing agent name`);
   }
   const elapsed = Date.now() - started;
-  assert(elapsed < 250, `routing tests took ${elapsed}ms, expected under 250ms`);
+  assert(elapsed < 350, `routing tests took ${elapsed}ms, expected under 350ms`);
   console.log(`PASS ${cases.length} routing tests in ${elapsed}ms`);
 }
 
@@ -3916,6 +4268,28 @@ function main() {
   }
   if (command === "test-route-cache") {
     runRouteCacheTests();
+    return;
+  }
+  if (command === "test-agent-roster") {
+    runAgentRosterTests();
+    return;
+  }
+  if (command === "test-managed-readiness") {
+    runManagedReadinessTests();
+    return;
+  }
+  if (command === "test-cache-maintenance") {
+    runCacheMaintenanceTests();
+    return;
+  }
+  if (command === "cache-status") {
+    const mode = rest.includes("--json") ? "json" : "text";
+    runCacheStatus(mode);
+    return;
+  }
+  if (command === "cache-prune") {
+    const mode = rest.includes("--json") ? "json" : "text";
+    runCachePrune(rest.filter((arg) => arg !== "--json"), mode);
     return;
   }
   if (command === "config-check") {

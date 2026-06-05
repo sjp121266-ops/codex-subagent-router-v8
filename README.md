@@ -1,4 +1,4 @@
-# Codex Subagent Router v12
+# Codex Subagent Router v13
 
 ![Codex Subagent Router hero](assets/codex-subagent-router-v8-hero.png)
 
@@ -22,6 +22,10 @@ The goal is simple: when you explicitly ask Codex to use subagents, the parent C
 - v12 managed contracts: `managed --json` now includes `executionContract`, `writeBoundaries`, `parentResponsibilities`, `stageInputs`, and `stageOutputs`.
 - v12 config governance: taskKind, risk, cache, model, and managed UX policy are validated by `config-check` and explainable through `config-explain`.
 - v12 speed work: persistent route cache, route-cache statistics, `refresh-skills`, snapshot staleness checks, and cold/warm performance benchmarks reduce repeated local prep.
+- v13 agent roster: every route can expose primary, mapper, implementer, validator, reviewer, fallback candidates, and preferred-agent fallback warnings.
+- v13 managed readiness: `managed --json` adds `delegationReadiness`, `nextAction`, and `stageSkillLoadingOrder` so the parent Codex can move directly into the next safe stage.
+- v13 eval governance: deterministic eval expanded to 112 cases with taskKind bucket pass-rate reporting.
+- v13 cache maintenance: `cache-status` and `cache-prune` make judgement/route cache health visible and cleanable.
 - Built-in eval, performance, managed UX, managed-contract, config, route-cache, skills-phase, judge-matrix, recovery, handoff, skill-repair, doctor, and report commands.
 
 ## How It Works
@@ -46,7 +50,7 @@ flowchart TD
 The router combines four sources of truth:
 
 - `subagents/registry.json`: VoltAgent agent metadata.
-- `subagents/strategy-config.json`: intent, taskKind, skill, cost, cache, model-risk, managed UX, and candidate-budget policy.
+- `subagents/strategy-config.json`: intent, taskKind, skill, cost, cache, model-risk, managed UX, agent roster, and candidate-budget policy.
 - `subagents/community-skills-manifest.json`: imported community skills.
 - Local Codex skill discovery from `~/.codex/skills`, `~/.agents/skills`, and plugin caches.
 
@@ -136,6 +140,13 @@ Explain which v12 config policies match a task:
 node subagents/router.mjs config-explain "开启子代理，根据生产日志处理线上事故并准备回滚"
 ```
 
+Inspect cache health and prune stale local cache entries:
+
+```bash
+node subagents/router.mjs cache-status
+node subagents/router.mjs cache-prune --all --older-than-hours 168
+```
+
 Use budget controls:
 
 ```bash
@@ -160,6 +171,9 @@ node subagents/router.mjs test-skill-repair
 node subagents/router.mjs test-config
 node subagents/router.mjs test-config-explain
 node subagents/router.mjs test-route-cache
+node subagents/router.mjs test-agent-roster
+node subagents/router.mjs test-managed-readiness
+node subagents/router.mjs test-cache-maintenance
 node subagents/router.mjs doctor
 node subagents/router.mjs report
 ```
@@ -170,16 +184,18 @@ For the live GPT-5.5 smoke test, use the installed path so local Codex CLI paths
 ~/.codex/subagents/router.mjs test-judge
 ```
 
-## Current v12 Result
+## Current v13 Result
 
-The final v12 verification passed:
+The final v13 verification passed:
 
 - 16/16 regression tests.
-- 97/97 eval cases.
+- 112/112 eval cases across 8 taskKind buckets.
 - Performance test passed: compact prompt is about 49% smaller than the v10-style estimate; default JSON is about 88% smaller than verbose JSON.
 - Managed delegation and managed-contract tests passed: authorized goal requests produce staged plans; high-risk write tasks include validation/review; managed JSON includes stage inputs/outputs and write boundaries without exposing internal budgets.
+- Managed readiness tests passed: ready requests return `nextAction.type = "spawn"`, vague requests return one clarification, and blocked high-risk fallbacks return parent review.
+- Agent roster tests passed: routes expose primary/mapper/implementer/validator/reviewer and explain missing preferred-agent fallbacks.
 - Config tests passed: taskKind policy, high-risk GPT-5.5 rules, configured skills, `config-check`, and `config-explain` are valid.
-- Route-cache tests passed: stable low/medium-risk tasks can hit persistent cache; volatile current diff/log/incident/security tasks bypass cache.
+- Route-cache and cache-maintenance tests passed: stable low/medium-risk tasks can hit persistent cache; volatile current diff/log/incident/security tasks bypass cache; stale local cache can be pruned.
 - Skills-phase and judge-matrix tests passed.
 - Recovery tests passed.
 - Handoff tests passed.
@@ -191,7 +207,18 @@ The final v12 verification passed:
 - Generic "agent/智能体" wording no longer pulls OpenAI/LangGraph skills unless those technologies are explicitly named.
 - GPT-5.5 critical routing smoke test passed for high-risk current diff auth review.
 
-See [`outputs/subagent-router-v12-final-report.md`](outputs/subagent-router-v12-final-report.md) for the full report.
+See [`outputs/subagent-router-v13-final-report.md`](outputs/subagent-router-v13-final-report.md) for the full report.
+
+## v13 Reliability and UX Changes
+
+- `agentRoster` explains the usable agent lineup for the task: primary, mapper, implementer, validator, reviewer, fallbacks, and missing preferred-agent fallbacks.
+- `managed --json` now includes `delegationReadiness`, `nextAction`, and `stageSkillLoadingOrder`.
+- Route cache keys include an internal router metadata version so code-level routing changes do not accidentally reuse stale cache entries.
+- Release-publishing tasks preserve GitHub repository skills when README, release, public repo, or publishing language appears.
+- Orchestration-design tasks preserve planning skills and treat managed-contract/stage-skill-loading work as strong orchestration signals.
+- Public hygiene/security review tasks that do not ask for edits stay read-only.
+- `eval` now records taskKind bucket stats in `last-eval-results.json`.
+- Added `cache-status`, `cache-prune`, `test-agent-roster`, `test-managed-readiness`, and `test-cache-maintenance`.
 
 ## v12 Reliability and UX Changes
 

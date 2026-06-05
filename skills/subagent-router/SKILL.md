@@ -15,7 +15,7 @@ Use this skill only after the user explicitly enables or asks for subagents, mul
 $HOME/.codex/subagents/router.mjs managed --json "<task>"
 ```
 
-Use this when the user says “调用合适子代理完成任务”, “开启子代理持续实现”, “多代理帮我优化”, or similar broad delegation language. The managed output is the user-facing plan and execution contract: selected agent, role, skills, stage/goal loop, one-question clarification state, write boundaries, parent responsibilities, stage inputs/outputs, and the three short explanations:
+Use this when the user says “调用合适子代理完成任务”, “开启子代理持续实现”, “多代理帮我优化”, or similar broad delegation language. The managed output is the user-facing plan and execution contract: selected agent, role, skills, stage/goal loop, one-question clarification state, write boundaries, parent responsibilities, stage inputs/outputs, agent roster, delegation readiness, next action, stage skill loading order, and the three short explanations:
 - why this agent;
 - why Codex is not asking now;
 - when Codex will ask.
@@ -51,6 +51,10 @@ The router is quality-first and cost-aware:
 - `modelRationale` explains why that model and effort were selected.
 - `taskProfile` summarizes complexity, risk, scope, write intent, and matched signals.
 - v12 `taskProfile.taskKind` may include `release-publishing`, `repo-maintenance`, `research-only`, or `incident-response` in addition to engineering/product/orchestration kinds.
+- v13 `agentRoster` explains primary, mapper, implementer, validator, reviewer, fallbacks, and missing preferred-agent fallbacks.
+- v13 `delegationReadiness` tells whether the parent Codex can spawn now, should clarify first, or must perform parent review.
+- v13 `nextAction` is the immediate parent action: `spawn`, `ask-clarification`, or `parent-review`.
+- v13 `stageSkillLoadingOrder` lists the skills to load before each stage.
 - `executionPlan` tells whether to use one agent, staged execution, parallel review, or clarification first.
 - `executionPlan.stageDetails` gives executable stage details when available: agent, role, sandbox, model, reasoning, skills, expected output, and acceptance criteria.
 - `handoffPlan` is the preferred multi-agent delegation plan. Follow its `stages` in order unless local context makes a stage unsafe.
@@ -96,6 +100,12 @@ When `managed --json` returns `executionContract`, `writeBoundaries`, `parentRes
 - pass each stage only the inputs it needs;
 - collect each stage output before starting the next dependent stage;
 - keep final integration and user-facing verification in the parent Codex.
+
+When `managed --json` returns v13 readiness fields:
+- if `delegationReadiness.canSpawnNow` is true, follow `nextAction` and spawn that stage first;
+- if `nextAction.type` is `ask-clarification`, ask exactly one concise question and then rerun managed routing with the answer;
+- if `nextAction.type` is `parent-review`, do not spawn a write-capable subagent until the parent Codex has reviewed fallback safety;
+- load `stageSkillLoadingOrder[].loadBeforeStage` before starting that stage.
 
 For continuous goal work, report each stage in this fixed structure:
 - goal;
@@ -163,6 +173,9 @@ $HOME/.codex/subagents/router.mjs test-skill-repair
 $HOME/.codex/subagents/router.mjs test-config
 $HOME/.codex/subagents/router.mjs test-config-explain
 $HOME/.codex/subagents/router.mjs test-route-cache
+$HOME/.codex/subagents/router.mjs test-agent-roster
+$HOME/.codex/subagents/router.mjs test-managed-readiness
+$HOME/.codex/subagents/router.mjs test-cache-maintenance
 $HOME/.codex/subagents/router.mjs config-check
 $HOME/.codex/subagents/router.mjs doctor
 $HOME/.codex/subagents/router.mjs report
@@ -171,6 +184,8 @@ $HOME/.codex/subagents/router.mjs report
 Use `judge --explain "<task>"` when you need a human-readable explanation of the routing decision.
 Use `config-explain "<task>"` when you need to inspect which v12 taskKind, risk, skill, and cache policies matched a task.
 Use `refresh-skills` after installing or removing skills so the local snapshot is current.
+Use `cache-status` to inspect local judgement/route cache health.
+Use `cache-prune --all --older-than-hours <hours>` to prune stale local cache entries.
 
 ## Guardrails
 
@@ -178,6 +193,7 @@ Use `refresh-skills` after installing or removing skills so the local snapshot i
 - Keep the main agent responsible for final integration, review, and user-facing summary.
 - For write-capable workers, assign a clear file or subsystem ownership boundary.
 - For v12 managed plans, follow `writeBoundaries`; never let two write-capable stages edit the same file/module concurrently.
+- For v13 managed plans, follow `delegationReadiness` and `nextAction`; do not improvise a spawn when the router says clarify or parent-review first.
 - Do not let subagents overwrite unrelated user changes.
 - Prefer `high` confidence routes for autonomous spawning. Treat `medium` as acceptable when local context confirms the route. Treat `low` as a candidate list, not a decision.
 - Treat `parent-review-required` as a hard stop for automatic delegation.
