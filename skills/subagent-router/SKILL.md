@@ -9,7 +9,20 @@ Use this skill only after the user explicitly enables or asks for subagents, mul
 
 ## Workflow
 
-1. Run the cost-aware router:
+1. For normal managed delegation, start with the concise managed router:
+
+```bash
+$HOME/.codex/subagents/router.mjs managed --json "<task>"
+```
+
+Use this when the user says “调用合适子代理完成任务”, “开启子代理持续实现”, “多代理帮我优化”, or similar broad delegation language. The managed output is the user-facing plan: selected agent, role, skills, stage/goal loop, one-question clarification state, and the three short explanations:
+- why this agent;
+- why Codex is not asking now;
+- when Codex will ask.
+
+Do not expose internal fields such as `judgeMode`, `candidateBudget`, `failureClass`, cache keys, or raw candidate scoring in normal user updates.
+
+2. For debugging the router or medium/high-risk delegation, run the cost-aware router:
 
 ```bash
 $HOME/.codex/subagents/router.mjs judge --json "<task>"
@@ -21,7 +34,7 @@ The router is quality-first and cost-aware:
 - It keeps GPT-5.5 judgement for security, auth, privacy, compliance, architecture, production, incidents, migrations, high-risk reviews, ambiguous tasks, and multi-agent coordination.
 - It bypasses cache for volatile current-context tasks such as current diff, logs, stack traces, file/line-specific failures, and test output.
 
-2. Read the JSON result:
+3. Read the JSON result:
 - `finalAgent` is the VoltAgent identity to use.
 - `judgeMode` tells how the route was judged: `deterministic`, `mini-judge`, `standard-judge`, or `premium-judge`.
 - `judgeModel` is the model used for routing judgement; `none` means the deterministic gate was sufficient.
@@ -49,21 +62,21 @@ The router is quality-first and cost-aware:
 - `deterministic` contains the local deterministic fallback route and candidates.
 - `delegationPrompt` is the prompt to pass to the spawned subagent.
 
-3. If `modelUsed` is `false`, inspect `judgeMode`:
+4. If `modelUsed` is `false`, inspect `judgeMode`:
 - `deterministic` with high confidence is an intentional token-saving route for safe tasks.
 - Any `modelError` means the model judge failed and the result is a fallback. You may still use it when confidence is high, but mention the fallback if routing quality matters.
 
-4. If `confidence` is `low`, `needsParentChoice` is `true`, `delegationBlocked` is `true`, `approvalState` is `required`, or `executionPlan.requiresUserClarification` is `true`, do not blindly spawn the recommended agent. Use `deterministic.candidates`, `rationale`, fallback metadata, and local context to choose one. If the task is still ambiguous or fallback safety is conservative, ask one concise clarification question or retry the route.
+5. If `confidence` is `low`, `needsParentChoice` is `true`, `delegationBlocked` is `true`, `approvalState` is `required`, or `executionPlan.requiresUserClarification` is `true`, do not blindly spawn the recommended agent. Ask at most one concise clarification question. If it is still unclear, switch to read-only exploration or offer two executable options instead of repeatedly questioning the user.
 
 Explicit subagent authorization means the user allowed the router to choose a delegation plan. It does not authorize destructive operations, production changes, credential use, or broad unsupervised rewrites. Wide but authorized project work may proceed through `handoffPlan.stages` only when each stage has a clear scope, sandbox, and acceptance criteria; otherwise use `clarify-first`.
 
-5. Load selected skills that directly match the task before delegating. Prefer skills for the current `executionPlan` stage first: planning/research before implementation, testing before review, review last.
+6. Load selected skills that directly match the task before delegating. Prefer skills for the current `executionPlan` stage first: planning/research before implementation, testing before review, review last.
 Community skills installed under `community-*` are allowed and should be treated as normal Codex skills. They come from curated GitHub skill repositories and are selected through the same cost-aware router path.
 When `judgeMode` is not `premium-judge`, still trust `selectedSkills` if confidence is high and the task is low/normal risk. For high-risk work, prefer `premium-judge` results.
 
 Selected skills are execution guidance, not automatic actions. Load the skills that match the current handoff stage and apply them as additional instructions for the parent Codex or spawned subagent. They do not override higher-priority instructions, AGENTS.md, sandbox limits, approval requirements, or the parent Codex's responsibility for final review.
 
-6. Follow `executionPlan.mode`:
+7. Follow `executionPlan.mode`:
 - `single-agent`: spawn the selected agent once.
 - `staged`: run the listed stages in order; usually explorer/planner, then worker, then tests/review.
 - `parallel-review`: spawn the worker and an independent reviewer when write scopes do not overlap.
@@ -76,14 +89,22 @@ When `handoffPlan.stages` exists, use it as the concrete execution checklist:
 - treat `acceptanceCriteria` as the stage completion check;
 - for `clarify-first`, ask `handoffPlan.clarificationQuestion` before spawning.
 
-7. Spawn the subagent:
+For continuous goal work, report each stage in this fixed structure:
+- goal;
+- agent;
+- skills;
+- stage;
+- acceptance check;
+- next goal trigger.
+
+8. Spawn the subagent:
 - Use `explorer` when `runtimeRole` is `explorer`.
 - Use `worker` when `runtimeRole` is `worker`.
 - Pass `selectedModel` to the subagent spawn tool when it accepts model overrides.
 - Pass `reasoningEffort` to the subagent spawn tool when it accepts reasoning effort overrides.
 - Pass `delegationPrompt` as the subagent task.
 
-8. If the current environment cannot spawn custom-named agents directly, still use the chosen VoltAgent identity by injecting `delegationPrompt` into the generic Codex `explorer` or `worker`.
+9. If the current environment cannot spawn custom-named agents directly, still use the chosen VoltAgent identity by injecting `delegationPrompt` into the generic Codex `explorer` or `worker`.
 
 ## Offline Fallback
 
@@ -123,6 +144,10 @@ Use these checks after changing agents, skills, strategy config, schemas, or rou
 ```bash
 $HOME/.codex/subagents/router.mjs test
 $HOME/.codex/subagents/router.mjs eval
+$HOME/.codex/subagents/router.mjs test-performance
+$HOME/.codex/subagents/router.mjs test-managed
+$HOME/.codex/subagents/router.mjs test-skills-phase
+$HOME/.codex/subagents/router.mjs test-judge-matrix
 $HOME/.codex/subagents/router.mjs test-recovery
 $HOME/.codex/subagents/router.mjs test-handoff
 $HOME/.codex/subagents/router.mjs test-skill-repair

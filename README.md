@@ -1,4 +1,4 @@
-# Codex Subagent Router v10
+# Codex Subagent Router v11
 
 ![Codex Subagent Router hero](assets/codex-subagent-router-v8-hero.png)
 
@@ -17,14 +17,16 @@ The goal is simple: when you explicitly ask Codex to use subagents, the parent C
 - Conservative fallback behavior through `failureClass`, `fallbackSafety`, `requiresParentReview`, `delegationBlocked`, and `approvalState`.
 - v9 skill repair: configured local skills omitted by the initial candidate budget can be repaired without discarding an otherwise valid GPT-5.5 judgement.
 - v10 orchestration routing: explicit broad multi-agent project work becomes staged, while vague broad work still clarifies first.
-- Built-in eval, recovery, handoff, skill-repair, doctor, and report commands.
+- v11 managed delegation: one-line requests such as "调用合适子代理完成任务" produce a concise user-facing stage/goal plan without exposing internal routing fields.
+- v11 speed work: compact judge prompts, compact default JSON, stable cache keys, route cache, and a skill registry snapshot reduce local prep and token use.
+- Built-in eval, performance, managed UX, skills-phase, judge-matrix, recovery, handoff, skill-repair, doctor, and report commands.
 
 ## How It Works
 
 ```mermaid
 flowchart TD
   A["User asks to enable subagents"] --> B["subagent-router skill"]
-  B --> C["router.mjs judge"]
+  B --> C["router.mjs managed / judge"]
   C --> D["Deterministic local route"]
   D --> E{"Quality gates"}
   E -->|"Low risk + high confidence"| F["deterministic / no model judge"]
@@ -79,6 +81,7 @@ The delegated subagent model is selected separately from the routing judge. A ch
 - `subagents/community-skills-manifest.json`: imported community skill manifest.
 - `subagents/registry.json`: VoltAgent agent registry snapshot.
 - `subagents/import-community-skills.mjs`: community skill importer.
+- `~/.codex/subagents/skill-registry-snapshot.json`: local runtime snapshot used to avoid repeated plugin-cache scans.
 - `skills/subagent-router/SKILL.md`: Codex global skill instructions.
 - `outputs/`: implementation plans and verification reports.
 - `assets/`: README visual assets.
@@ -112,6 +115,12 @@ Run the cost-aware judge:
 node subagents/router.mjs judge --json "开启子代理，修复 API 鉴权问题"
 ```
 
+Run managed delegation for a normal user request:
+
+```bash
+node subagents/router.mjs managed --json "开启子代理，调用合适子代理，用 goal 模式持续实现"
+```
+
 Show a human-readable explanation:
 
 ```bash
@@ -131,6 +140,10 @@ node subagents/router.mjs judge --json --budget premium "开启子代理，审�
 node --check subagents/router.mjs
 node subagents/router.mjs test
 node subagents/router.mjs eval
+node subagents/router.mjs test-performance
+node subagents/router.mjs test-managed
+node subagents/router.mjs test-skills-phase
+node subagents/router.mjs test-judge-matrix
 node subagents/router.mjs test-recovery
 node subagents/router.mjs test-handoff
 node subagents/router.mjs test-skill-repair
@@ -144,12 +157,15 @@ For the live GPT-5.5 smoke test, use the installed path so local Codex CLI paths
 ~/.codex/subagents/router.mjs test-judge
 ```
 
-## Current v10 Result
+## Current v11 Result
 
-The final v10 verification passed:
+The final v11 verification passed:
 
 - 16/16 regression tests.
-- 71/71 eval cases.
+- 77/77 eval cases.
+- Performance test passed: compact prompt is about 49% smaller than the v10-style estimate; default JSON is about 88% smaller than verbose JSON.
+- Managed delegation test passed: authorized goal requests produce staged plans; vague multi-agent requests ask one clarification question.
+- Skills-phase and judge-matrix tests passed.
 - Recovery tests passed.
 - Handoff tests passed.
 - Skill-repair tests passed.
@@ -157,9 +173,19 @@ The final v10 verification passed:
 - Explicit multi-agent project optimization now routes to `staged` instead of over-clarifying.
 - Vague multi-agent project optimization still routes to `clarify-first`.
 - Generic "agent/智能体" wording no longer pulls OpenAI/LangGraph skills unless those technologies are explicitly named.
-- GPT-5.5 critical routing smoke test passed for the multi-agent project optimization task.
+- GPT-5.5 critical routing smoke test passed for high-risk current diff auth review.
 
-See [`outputs/subagent-router-v10-final-report.md`](outputs/subagent-router-v10-final-report.md) for the full report.
+See [`outputs/subagent-router-v11-final-report.md`](outputs/subagent-router-v11-final-report.md) for the full report.
+
+## v11 Reliability and UX Changes
+
+- Added `taskKind` semantic routing for engineering execution, engineering analysis, product analysis, and orchestration design.
+- Product-analysis tasks do not generate implementation stages or debugging skills by default.
+- Orchestration-design tasks prefer architecture/coordinator agents and staged map, failure-analysis, implementation, validation, and review handoffs.
+- Low-risk read-only product/docs/planning routes avoid unnecessary GPT-5.5 judges; high-risk security, auth, production, current diff, and complex orchestration keep GPT-5.5.
+- Default `judge --json` is compact; use `judge --verbose` or `judge --explain` for full internals.
+- `managed --json` is the preferred user-facing delegation output for ordinary "call suitable subagents" requests.
+- Skill registry snapshot and route cache reduce repeated local discovery work.
 
 ## v9-v10 Reliability Changes
 
@@ -179,6 +205,7 @@ To clear local router state:
 
 ```bash
 rm -f ~/.codex/subagents/judgement-cache.json
+rm -f ~/.codex/subagents/skill-registry-snapshot.json
 rm -f ~/.codex/subagents/last-eval-results.json
 rm -f ~/.codex/subagents/last-skill-repair-results.json
 ```

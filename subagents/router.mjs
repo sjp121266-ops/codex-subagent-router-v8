@@ -22,6 +22,7 @@ const JUDGEMENT_SCHEMA_PATH = bundledPath("judgement.schema.json");
 const STRATEGY_CONFIG_PATH = bundledPath("strategy-config.json");
 const COMMUNITY_SKILLS_MANIFEST_PATH = bundledPath("community-skills-manifest.json");
 const JUDGEMENT_CACHE_PATH = runtimePath("judgement-cache.json");
+const SKILL_REGISTRY_SNAPSHOT_PATH = runtimePath("skill-registry-snapshot.json");
 const EVAL_RESULTS_PATH = runtimePath("last-eval-results.json");
 const SKILL_REPAIR_RESULTS_PATH = runtimePath("last-skill-repair-results.json");
 const CODEX_CLI = process.env.CODEX_CLI || "codex";
@@ -123,6 +124,7 @@ const DEFAULT_SKILL_RULES = [
 
 let skillRegistryCache = null;
 let availableSkillNameSetCache = null;
+const routeTaskCache = new Map();
 
 const INTENT_RULES = [
   {
@@ -230,9 +232,17 @@ const INTENT_RULES = [
     preferredSandbox: "read-only",
   },
   {
+    id: "orchestration",
+    label: "subagent routing, workflow orchestration, or router strategy",
+    patterns: [[/subagent-router|router|routing|dispatch|scheduler|scheduling|handoff|fallback|quality gate|judge matrix|goal mode|agent routing|调度|调度器|路由器|路由|调用速度|调用的速度|算法调度|质量门|回退|委派|编排|goal 模式/i, 64]],
+    preferredAgents: ["architect-reviewer", "project-manager", "multi-agent-coordinator", "code-mapper"],
+    categories: ["04-quality-security", "08-business-product", "01-core-development"],
+    preferredSandbox: "read-only",
+  },
+  {
     id: "product",
     label: "product, market, or user-impact analysis",
-    patterns: [[/product|market|用户|产品|需求|商业|增长|定位|路线图/i, 38]],
+    patterns: [[/product|market|用户|产品|需求|商业|增长|产品定位|市场定位|路线图/i, 38]],
     preferredAgents: ["product-manager", "risk-manager", "research-analyst", "market-researcher"],
     categories: ["08-business-product", "11-specialized-domains"],
     preferredSandbox: "read-only",
@@ -246,11 +256,16 @@ Usage:
   router.mjs rebuild
   router.mjs list [query]
   router.mjs route [--json|--brief] <task>
-  router.mjs judge [--json|--explain|--offline] [--budget economy|balanced|premium|critical] [--no-cache] [--force-model] <task>
+  router.mjs judge [--json|--verbose|--explain|--offline] [--budget economy|balanced|premium|critical] [--no-cache] [--force-model] <task>
+  router.mjs managed [--json] <task>
   router.mjs prompt <agent-name> <task>
   router.mjs install-all
   router.mjs test
   router.mjs eval [--json]
+  router.mjs test-performance
+  router.mjs test-managed
+  router.mjs test-skills-phase
+  router.mjs test-judge-matrix
   router.mjs test-recovery
   router.mjs test-handoff
   router.mjs test-skill-repair
@@ -321,8 +336,7 @@ function parseSkill(file) {
   return { name, description, path: file };
 }
 
-function loadSkillRegistry() {
-  if (skillRegistryCache) return skillRegistryCache;
+function scanSkillRegistry() {
   const roots = [
     path.join(CODEX_HOME, "skills"),
     path.join(HOME, ".agents", "skills"),
@@ -335,7 +349,46 @@ function loadSkillRegistry() {
       if (skill && !byName.has(skill.name)) byName.set(skill.name, skill);
     }
   }
-  skillRegistryCache = [...byName.values()].sort((a, b) => a.name.localeCompare(b.name));
+  return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function writeSkillRegistrySnapshot(skills) {
+  fs.mkdirSync(path.dirname(SKILL_REGISTRY_SNAPSHOT_PATH), { recursive: true });
+  fs.writeFileSync(SKILL_REGISTRY_SNAPSHOT_PATH, `${JSON.stringify({
+    version: 1,
+    generatedAt: new Date().toISOString(),
+    count: skills.length,
+    skills,
+  }, null, 2)}\n`);
+}
+
+function readSkillRegistrySnapshot() {
+  if (!fs.existsSync(SKILL_REGISTRY_SNAPSHOT_PATH)) return null;
+  try {
+    const snapshot = JSON.parse(readText(SKILL_REGISTRY_SNAPSHOT_PATH));
+    if (!Array.isArray(snapshot.skills)) throw new Error("snapshot missing skills array");
+    return snapshot.skills
+      .filter((skill) => skill?.name && skill?.description)
+      .sort((a, b) => a.name.localeCompare(b.name));
+  } catch {
+    try {
+      fs.renameSync(SKILL_REGISTRY_SNAPSHOT_PATH, `${SKILL_REGISTRY_SNAPSHOT_PATH}.corrupt-${Date.now()}`);
+    } catch {
+      // Best-effort quarantine only.
+    }
+    return null;
+  }
+}
+
+function loadSkillRegistry() {
+  if (skillRegistryCache) return skillRegistryCache;
+  const snapshot = readSkillRegistrySnapshot();
+  if (snapshot?.length) {
+    skillRegistryCache = snapshot;
+    return skillRegistryCache;
+  }
+  skillRegistryCache = scanSkillRegistry();
+  writeSkillRegistrySnapshot(skillRegistryCache);
   return skillRegistryCache;
 }
 
@@ -496,6 +549,11 @@ function skillNameAvailable(name, skillNames = availableSkillNameSet()) {
   return skillNames.has(name) || skillNames.has(String(name).split(":").at(-1));
 }
 
+function clearSkillRegistryCaches() {
+  skillRegistryCache = null;
+  availableSkillNameSetCache = null;
+}
+
 function classifyFailure(errorMessage = "") {
   const text = String(errorMessage);
   if (!text) return "none";
@@ -637,9 +695,49 @@ function isExplicitBroadAuthorization(task) {
   return broadWorkflow && authorization && action && isProjectScopeTask(task);
 }
 
+function classifyTaskKind(task, routeLike = {}) {
+  const cleaned = cleanTask(task);
+  const intentIds = (routeLike.matchedIntents || []).map((intent) => intent.id);
+  const noWrite = isNoWriteTask(cleaned);
+  const hasWriteVerb = /fix|implement|build|create|edit|update|refactor|optimi[sz]e|improve|iterate|execute|修复|实现|创建|修改|改|写|补齐|重构|优化|完善|迭代|执行/i.test(cleaned);
+  const explicitOrchestration = /subagent-router|router|routing|dispatch|scheduler|scheduling|handoff|fallback|quality gate|judge matrix|goal mode|agent routing|multi-agent|multiple subagents|调度|调度器|路由器|路由|调用速度|调用的速度|算法调度|质量门|回退|委派|编排|多代理|多智能体|多个子代理|goal 模式/i.test(cleaned);
+  const productSignals = /adoption|churn|funnel|market|用户体验|用户问题|用户|产品|需求|商业|增长|定位|留存|转化|漏斗/i.test(cleaned);
+  const debugSignals = /debug|bug|error|exception|crash|fail|flaky|regression|stack trace|traceback|log|日志|错误|报错|异常|崩溃|失败|修复|排查|定位.+(问题|异常|错误|失败|crash|bug)/i.test(cleaned);
+  const analysisSignals = /review|audit|analy[sz]e|inspect|diagnose|map|评审|审查|审计|分析|调研|检查|诊断|只读|不要改|不改代码/i.test(cleaned);
+
+  if (explicitOrchestration) return "orchestration-design";
+  if (debugSignals) return hasWriteVerb ? "engineering-execution" : "engineering-analysis";
+  if (productSignals && (noWrite || analysisSignals || !hasWriteVerb)) return "product-analysis";
+  if (noWrite || analysisSignals || intentIds.some((id) => ["review", "security", "research"].includes(id))) return "engineering-analysis";
+  return hasWriteVerb || intentIds.some((id) => ["frontend", "backend", "debug", "testing", "ios", "devops", "data-ai"].includes(id))
+    ? "engineering-execution"
+    : "engineering-analysis";
+}
+
+function preferredAgentsForTaskKind(taskKind) {
+  if (taskKind === "orchestration-design") return ["architect-reviewer", "project-manager", "multi-agent-coordinator", "code-mapper"];
+  if (taskKind === "product-analysis") return ["product-manager", "research-analyst", "risk-manager", "business-analyst"];
+  if (taskKind === "engineering-analysis") return ["reviewer", "architect-reviewer", "code-mapper", "debugger"];
+  return [];
+}
+
+function shouldKeepSkillForTaskKind(entry, taskKind, task) {
+  if (taskKind === "product-analysis") {
+    return ["planning", "research", "review", "matched"].includes(entry.phase || "implementation");
+  }
+  if (taskKind === "orchestration-design") {
+    if (/openai|agents sdk|responses api|langgraph|llm|大模型/i.test(cleanTask(task))) return true;
+    if (/community-spellbook-openai|community-spellbook-langgraph/.test(entry.name)) return false;
+    return ["planning", "research", "design", "review", "testing", "matched"].includes(entry.phase || "implementation")
+      || ["superpowers:executing-plans", "superpowers:subagent-driven-development", "superpowers:writing-plans"].includes(entry.name);
+  }
+  return true;
+}
+
 function computeModelPolicy(task, agent, routeLike = {}) {
   const cleaned = cleanTask(task);
   const intentIds = (routeLike.matchedIntents || []).map((intent) => intent.id);
+  const taskKind = routeLike.taskKind || routeLike.taskProfile?.taskKind || classifyTaskKind(task, routeLike);
   const agentName = agent?.name || "";
   const agentText = normalize(`${agentName} ${agent?.description || ""} ${agent?.category || ""}`);
   const reasons = [];
@@ -664,12 +762,24 @@ function computeModelPolicy(task, agent, routeLike = {}) {
     if (pattern.test(cleaned)) reasons.push(reason);
   }
 
-  if (routeLike.confidence === "low" || routeLike.needsParentChoice) {
+  const lowRiskReadOnlyProduct = taskKind === "product-analysis"
+    && (isNoWriteTask(task) || routeLike.taskProfile?.writeIntent === "none")
+    && routeLike.taskProfile?.risk === "low"
+    && !isVagueTask(task, routeLike.candidates || []);
+  if ((routeLike.confidence === "low" || routeLike.needsParentChoice) && !lowRiskReadOnlyProduct) {
     reasons.push("low confidence or ambiguous route");
   }
 
-  if (intentIds.some((id) => ["security", "planning", "review", "devops", "data-ai"].includes(id))) {
-    reasons.push(`important intent: ${intentIds.find((id) => ["security", "planning", "review", "devops", "data-ai"].includes(id))}`);
+  if (intentIds.some((id) => ["security", "review", "devops", "data-ai"].includes(id))) {
+    reasons.push(`important intent: ${intentIds.find((id) => ["security", "review", "devops", "data-ai"].includes(id))}`);
+  }
+
+  if (intentIds.includes("planning") && taskKind !== "product-analysis" && /multi-agent|多代理|多智能体|当前项目|跨模块|架构|迁移|执行计划|完整优化|持续迭代/i.test(cleaned)) {
+    reasons.push("important planning scope");
+  }
+
+  if (taskKind === "orchestration-design" && /调度|router|routing|fallback|quality gate|judge|goal/i.test(cleaned)) {
+    reasons.push("orchestration design needs careful routing judgement");
   }
 
   if (/architect|security|auditor|reviewer|incident|sre|compliance|penetration|risk|llm-architect|microservices/.test(agentName)) {
@@ -717,6 +827,7 @@ function computeTaskProfile(task, routeLike = {}) {
   const signals = [];
   const noWrite = isNoWriteTask(cleaned);
   const broadAuthorized = isExplicitBroadAuthorization(cleaned);
+  const taskKind = routeLike.taskKind || classifyTaskKind(task, routeLike);
   const writeIntent = !noWrite && /fix|implement|build|create|edit|update|refactor|optimi[sz]e|improve|iterate|execute|修复|实现|创建|修改|改|写|补齐|重构|优化|完善|迭代|执行/i.test(cleaned)
     ? "expected"
     : /review|audit|analy[sz]e|审查|审计|分析|调研|检查/i.test(cleaned)
@@ -745,6 +856,22 @@ function computeTaskProfile(task, routeLike = {}) {
     scope = crossSystem ? "cross-system" : "subsystem";
     signals.push("explicit broad project authorization");
   }
+  if (taskKind === "orchestration-design") {
+    complexity = /完整|全面|持续迭代|跨模块|全方面|项目|仓库/i.test(cleaned) ? "high" : "medium";
+    scope = isProjectScopeTask(task) ? "subsystem" : "local";
+    if (/实现|执行|持续迭代|优化|完善/i.test(cleaned) && !noWrite) {
+      risk = risk === "critical" ? "critical" : "high";
+      signals.push("orchestration design with implementation intent");
+    } else {
+      signals.push("orchestration design task");
+    }
+  }
+  if (taskKind === "product-analysis") {
+    risk = highRisk ? risk : "low";
+    complexity = /全局|全面|cross|多个|多团队|跨团队/i.test(cleaned) ? "medium" : "low";
+    scope = isProjectScopeTask(task) ? "subsystem" : "local";
+    signals.push("product analysis task");
+  }
   if (intentIds.some((id) => ["security", "review", "devops", "data-ai"].includes(id))) {
     risk = risk === "critical" ? "critical" : "high";
     signals.push(`important intent: ${intentIds.find((id) => ["security", "review", "devops", "data-ai"].includes(id))}`);
@@ -766,7 +893,7 @@ function computeTaskProfile(task, routeLike = {}) {
     signals.push("low-risk docs or formatting signal");
   }
 
-  return { complexity, risk, scope, writeIntent, signals: unique(signals) };
+  return { taskKind, complexity, risk, scope, writeIntent: taskKind === "product-analysis" || noWrite ? "none" : writeIntent, signals: unique(signals) };
 }
 
 function clampText(text, max = 180) {
@@ -811,6 +938,16 @@ function computeJudgePolicy(task, route, options = {}) {
   const ambiguous = route.confidence === "low" || route.needsParentChoice || taskProfile.scope === "unknown";
   const highRiskIntents = loadStrategyConfig().costPolicy?.highRiskIntents || DEFAULT_COST_POLICY.highRiskIntents;
   const importantIntent = route.matchedIntents?.some((intent) => highRiskIntents.includes(intent.id));
+  const noWrite = isNoWriteTask(task) || taskProfile.writeIntent === "none";
+  const lowRiskReadOnlyJudge =
+    !volatileContext &&
+    !isVagueTask(task, route.candidates || []) &&
+    taskProfile.risk === "low" &&
+    noWrite &&
+    (
+      taskProfile.taskKind === "product-analysis" ||
+      route.matchedIntents?.some((intent) => ["docs", "research", "planning"].includes(intent.id))
+    );
   const safeDeterministic =
     !options.forceModel &&
     !volatileContext &&
@@ -824,6 +961,10 @@ function computeJudgePolicy(task, route, options = {}) {
     judgeMode = "deterministic";
     judgeModel = "none";
     reasons.push("low-risk, high-confidence route with clear candidate margin; skip model judge");
+  } else if (!options.forceModel && lowRiskReadOnlyJudge && ["economy", "balanced"].includes(budget)) {
+    judgeMode = budget === "economy" ? "mini-judge" : "standard-judge";
+    judgeModel = budget === "economy" ? "gpt-5.4-mini" : "gpt-5.4";
+    reasons.push("low-risk read-only planning/product/docs route avoids GPT-5.5 judge");
   } else if (budget === "critical" || highRisk || ambiguous || importantIntent) {
     judgeMode = "premium-judge";
     judgeModel = "gpt-5.5";
@@ -864,16 +1005,24 @@ function computeJudgePolicy(task, route, options = {}) {
 function cacheKeyFor(task, policy, route, skillCandidates) {
   const registry = loadRegistry();
   const community = loadCommunitySkillManifest();
+  const stableSkillNames = skillCandidates
+    .map((skill) => skill.name)
+    .filter(Boolean)
+    .sort()
+    .slice(0, Math.min(12, skillCandidates.length));
   const payload = {
-    routerMetadataVersion: 8,
+    routerMetadataVersion: 11,
     task: cleanTask(task),
     budget: policy.budget,
     judgeMode: policy.judgeMode,
     judgeModel: policy.judgeModel,
+    taskKind: route.taskProfile?.taskKind || route.taskKind || "unknown",
+    matchedIntents: (route.matchedIntents || []).map((intent) => intent.id).sort(),
+    recommended: route.recommended?.name || "",
     strategyVersion: route.strategyConfig?.version || 0,
     registryCount: registry.count || registry.agents?.length || 0,
     communitySkillCount: community.count || 0,
-    skillCandidateNames: skillCandidates.map((skill) => skill.name),
+    stableSkillNames,
   };
   return crypto.createHash("sha256").update(JSON.stringify(payload)).digest("hex");
 }
@@ -959,17 +1108,33 @@ function buildExecutionPlan(task, routeLike, taskProfile, selectedSkillsByPhase)
   let mode = "single-agent";
   const broadAuthorized = isExplicitBroadAuthorization(task);
   const noWrite = isNoWriteTask(task);
+  const taskKind = taskProfile.taskKind || classifyTaskKind(task, routeLike);
   let requiresReview = ["high", "critical"].includes(taskProfile.risk)
     || (taskProfile.complexity === "high" && taskProfile.writeIntent === "expected")
     || broadAuthorized
     || routeLike.matchedIntents?.some((intent) => intent.id === "review" || intent.id === "security");
-  const requiresTests = !noWrite && (taskProfile.writeIntent === "expected" || broadAuthorized || routeLike.matchedIntents?.some((intent) => intent.id === "testing" || intent.id === "debug"));
+  if (["product-analysis", "engineering-analysis", "orchestration-design"].includes(taskKind) && noWrite) requiresReview = requiresReview || taskKind !== "product-analysis";
+  const requiresTests = !noWrite
+    && taskKind !== "product-analysis"
+    && (taskProfile.writeIntent === "expected" || broadAuthorized || routeLike.matchedIntents?.some((intent) => intent.id === "testing" || intent.id === "debug"));
   const requiresUserClarification = !broadAuthorized && (routeLike.confidence === "low" || routeLike.needsParentChoice);
   const parallelizable = taskProfile.complexity === "high" && !requiresUserClarification;
 
   if (requiresUserClarification) {
     mode = "clarify-first";
     stages.push("Ask one concise clarification question before spawning subagents.");
+  } else if (taskKind === "product-analysis") {
+    mode = taskProfile.complexity === "medium" ? "staged" : "single-agent";
+    stages.push("Product-focused agent frames the user problem, success signal, and tradeoffs.");
+    if (mode === "staged") stages.push("Research or analysis agent validates assumptions before recommendations.");
+    if (requiresReview) stages.push("Reviewer checks that recommendations stay grounded and scoped.");
+  } else if (taskKind === "orchestration-design") {
+    mode = "staged";
+    stages.push("Mapper captures current routing, skill, model, cache, and handoff behavior.");
+    stages.push("Architecture specialist identifies scheduling and delegation failure modes.");
+    stages.push("Planner proposes concrete goal stages, acceptance criteria, and eval coverage.");
+    if (requiresTests) stages.push("Test agent defines or runs validation for routing and goal execution behavior.");
+    if (requiresReview) stages.push("Reviewer checks quality gates, fallback safety, and user-facing behavior.");
   } else if (taskProfile.complexity === "high" || broadAuthorized || /执行计划|implement this plan|multi-agent|multiple subagents|多代理|多智能体|多个子代理/i.test(task)) {
     mode = "staged";
     stages.push("Explorer maps scope, ownership boundaries, and likely risks.");
@@ -1043,6 +1208,7 @@ function buildHandoffPlan(task, routeLike, taskProfile, executionPlan, skillsByP
   const agentName = routeLike.recommended?.name || "selected-agent";
   const modelPolicy = routeLike.modelPolicy || computeModelPolicy(task, routeLike.recommended, routeLike);
   const noWrite = isNoWriteTask(task) || taskProfile.writeIntent === "none";
+  const taskKind = taskProfile.taskKind || classifyTaskKind(task, routeLike);
   const baseStage = (id, agent, role, sandbox, phases, objective, acceptance) => ({
     id,
     agent,
@@ -1066,15 +1232,32 @@ function buildHandoffPlan(task, routeLike, taskProfile, executionPlan, skillsByP
   }
   const stages = [];
   if (executionPlan.mode === "staged") {
-    stages.push(baseStage("explore", "code-mapper", "explorer", "read-only", ["planning", "research", "design"], "Map scope, risks, ownership boundaries, and implementation order.", ["Affected subsystems and risky files are named.", "Worker scope is bounded."]));
-    const primaryRole = routeLike.recommended?.runtimeRole || "worker";
-    if (primaryRole === "worker" && !noWrite) {
-      stages.push(baseStage("implement", agentName, "worker", writableSandboxFor("worker", routeLike.recommended?.sandboxMode || "workspace-write"), ["implementation", "debugging"], "Implement the scoped change without touching unrelated files.", ["Changed files match the scoped boundary.", "No unrelated user changes are overwritten."]));
+    if (taskKind === "product-analysis") {
+      stages.push(baseStage("research", "research-analyst", "explorer", "read-only", ["planning", "research"], "Gather product/user evidence and constraints before recommendations.", ["Assumptions are explicit.", "No implementation work is implied."]));
+      stages.push(baseStage("synthesize", agentName, "explorer", "read-only", ["planning", "review"], "Synthesize product recommendation, tradeoffs, and success signals.", ["Recommendation is scoped.", "Success criteria are measurable."]));
+    } else if (taskKind === "orchestration-design") {
+      stages.push(baseStage("map-current", "code-mapper", "explorer", "read-only", ["planning", "research", "design"], "Map current router, skill, cache, judge, and handoff behavior.", ["Current control flow and key risk boundaries are named.", "No writes occur during mapping."]));
+      stages.push(baseStage("identify-failures", "architect-reviewer", "explorer", "read-only", ["planning", "review"], "Identify scheduling, routing, fallback, and UX failure modes.", ["Findings are tied to router behavior.", "Risks are prioritized."]));
+      if (!noWrite && taskProfile.writeIntent === "expected") {
+        stages.push(baseStage("implement", agentName, "worker", "workspace-write", ["implementation", "debugging"], "Implement the scoped orchestration improvement.", ["Changed files match the scoped router boundary.", "No unrelated user changes are overwritten."]));
+      } else {
+        stages.push(baseStage("propose-strategy", agentName, "explorer", "read-only", ["planning", "research", "review"], "Propose concrete strategy, goal stages, and acceptance criteria.", ["Plan is decision-complete.", "Execution risks and tests are named."]));
+      }
     } else {
-      stages.push(baseStage("analyze", agentName, primaryRole, "read-only", ["planning", "research", "review"], "Analyze the scoped change and hand implementation back to the parent.", ["No write-capable work is implied by a read-only agent.", "Findings are specific enough for a worker handoff if needed."]));
+      stages.push(baseStage("explore", "code-mapper", "explorer", "read-only", ["planning", "research", "design"], "Map scope, risks, ownership boundaries, and implementation order.", ["Affected subsystems and risky files are named.", "Worker scope is bounded."]));
+      const primaryRole = routeLike.recommended?.runtimeRole || "worker";
+      if (primaryRole === "worker" && !noWrite) {
+        stages.push(baseStage("implement", agentName, "worker", writableSandboxFor("worker", routeLike.recommended?.sandboxMode || "workspace-write"), ["implementation", "debugging"], "Implement the scoped change without touching unrelated files.", ["Changed files match the scoped boundary.", "No unrelated user changes are overwritten."]));
+      } else {
+        stages.push(baseStage("analyze", agentName, primaryRole, "read-only", ["planning", "research", "review"], "Analyze the scoped change and hand implementation back to the parent.", ["No write-capable work is implied by a read-only agent.", "Findings are specific enough for a worker handoff if needed."]));
+      }
     }
   } else {
-    stages.push(baseStage("primary", agentName, routeLike.recommended?.runtimeRole || "worker", routeLike.recommended?.sandboxMode || "workspace-write", ["planning", "research", "implementation", "debugging", "review"], "Complete the selected subagent task.", ["Result matches the user request.", "Residual risk is reported."]));
+    if (taskKind === "product-analysis") {
+      stages.push(baseStage("primary", agentName, "explorer", "read-only", ["planning", "research", "review"], "Complete the selected product analysis task.", ["Recommendation is grounded in user outcome.", "No implementation work is implied."]));
+    } else {
+      stages.push(baseStage("primary", agentName, routeLike.recommended?.runtimeRole || "worker", routeLike.recommended?.sandboxMode || "workspace-write", ["planning", "research", "implementation", "debugging", "review"], "Complete the selected subagent task.", ["Result matches the user request.", "Residual risk is reported."]));
+    }
   }
   if (executionPlan.requiresTests) {
     stages.push(baseStage("validate", "test-automator", "worker", "workspace-write", ["testing"], "Run or define the nearest focused validation.", ["Validation command or reason for not running is reported.", "New or updated tests cover changed behavior when practical."]));
@@ -1093,6 +1276,7 @@ function qualityGatesFor(route, judgePolicy) {
   const gates = [];
   const risk = route.taskProfile?.risk || "unknown";
   const importance = route.modelPolicy?.importanceLevel || "normal";
+  const taskKind = route.taskProfile?.taskKind || route.taskKind || "unknown";
   if (["high", "critical"].includes(risk) || ["high", "critical"].includes(importance)) {
     gates.push({ id: "high-risk-model-gate", passed: judgePolicy.judgeModel === "gpt-5.5", reason: "High/critical risk requires GPT-5.5 judgement and execution policy." });
   }
@@ -1104,6 +1288,15 @@ function qualityGatesFor(route, judgePolicy) {
   }
   if (route.modelPolicy?.importanceLevel === "low") {
     gates.push({ id: "low-risk-cost-gate", passed: ["deterministic", "mini-judge", "standard-judge"].includes(judgePolicy.judgeMode), reason: "Low-risk work may use cheaper routing when confidence is high." });
+  }
+  if (taskKind === "product-analysis") {
+    const selected = Object.values(route.selectedSkillsByPhase || {}).flat();
+    gates.push({ id: "task-kind-skill-alignment", passed: !(route.selectedSkillsByPhase?.implementation || []).length && !(route.selectedSkillsByPhase?.debugging || []).length, reason: "Product analysis should not carry implementation/debugging stage skills by default." });
+    gates.push({ id: "task-kind-stage-alignment", passed: route.executionPlan?.mode !== "staged" || !route.executionPlan?.stages?.some((stage) => /implement|worker implements/i.test(stage)), reason: "Product analysis should not generate implementation stages." });
+    if (!selected.length) gates.push({ id: "task-kind-skill-coverage", passed: true, reason: "No product skills were selected; route remains safe and read-only." });
+  }
+  if (taskKind === "engineering-execution") {
+    gates.push({ id: "task-kind-stage-alignment", passed: route.executionPlan?.requiresTests === true, reason: "Engineering execution should include a validation path." });
   }
   return gates;
 }
@@ -1286,7 +1479,11 @@ function enrichConfiguredSkill(entry, community = loadCommunitySkillManifest()) 
 
 function buildSkillCandidates(task, limit = 18) {
   const community = loadCommunitySkillManifest();
-  const direct = skillMatches(task).map((entry) => enrichConfiguredSkill(entry, community));
+  const taskKind = classifyTaskKind(task);
+  const direct = skillMatches(task)
+    .map((entry) => enrichConfiguredSkill(entry, community))
+    .filter((entry) => shouldKeepSkillForTaskKind(entry, taskKind, task));
+  if (direct.length >= limit) return direct.slice(0, limit);
   const directNames = new Set(direct.map((entry) => entry.name));
   const scanned = loadSkillRegistry()
     .map((skill) => {
@@ -1303,7 +1500,7 @@ function buildSkillCandidates(task, limit = 18) {
         reason: communitySkill ? `matched community skill metadata from ${communitySkill.source}` : "matched local skill metadata",
       };
     })
-    .filter((skill) => skill.score > 8 && !directNames.has(skill.name))
+    .filter((skill) => skill.score > 8 && !directNames.has(skill.name) && shouldKeepSkillForTaskKind({ ...skill, phase: "matched" }, taskKind, task))
     .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name))
     .slice(0, Math.max(0, limit - direct.length))
     .map(({ name, description, score, confidence, reason, source, flags }) => ({ name, description, phase: "matched", score, confidence, reason, source, flags }));
@@ -1312,14 +1509,31 @@ function buildSkillCandidates(task, limit = 18) {
 
 function routeTask(task, options = {}) {
   const candidateLimit = options.candidateLimit || 3;
+  const strategy = loadStrategyConfig();
+  const routeCacheKey = JSON.stringify({
+    task: cleanTask(task),
+    candidateLimit,
+    strategyVersion: strategy.version,
+  });
+  if (!options.noRouteCache && routeTaskCache.has(routeCacheKey)) return routeTaskCache.get(routeCacheKey);
   const registry = loadRegistry();
   const intents = classifyIntents(task);
+  const taskKind = classifyTaskKind(task, { matchedIntents: intents });
   const ranked = registry.agents
     .map((agent) => scoreAgent(agent, task, intents))
     .sort((a, b) => b.score - a.score || a.agent.name.localeCompare(b.agent.name))
     .slice(0, Math.max(5, candidateLimit));
 
   let best = ranked[0]?.agent || registry.agents.find((agent) => agent.name === "code-mapper") || registry.agents[0];
+  const taskKindPreferred = preferredAgentsForTaskKind(taskKind)
+    .map((name) => registry.agents.find((agent) => agent.name === name))
+    .filter(Boolean);
+  const preferredRanked = ranked.find((entry) => taskKindPreferred.some((agent) => agent.name === entry.agent.name));
+  if (preferredRanked && (taskKind === "orchestration-design" || taskKind === "product-analysis")) {
+    best = preferredRanked.agent;
+  } else if ((taskKind === "orchestration-design" || taskKind === "product-analysis") && taskKindPreferred.length) {
+    best = taskKindPreferred[0];
+  }
   const vagueTask = isVagueTask(task, ranked);
   let confidence = confidenceFor(ranked, intents);
   if (vagueTask) confidence = "low";
@@ -1330,19 +1544,19 @@ function routeTask(task, options = {}) {
   if (needsParentChoice && codebaseImplied) {
     best = registry.agents.find((agent) => agent.name === "code-mapper") || best;
   }
-  let skillEntries = skillMatches(task);
+  let skillEntries = skillMatches(task).filter((entry) => shouldKeepSkillForTaskKind(entry, taskKind, task));
   if (vagueTask) {
     skillEntries = skillEntries.filter((entry) => !/debugging|failure|regression/i.test(entry.reason));
   }
   const skills = skillEntries.map((entry) => entry.name);
   const bestScore = ranked.find((entry) => entry.agent.name === best.name) || scoreAgent(best, task, intents);
   const selectedSkillsByPhase = groupSkillsByPhase(skillEntries);
-  const strategy = loadStrategyConfig();
   const baseRoute = {
     task,
     confidence,
     needsParentChoice,
     matchedIntents: intents.map(({ id, label, score, preferredSandbox }) => ({ id, label, score, preferredSandbox })),
+    taskKind,
     recommended: summarizeAgent(best),
     scoreBreakdown: bestScore.breakdown,
     reasons: bestScore.reasons,
@@ -1352,9 +1566,9 @@ function routeTask(task, options = {}) {
     suggestedSkills: skills,
   };
   const taskProfile = computeTaskProfile(task, baseRoute);
-  const modelPolicy = computeModelPolicy(task, best, baseRoute);
+  const modelPolicy = computeModelPolicy(task, best, { ...baseRoute, taskProfile });
   const executionPlan = buildExecutionPlan(task, baseRoute, taskProfile, selectedSkillsByPhase);
-  return {
+  const result = {
     ...baseRoute,
     strategyConfig: {
       source: strategy.source,
@@ -1366,6 +1580,8 @@ function routeTask(task, options = {}) {
     executionPlan,
     delegationPrompt: buildPrompt(best, task, skills, { confidence, needsParentChoice, intents, modelPolicy }),
   };
+  routeTaskCache.set(routeCacheKey, result);
+  return result;
 }
 
 function summarizeAgent(agent) {
@@ -1434,32 +1650,33 @@ function buildJudgementPrompt(task, deterministic, agentCandidates, skillCandida
       costRationale: judgePolicy.costRationale,
     },
     deterministic: {
-      recommended: deterministic.recommended,
+      recommended: deterministic.recommended?.name,
       confidence: deterministic.confidence,
       needsParentChoice: deterministic.needsParentChoice,
-      matchedIntents: deterministic.matchedIntents,
-      scoreBreakdown: deterministic.scoreBreakdown,
+      taskKind: deterministic.taskProfile?.taskKind || deterministic.taskKind,
+      matchedIntents: (deterministic.matchedIntents || []).map((intent) => intent.id),
       reasons: deterministic.reasons,
       modelPolicy: deterministic.modelPolicy,
       taskProfile: deterministic.taskProfile,
-      executionPlan: deterministic.executionPlan,
-      selectedSkillsByPhase: deterministic.selectedSkillsByPhase,
+      executionMode: deterministic.executionPlan?.mode,
+      requiresReview: deterministic.executionPlan?.requiresReview,
+      requiresTests: deterministic.executionPlan?.requiresTests,
+      requiresUserClarification: deterministic.executionPlan?.requiresUserClarification,
+      selectedSkills: deterministic.suggestedSkills,
     },
     agentCandidates: agentCandidates.map((candidate) => ({
       name: candidate.name,
-      description: clampText(candidate.description, 160),
+      description: clampText(candidate.description, 64),
       category: candidate.category,
       runtimeRole: candidate.runtimeRole,
       sandboxMode: candidate.sandboxMode,
       compatibleModel: candidate.compatibleModel,
       score: candidate.score,
-      reasons: candidate.reasons,
-      scoreBreakdown: candidate.breakdown,
+      reasons: (candidate.reasons || []).slice(0, 3),
     })),
     skillCandidates: skillCandidates.map((skill) => ({
       name: skill.name,
-      description: clampText(skill.description, 140),
-      reason: clampText(skill.reason, 140),
+      reason: clampText(skill.reason, 56),
       phase: skill.phase,
       confidence: skill.confidence,
       score: skill.score,
@@ -1469,26 +1686,20 @@ function buildJudgementPrompt(task, deterministic, agentCandidates, skillCandida
 
   return `You are Codex acting only as a routing judge.
 
-Choose the best VoltAgent subagent identity and Codex skills for the task.
-Also choose the runtime model and reasoning effort for the subagent that will execute the task.
-Confirm or refine the execution plan for how the parent Codex agent should delegate.
+Choose the best candidate agent, exact candidate skills, execution model, and delegation shape.
 
 Hard rules:
-- Do not solve, execute, inspect files, spawn agents, or modify anything.
 - Choose finalAgent only from agentCandidates.
 - Choose selectedSkills only as an exact subset of skillCandidates.name strings.
-- Never invent, rename, abbreviate, or normalize skills. Use [] if no exact skillCandidate applies.
 - selectedSkillsByPhase may be empty; if you fill it, every listed skill must already be in selectedSkills.
 - Prefer narrow specialists over generic agents when the task is specific.
-- Prefer explorer/read-only for review, audit, research, and analysis.
-- Prefer worker/workspace-write for implementation, fixes, tests, and code edits.
 - If the task is vague or lacks enough context, use confidence "low" and needsParentChoice true.
 - Important work must use selectedModel "gpt-5.5": security, auth, privacy, compliance, architecture, production, incident, migration, cross-system changes, high-risk review, ambiguous tasks, and multi-agent coordination.
 - Routine scoped implementation may use "gpt-5.4".
 - Simple low-risk docs, formatting, or narrow chores may use "gpt-5.4-mini".
 - Do not downgrade deterministic.modelPolicy when it marks importanceLevel "critical".
-- Preserve clarify-first mode when deterministic.executionPlan.requiresUserClarification is true.
-- Choose reasoningEffort "high" or "xhigh" for critical or deeply ambiguous tasks; "medium" for normal implementation; "low" only for simple low-risk tasks.
+- Preserve clarify-first mode when deterministic.requiresUserClarification is true.
+- Use explorer/read-only for review/audit/research/analysis; worker/workspace-write for edits/fixes/tests.
 - Keep rationale short and operational.
 - Respect judgePolicy: it controls judge cost only, never lower the execution model below task risk.
 - Return judgeMode, judgeModel, costRationale, and candidateBudget exactly from judgePolicy.
@@ -1496,7 +1707,7 @@ Hard rules:
 Return JSON that matches the provided schema.
 
 Routing packet:
-${JSON.stringify(packet, null, 2)}`;
+${JSON.stringify(packet)}`;
 }
 
 function fallbackJudgement(task, route, skillCandidates, errorMessage = "", meta = {}) {
@@ -1621,9 +1832,12 @@ function validateJudgement(judgement, route, skillCandidates) {
 function runModelJudgement(task, options = {}) {
   const initialRoute = routeTask(task, { candidateLimit: options.candidateLimit || 8 });
   const judgePolicy = computeJudgePolicy(task, initialRoute, options);
-  const route = initialRoute.candidates.length === judgePolicy.candidateBudget.agents
+  const route = initialRoute.candidates.length <= judgePolicy.candidateBudget.agents
     ? initialRoute
-    : routeTask(task, { candidateLimit: options.candidateLimit || judgePolicy.candidateBudget.agents });
+    : {
+      ...initialRoute,
+      candidates: initialRoute.candidates.slice(0, judgePolicy.candidateBudget.agents),
+    };
   const skillCandidates = buildSkillCandidates(task, options.skillLimit || judgePolicy.candidateBudget.skills);
   const cacheMeta = {
     hit: false,
@@ -1801,8 +2015,109 @@ function printRoute(route, mode) {
   console.log(route.delegationPrompt);
 }
 
+function compactJudgementResult(result) {
+  return {
+    task: result.task,
+    finalAgent: result.finalAgent,
+    runtimeRole: result.runtimeRole,
+    sandboxMode: result.sandboxMode,
+    selectedModel: result.selectedModel,
+    reasoningEffort: result.reasoningEffort,
+    importanceLevel: result.importanceLevel,
+    judgeMode: result.judgeMode,
+    judgeModel: result.judgeModel,
+    modelUsed: result.modelUsed,
+    confidence: result.confidence,
+    needsParentChoice: result.needsParentChoice,
+    cache: result.cache,
+    taskProfile: result.taskProfile,
+    executionPlan: {
+      mode: result.executionPlan?.mode,
+      requiresReview: result.executionPlan?.requiresReview,
+      requiresTests: result.executionPlan?.requiresTests,
+      requiresUserClarification: result.executionPlan?.requiresUserClarification,
+      stages: (result.executionPlan?.stageDetails || result.handoffPlan?.stages || []).map((stage) => ({
+        id: stage.id,
+        agent: stage.agent,
+        role: stage.role,
+        sandboxMode: stage.sandboxMode,
+        selectedModel: stage.selectedModel,
+        reasoningEffort: stage.reasoningEffort,
+        skills: stage.skills,
+      })),
+      clarificationQuestion: result.executionPlan?.clarificationQuestion || result.handoffPlan?.clarificationQuestion || "",
+    },
+    selectedSkills: result.selectedSkills,
+    selectedSkillsByPhase: result.selectedSkillsByPhase,
+    costRationale: result.costRationale,
+    modelRationale: result.modelRationale,
+    rationale: result.rationale,
+    qualityGates: result.qualityGates,
+    routingWarnings: result.routingWarnings,
+    fallbackSafety: result.fallbackSafety,
+    failureClass: result.failureClass,
+    requiresParentReview: result.requiresParentReview,
+    delegationBlocked: result.delegationBlocked,
+    approvalState: result.approvalState,
+  };
+}
+
+function managedDelegationPlan(result) {
+  const stageDetails = result.executionPlan?.stageDetails || result.handoffPlan?.stages || [];
+  const selectedSkills = result.selectedSkills || [];
+  const asksNow = Boolean(result.executionPlan?.requiresUserClarification || result.needsParentChoice || result.delegationBlocked);
+  return {
+    mode: result.executionPlan?.mode || "single-agent",
+    agent: result.finalAgent,
+    role: result.runtimeRole,
+    sandboxMode: result.sandboxMode,
+    model: result.selectedModel,
+    reasoningEffort: result.reasoningEffort,
+    skills: selectedSkills,
+    userSummary: {
+      whyThisAgent: `${result.finalAgent} matches the task shape and can operate as ${result.runtimeRole}.`,
+      whyNoQuestionNow: asksNow
+        ? "One clarification or parent review is needed before autonomous delegation."
+        : "The task has enough scope and the route is confident enough to proceed without interrupting you.",
+      whenCodexWillAsk: "Codex asks only for destructive actions, credentials, production changes, or if one missing detail blocks safe delegation.",
+    },
+    clarificationQuestion: asksNow ? (result.executionPlan?.clarificationQuestion || result.handoffPlan?.clarificationQuestion || "请补充一个关键范围或目标，以便安全派发子代理。") : "",
+    goalLoop: stageDetails.map((stage, index) => ({
+      goal: `Stage ${index + 1}: ${stage.id}`,
+      agent: stage.agent,
+      role: stage.role,
+      sandboxMode: stage.sandboxMode,
+      model: stage.selectedModel,
+      skills: stage.skills || [],
+      acceptance: stage.acceptanceCriteria || [],
+      nextTrigger: index === stageDetails.length - 1 ? "finish and summarize evidence" : `complete ${stage.id} acceptance criteria`,
+    })),
+  };
+}
+
+function printManagedDelegation(result, mode = "text") {
+  const plan = managedDelegationPlan(result);
+  if (mode === "json") {
+    console.log(JSON.stringify(plan, null, 2));
+    return;
+  }
+  console.log(`Managed delegation: ${plan.agent} (${plan.role}, ${plan.sandboxMode})`);
+  console.log(`Why: ${plan.userSummary.whyThisAgent}`);
+  console.log(`No question now: ${plan.userSummary.whyNoQuestionNow}`);
+  console.log(`Will ask when: ${plan.userSummary.whenCodexWillAsk}`);
+  if (plan.clarificationQuestion) console.log(`Question: ${plan.clarificationQuestion}`);
+  console.log("Goal stages:");
+  for (const stage of plan.goalLoop) {
+    console.log(`- ${stage.goal}: ${stage.agent} as ${stage.role}; skills=${stage.skills.join(", ") || "none"}`);
+  }
+}
+
 function printJudgement(result, mode) {
   if (mode === "json") {
+    console.log(JSON.stringify(compactJudgementResult(result), null, 2));
+    return;
+  }
+  if (mode === "verbose-json") {
     console.log(JSON.stringify(result, null, 2));
     return;
   }
@@ -1880,6 +2195,27 @@ function cacheStats() {
   };
 }
 
+function skillSnapshotStats() {
+  try {
+    const snapshot = JSON.parse(readText(SKILL_REGISTRY_SNAPSHOT_PATH));
+    return {
+      path: SKILL_REGISTRY_SNAPSHOT_PATH,
+      exists: true,
+      readable: Array.isArray(snapshot.skills),
+      count: snapshot.count || snapshot.skills?.length || 0,
+      generatedAt: snapshot.generatedAt || null,
+    };
+  } catch {
+    return {
+      path: SKILL_REGISTRY_SNAPSHOT_PATH,
+      exists: fs.existsSync(SKILL_REGISTRY_SNAPSHOT_PATH),
+      readable: false,
+      count: 0,
+      generatedAt: null,
+    };
+  }
+}
+
 function configuredSkillBudgetRisk(config = loadStrategyConfig()) {
   const budgets = config.costPolicy?.candidateBudgets || DEFAULT_COST_POLICY.candidateBudgets;
   const smallestBudget = Math.min(...Object.values(budgets).map((budget) => budget.skills).filter(Boolean));
@@ -1929,6 +2265,7 @@ function runDoctor(mode = "text") {
   const config = loadStrategyConfig();
   const configValidation = validateStrategyConfig(config);
   const budgetRisk = configuredSkillBudgetRisk(config);
+  const snapshot = skillSnapshotStats();
   const skillNames = new Set(skills.flatMap((skill) => [skill.name, skill.name.split(":").at(-1)]));
   const missingSkillNames = unique(config.skillRules.flatMap((rule) => rule.skills || []))
     .filter((name) => !skillNames.has(name) && !skillNames.has(name.split(":").at(-1)));
@@ -1942,6 +2279,7 @@ function runDoctor(mode = "text") {
     { id: "configured-skills-exist", ok: missingSkillNames.length === 0, detail: missingSkillNames.length ? `missing: ${missingSkillNames.slice(0, 12).join(", ")}` : "all configured skills found" },
     { id: "skill-budget-risk", ok: budgetRisk.ok, detail: budgetRisk.riskCount ? `${budgetRisk.riskCount} rules exceed smallest skill budget; v9 repair keeps configured skills eligible` : "no configured rule exceeds smallest skill budget" },
     { id: "cache-readable", ok: Boolean(readJudgementCache()), detail: `${cacheStats().entries} entries` },
+    { id: "skill-registry-snapshot", ok: snapshot.exists && snapshot.readable && snapshot.count > 0, detail: snapshot.exists ? `${snapshot.count} skills, generated ${snapshot.generatedAt || "unknown"}` : "missing; will be rebuilt on next registry load" },
   ];
   const report = {
     generatedAt: new Date().toISOString(),
@@ -1991,6 +2329,7 @@ function runReport(mode = "text") {
     schemaSource: JUDGEMENT_SCHEMA_PATH,
     registrySource: REGISTRY_PATH,
     cache: cacheStats(),
+    skillRegistrySnapshot: skillSnapshotStats(),
     skillBudgetRisk: {
       riskCount: budgetRisk.riskCount,
       smallestBudget: budgetRisk.smallestBudget,
@@ -2005,6 +2344,7 @@ function runReport(mode = "text") {
     console.log(`Strategy: v${report.strategyVersion} from ${report.strategySource}`);
     console.log(`Skill budget risk: ${report.skillBudgetRisk.riskCount} rules over smallest budget ${report.skillBudgetRisk.smallestBudget}`);
     console.log(`Cache: ${report.cache.entries} entries`);
+    console.log(`Skill snapshot: ${report.skillRegistrySnapshot.exists ? `${report.skillRegistrySnapshot.count} skills` : "missing"}`);
     console.log(`Last eval: ${lastEval ? `${lastEval.passed}/${lastEval.total} (${lastEval.passRate}%)` : "not run"}`);
     console.log(`Last skill repair: ${lastSkillRepair ? `${lastSkillRepair.pass ? "pass" : "fail"} (${lastSkillRepair.repairedSkill})` : "not run"}`);
   }
@@ -2074,6 +2414,12 @@ const EVAL_CASES = [
   { id: "v10-explicit-skills-project-optimization", task: "开启子代理，请显式使用 skills 来规划并执行当前项目的优化。", expected: { intentIncludes: ["planning"], judgeModel: "gpt-5.5", executionMode: "staged", skillsInclude: ["superpowers:writing-plans", "superpowers:executing-plans", "superpowers:subagent-driven-development"], skillsExclude: ["community-spellbook-openai-agents", "community-spellbook-langgraph"] } },
   { id: "v10-readonly-multi-agent-audit", task: "开启子代理，用多智能体只读审计当前项目的测试覆盖和架构风险，不要改代码。", expected: { intentIncludes: ["review", "testing", "planning"], judgeModel: "gpt-5.5", sandbox: "read-only", requiresReview: true, requiresTests: false } },
   { id: "v10-openai-agent-framework-explicit", task: "开启子代理，设计 OpenAI Agents SDK 与 LangGraph 调度策略", expected: { intentIncludes: ["data-ai", "planning"], skillsInclude: ["community-spellbook-openai-agents", "community-spellbook-langgraph"], judgeModel: "gpt-5.5" } },
+  { id: "v11-router-speed-orchestration", task: "开启子代理，调用合适子代理优化 subagent-router 调度算法和调用速度", expected: { intentIncludes: ["orchestration"], taskKind: "orchestration-design", agentIn: ["architect-reviewer", "project-manager", "multi-agent-coordinator", "code-mapper"], executionMode: "staged", requiresTests: true, requiresReview: true, judgeModel: "gpt-5.5" } },
+  { id: "v11-product-adoption-readonly", task: "开启子代理，分析功能 adoption 差，不要改代码", expected: { taskKind: "product-analysis", agentIn: ["product-manager", "research-analyst", "risk-manager", "business-analyst"], sandbox: "read-only", requiresTests: false, noImplementStage: true } },
+  { id: "v11-router-fallback-review", task: "开启子代理，评审 router fallback 和 quality gate", expected: { intentIncludes: ["orchestration"], taskKind: "orchestration-design", agentIn: ["architect-reviewer", "project-manager", "multi-agent-coordinator", "code-mapper"], executionMode: "staged" } },
+  { id: "v11-product-engineering-conflict", task: "开启子代理，分析用户 churn 问题，并判断是否需要后端限流改造", expected: { taskKind: "product-analysis", agentIn: ["product-manager", "research-analyst", "risk-manager", "business-analyst"], noImplementStage: true, requiresTests: false } },
+  { id: "v11-support-engineering-handoff", task: "开启子代理，设计支持团队到工程团队的 handoff，并补测试方案", expected: { intentIncludes: ["orchestration", "testing", "planning"], taskKind: "orchestration-design", executionMode: "staged", requiresTests: true } },
+  { id: "v11-goal-mode-managed", task: "开启子代理，调用合适子代理，用 goal 模式持续实现", expected: { intentIncludes: ["orchestration", "planning"], taskKind: "orchestration-design", executionMode: "staged", judgeModel: "gpt-5.5" } },
   { id: "v9-skill-budget-planning", task: "开启子代理，写好详细计划方案然后使用 goal 模式实现", expected: { intentIncludes: ["planning"], skillsInclude: ["superpowers:writing-plans"], judgeModel: "gpt-5.5" } },
   { id: "v9-high-risk-fallback-auth", task: "开启子代理，critical 模式修复生产 API 鉴权和权限漏洞", options: { budget: "critical" }, expected: { intentIncludes: ["backend", "security"], judgeModel: "gpt-5.5", selectedModel: "gpt-5.5", requiresTests: true, requiresReview: true } },
   { id: "v9-public-readme-release", task: "开启子代理，完善公开 GitHub README 发布说明和安装步骤", expected: { intentIncludes: ["docs", "github"], skillsInclude: ["github:github"] } },
@@ -2108,10 +2454,15 @@ function evaluateCase(testCase) {
   if (expected.judgeMode) check(policy.judgeMode === expected.judgeMode, `expected judgeMode ${expected.judgeMode}, got ${policy.judgeMode}`);
   if (expected.judgeModel) check(policy.judgeModel === expected.judgeModel, `expected judgeModel ${expected.judgeModel}, got ${policy.judgeModel}`);
   if (expected.cacheEligible !== undefined) check(policy.cacheEligible === expected.cacheEligible, `expected cacheEligible ${expected.cacheEligible}, got ${policy.cacheEligible}`);
+  if (expected.taskKind) check(route.taskProfile.taskKind === expected.taskKind, `expected taskKind ${expected.taskKind}, got ${route.taskProfile.taskKind}`);
   if (expected.executionMode) check(route.executionPlan.mode === expected.executionMode, `expected executionMode ${expected.executionMode}, got ${route.executionPlan.mode}`);
   if (expected.requiresTests !== undefined) check(route.executionPlan.requiresTests === expected.requiresTests, `expected requiresTests ${expected.requiresTests}, got ${route.executionPlan.requiresTests}`);
   if (expected.requiresReview !== undefined) check(route.executionPlan.requiresReview === expected.requiresReview, `expected requiresReview ${expected.requiresReview}, got ${route.executionPlan.requiresReview}`);
   if (expected.needsParentChoice !== undefined) check(route.needsParentChoice === expected.needsParentChoice, `expected needsParentChoice ${expected.needsParentChoice}, got ${route.needsParentChoice}`);
+  if (expected.noImplementStage) {
+    const stageText = JSON.stringify(route.executionPlan.stages || []);
+    check(!/implement|worker implements|Worker implements/i.test(stageText), `expected no implementation stage, got ${stageText}`);
+  }
   const highRisk = ["high", "critical"].includes(route.taskProfile.risk) || ["high", "critical"].includes(route.modelPolicy.importanceLevel);
   if (highRisk) check(policy.judgeModel === "gpt-5.5", `high-risk policy must use gpt-5.5, got ${policy.judgeModel}`);
   return {
@@ -2124,6 +2475,7 @@ function evaluateCase(testCase) {
       judgeMode: policy.judgeMode,
       judgeModel: policy.judgeModel,
       selectedModel: route.modelPolicy.selectedModel,
+      taskKind: route.taskProfile.taskKind,
       cacheEligible: policy.cacheEligible,
       executionMode: route.executionPlan.mode,
       skills: suggested.slice(0, 8),
@@ -2156,6 +2508,240 @@ function runEval(mode = "text") {
     }
   }
   if (failed.length) throw new Error(`eval failed: ${failed.length}/${results.length} cases failed`);
+}
+
+function buildLegacyJudgementPromptEstimate(task, deterministic, agentCandidates, skillCandidates, judgePolicy = {}) {
+  const packet = {
+    task,
+    judgePolicy,
+    deterministic: {
+      recommended: deterministic.recommended,
+      confidence: deterministic.confidence,
+      needsParentChoice: deterministic.needsParentChoice,
+      matchedIntents: deterministic.matchedIntents,
+      scoreBreakdown: deterministic.scoreBreakdown,
+      reasons: deterministic.reasons,
+      modelPolicy: deterministic.modelPolicy,
+      taskProfile: deterministic.taskProfile,
+      executionPlan: deterministic.executionPlan,
+      selectedSkillsByPhase: deterministic.selectedSkillsByPhase,
+    },
+    agentCandidates: agentCandidates.map((candidate) => ({
+      name: candidate.name,
+      description: clampText(candidate.description, 160),
+      category: candidate.category,
+      runtimeRole: candidate.runtimeRole,
+      sandboxMode: candidate.sandboxMode,
+      compatibleModel: candidate.compatibleModel,
+      score: candidate.score,
+      reasons: candidate.reasons,
+      scoreBreakdown: candidate.breakdown,
+    })),
+    skillCandidates: skillCandidates.map((skill) => ({
+      name: skill.name,
+      description: clampText(skill.description, 140),
+      reason: clampText(skill.reason, 140),
+      phase: skill.phase,
+      confidence: skill.confidence,
+      score: skill.score,
+      source: skill.source,
+    })),
+  };
+  return `You are Codex acting only as a routing judge.
+
+Choose the best VoltAgent subagent identity and Codex skills for the task.
+Also choose the runtime model and reasoning effort for the subagent that will execute the task.
+Confirm or refine the execution plan for how the parent Codex agent should delegate.
+
+Return JSON that matches the provided schema.
+
+Routing packet:
+${JSON.stringify(packet, null, 2)}`;
+}
+
+function runPerformanceTests() {
+  const promptTask = "开启子代理，调用合适子代理优化 subagent-router 调度算法和调用速度";
+  const promptRoute = routeTask(promptTask, { candidateLimit: 8 });
+  const promptPolicy = computeJudgePolicy(promptTask, promptRoute, { budget: "critical" });
+  const promptSkills = buildSkillCandidates(promptTask, promptPolicy.candidateBudget.skills);
+  const compactPromptBytes = Buffer.byteLength(buildJudgementPrompt(promptTask, promptRoute, promptRoute.candidates, promptSkills, promptPolicy));
+  const legacyPromptBytes = Buffer.byteLength(buildLegacyJudgementPromptEstimate(promptTask, promptRoute, promptRoute.candidates, promptSkills, promptPolicy));
+  assert(compactPromptBytes <= legacyPromptBytes * 0.6, `compact prompt must be at least 40% smaller; compact=${compactPromptBytes}, legacy=${legacyPromptBytes}`);
+
+  const jsonTask = "开启子代理，修正 README 里的一个拼写错误";
+  const jsonResult = runModelJudgement(jsonTask, { noCache: true });
+  const compactJsonBytes = Buffer.byteLength(JSON.stringify(compactJudgementResult(jsonResult), null, 2));
+  const verboseJsonBytes = Buffer.byteLength(JSON.stringify(jsonResult, null, 2));
+  assert(compactJsonBytes <= verboseJsonBytes * 0.7, `compact json must be at least 30% smaller; compact=${compactJsonBytes}, verbose=${verboseJsonBytes}`);
+
+  const lowRiskProduct = routeTask("开启子代理，分析功能 adoption 差，不要改代码", { candidateLimit: 8 });
+  const lowRiskPolicy = computeJudgePolicy(lowRiskProduct.task, lowRiskProduct, { budget: "balanced" });
+  assert(lowRiskPolicy.judgeModel !== "gpt-5.5", `low-risk read-only product analysis should avoid GPT-5.5, got ${lowRiskPolicy.judgeModel}`);
+
+  const highRiskSecurity = routeTask("开启子代理，审查当前 diff 里的生产鉴权漏洞", { candidateLimit: 8 });
+  const highRiskPolicy = computeJudgePolicy(highRiskSecurity.task, highRiskSecurity, { budget: "balanced" });
+  assert(highRiskPolicy.judgeModel === "gpt-5.5", `high-risk current diff auth review must keep GPT-5.5, got ${highRiskPolicy.judgeModel}`);
+  assert(highRiskPolicy.cacheEligible === false, "volatile high-risk current diff must bypass cache");
+
+  const skillStarted = process.hrtime.bigint();
+  const tierOneSkills = buildSkillCandidates("开启子代理，帮我修前端 bug", 3);
+  const skillElapsedMs = Number(process.hrtime.bigint() - skillStarted) / 1e6;
+  assert(tierOneSkills.length === 3, `Tier-1 skill build should honor limit, got ${tierOneSkills.length}`);
+  assert(tierOneSkills.some((skill) => /frontend|react|ui-ux|tailwind/.test(skill.name)), "Tier-1 skill build should keep direct frontend-family skills");
+
+  const routeCacheTask = "开启子代理，调用合适子代理优化 subagent-router 调度算法和调用速度";
+  const routeStarted = process.hrtime.bigint();
+  routeTask(routeCacheTask, { candidateLimit: 8, noRouteCache: true });
+  const uncachedRouteMs = Number(process.hrtime.bigint() - routeStarted) / 1e6;
+  const cachedStarted = process.hrtime.bigint();
+  routeTask(routeCacheTask, { candidateLimit: 8 });
+  routeTask(routeCacheTask, { candidateLimit: 8 });
+  const cachedRouteMs = Number(process.hrtime.bigint() - cachedStarted) / 1e6;
+  assert(cachedRouteMs <= uncachedRouteMs, `route cache should not be slower; cached=${cachedRouteMs}, uncached=${uncachedRouteMs}`);
+
+  const report = {
+    pass: true,
+    prompt: {
+      compactBytes: compactPromptBytes,
+      legacyBytes: legacyPromptBytes,
+      reductionPercent: Number((100 - (compactPromptBytes / legacyPromptBytes) * 100).toFixed(2)),
+    },
+    json: {
+      compactBytes: compactJsonBytes,
+      verboseBytes: verboseJsonBytes,
+      reductionPercent: Number((100 - (compactJsonBytes / verboseJsonBytes) * 100).toFixed(2)),
+    },
+    judgeGate: {
+      lowRiskProduct: lowRiskPolicy.judgeModel,
+      highRiskSecurity: highRiskPolicy.judgeModel,
+    },
+    localPrep: {
+      tierOneSkillMs: Number(skillElapsedMs.toFixed(3)),
+      uncachedRouteMs: Number(uncachedRouteMs.toFixed(3)),
+      cachedRoutePairMs: Number(cachedRouteMs.toFixed(3)),
+      snapshot: skillSnapshotStats(),
+    },
+  };
+  console.log(JSON.stringify(report, null, 2));
+}
+
+function deterministicManagedResult(task) {
+  const route = routeTask(task, { candidateLimit: 8 });
+  const judgePolicy = computeJudgePolicy(task, route, { offline: true });
+  const skillCandidates = buildSkillCandidates(task, judgePolicy.candidateBudget.skills);
+  return attachRoutingMetadata({
+    task,
+    modelUsed: false,
+    model: null,
+    judgeMode: "deterministic",
+    judgeModel: "none",
+    costRationale: ["managed delegation test uses deterministic route"],
+    candidateBudget: judgePolicy.candidateBudget,
+    cache: { hit: false, eligible: false },
+    finalAgent: route.recommended.name,
+    runtimeRole: route.recommended.runtimeRole,
+    sandboxMode: route.recommended.sandboxMode,
+    selectedSkills: route.suggestedSkills,
+    selectedSkillsByPhase: route.selectedSkillsByPhase,
+    importanceLevel: route.modelPolicy.importanceLevel,
+    selectedModel: route.modelPolicy.selectedModel,
+    reasoningEffort: route.modelPolicy.reasoningEffort,
+    modelRationale: route.modelPolicy.modelRationale,
+    taskProfile: route.taskProfile,
+    executionPlan: route.executionPlan,
+    confidence: route.confidence,
+    needsParentChoice: route.needsParentChoice,
+    rationale: route.reasons,
+    riskNotes: [],
+    deterministic: route,
+  }, route, skillCandidates, judgePolicy);
+}
+
+function runManagedDelegationTests() {
+  const authorized = managedDelegationPlan(deterministicManagedResult("开启子代理，调用合适子代理，用 goal 模式持续实现"));
+  assert(authorized.mode === "staged", `authorized goal request should be staged, got ${authorized.mode}`);
+  assert(authorized.goalLoop.length >= 3, "authorized goal request should expose staged goal loop");
+  assert(!Object.prototype.hasOwnProperty.call(authorized, "judgeMode"), "managed plan must hide judgeMode");
+  assert(!Object.prototype.hasOwnProperty.call(authorized, "candidateBudget"), "managed plan must hide candidateBudget");
+  assert(authorized.userSummary.whyThisAgent && authorized.userSummary.whenCodexWillAsk, "managed plan should include concise user summary");
+
+  const vague = managedDelegationPlan(deterministicManagedResult("开启子代理，多代理帮我优化一下这个"));
+  assert(vague.mode === "clarify-first", `vague request should clarify first, got ${vague.mode}`);
+  assert(vague.clarificationQuestion, "vague request should include one clarification question");
+
+  const highRisk = managedDelegationPlan(deterministicManagedResult("开启子代理，critical 模式修复生产 API 鉴权和权限漏洞"));
+  const stageIds = highRisk.goalLoop.map((stage) => stage.goal);
+  assert(stageIds.some((stage) => stage.includes("validate")), "high-risk write managed plan should include validation stage");
+  assert(stageIds.some((stage) => stage.includes("review")), "high-risk write managed plan should include review stage");
+
+  console.log(JSON.stringify({
+    pass: true,
+    authorized: { mode: authorized.mode, stages: authorized.goalLoop.length, agent: authorized.agent },
+    vague: { mode: vague.mode, hasQuestion: Boolean(vague.clarificationQuestion) },
+    highRisk: { stages: stageIds },
+  }, null, 2));
+}
+
+function runSkillsPhaseTests() {
+  const cases = [
+    "开启子代理，请显式使用 skills 来规划并执行当前项目的优化。",
+    "开启子代理，分析功能 adoption 差，不要改代码",
+    "开启子代理，调用合适子代理优化 subagent-router 调度算法和调用速度",
+    "开启子代理，修复 API 鉴权问题",
+  ];
+  const results = [];
+  for (const task of cases) {
+    const result = deterministicManagedResult(task);
+    const selected = new Set(result.selectedSkills || []);
+    const phaseSkills = Object.values(result.selectedSkillsByPhase || {}).flat();
+    for (const skill of phaseSkills) assert(selected.has(skill), `${task}: phase skill ${skill} not present in selectedSkills`);
+    for (const stage of result.handoffPlan?.stages || []) {
+      for (const skill of stage.skills || []) assert(selected.has(skill), `${task}: stage skill ${skill} not present in selectedSkills`);
+    }
+    if (result.taskProfile.taskKind === "product-analysis") {
+      assert((result.selectedSkillsByPhase.implementation || []).length === 0, `${task}: product-analysis must not carry implementation skills`);
+      assert((result.selectedSkillsByPhase.debugging || []).length === 0, `${task}: product-analysis must not carry debugging skills`);
+      assert(!result.handoffPlan.stages.some((stage) => stage.id === "implement"), `${task}: product-analysis must not include implement stage`);
+    }
+    results.push({
+      task,
+      taskKind: result.taskProfile.taskKind,
+      selectedSkills: result.selectedSkills.length,
+      phases: Object.fromEntries(Object.entries(result.selectedSkillsByPhase).filter(([, skills]) => skills.length)),
+    });
+  }
+  console.log(JSON.stringify({ pass: true, results }, null, 2));
+}
+
+function runJudgeMatrixTests() {
+  const cases = [
+    { id: "docs-deterministic", task: "开启子代理，修正 README 里的一个拼写错误", options: {}, expect: { judgeMode: "deterministic", judgeModel: "none" } },
+    { id: "product-low-risk", task: "开启子代理，分析功能 adoption 差，不要改代码", options: {}, expect: { judgeModel: "gpt-5.4" } },
+    { id: "economy-mini", task: "开启子代理，补齐 pytest 覆盖率", options: { budget: "economy", forceModel: true }, expect: { judgeMode: "mini-judge", judgeModel: "gpt-5.4-mini" } },
+    { id: "orchestration-premium", task: "开启子代理，调用合适子代理优化 subagent-router 调度算法和调用速度", options: {}, expect: { judgeMode: "premium-judge", judgeModel: "gpt-5.5" } },
+    { id: "current-diff-auth", task: "开启子代理，审查当前 diff 里的生产鉴权漏洞", options: {}, expect: { judgeMode: "premium-judge", judgeModel: "gpt-5.5", cacheEligible: false } },
+    { id: "vague-multiagent", task: "开启子代理，多代理帮我优化一下这个", options: {}, expect: { judgeMode: "premium-judge", judgeModel: "gpt-5.5", executionMode: "clarify-first" } },
+  ];
+  const results = [];
+  for (const testCase of cases) {
+    const route = routeTask(testCase.task, { candidateLimit: 8 });
+    const policy = computeJudgePolicy(testCase.task, route, testCase.options);
+    if (testCase.expect.judgeMode) assert(policy.judgeMode === testCase.expect.judgeMode, `${testCase.id}: expected judgeMode ${testCase.expect.judgeMode}, got ${policy.judgeMode}`);
+    if (testCase.expect.judgeModel) assert(policy.judgeModel === testCase.expect.judgeModel, `${testCase.id}: expected judgeModel ${testCase.expect.judgeModel}, got ${policy.judgeModel}`);
+    if (testCase.expect.cacheEligible !== undefined) assert(policy.cacheEligible === testCase.expect.cacheEligible, `${testCase.id}: expected cacheEligible ${testCase.expect.cacheEligible}, got ${policy.cacheEligible}`);
+    if (testCase.expect.executionMode) assert(route.executionPlan.mode === testCase.expect.executionMode, `${testCase.id}: expected executionMode ${testCase.expect.executionMode}, got ${route.executionPlan.mode}`);
+    const highRisk = ["high", "critical"].includes(route.taskProfile.risk) || ["high", "critical"].includes(route.modelPolicy.importanceLevel);
+    if (highRisk && !/product-low-risk/.test(testCase.id)) assert(policy.judgeModel === "gpt-5.5", `${testCase.id}: high-risk route must use GPT-5.5`);
+    results.push({
+      id: testCase.id,
+      taskKind: route.taskProfile.taskKind,
+      executionMode: route.executionPlan.mode,
+      judgeMode: policy.judgeMode,
+      judgeModel: policy.judgeModel,
+      cacheEligible: policy.cacheEligible,
+    });
+  }
+  console.log(JSON.stringify({ pass: true, results }, null, 2));
 }
 
 function runTests() {
@@ -2381,6 +2967,15 @@ function runRecoveryTests() {
   assert(Object.keys(cache.entries || {}).length === 0, "bad cache should recover to empty entries");
   if (originalCache) fs.writeFileSync(JUDGEMENT_CACHE_PATH, originalCache);
 
+  const originalSnapshot = fs.existsSync(SKILL_REGISTRY_SNAPSHOT_PATH) ? readText(SKILL_REGISTRY_SNAPSHOT_PATH) : "";
+  fs.writeFileSync(SKILL_REGISTRY_SNAPSHOT_PATH, "{ bad json");
+  clearSkillRegistryCaches();
+  const rebuiltSkills = loadSkillRegistry();
+  assert(rebuiltSkills.length > 0, "bad skill snapshot should recover by rebuilding registry");
+  assert(skillSnapshotStats().readable, "rebuilt skill snapshot should be readable");
+  if (originalSnapshot) fs.writeFileSync(SKILL_REGISTRY_SNAPSHOT_PATH, originalSnapshot);
+  clearSkillRegistryCaches();
+
   const candidates = buildSkillCandidates("开启子代理，修复 React 前端 bug", 18);
   assert(candidates.every((skill) => skillNameAvailable(skill.name)), "skill candidates should only include available skills");
 
@@ -2397,6 +2992,7 @@ function runRecoveryTests() {
       requiresParentReview: lowRisk.requiresParentReview,
     },
     cacheRecovery: true,
+    snapshotRecovery: true,
     availableSkillFiltering: true,
   }, null, 2));
 }
@@ -2408,8 +3004,8 @@ function runHandoffTests() {
     { id: "frontend-bug", task: "开启子代理，帮我修前端 bug", needsStage: ["primary", "validate"] },
     { id: "ci-failure", task: "开启子代理，修复 CI workflow 失败", needsStage: ["primary", "validate"] },
     { id: "openai-api", task: "开启子代理，设计 OpenAI Responses API 调用封装", needsStage: ["primary", "review"] },
-    { id: "v10-project-optimize", task: "开启子代理，使用多智能体对当前项目做审查，确定几个优化方向，并持续迭代实现。", needsStage: ["explore", "validate", "review"], staged: true },
-    { id: "v10-readonly-audit", task: "开启子代理，用多智能体只读审计当前项目的测试覆盖和架构风险，不要改代码。", needsStage: ["explore", "analyze", "review"], noWrite: true },
+    { id: "v10-project-optimize", task: "开启子代理，使用多智能体对当前项目做审查，确定几个优化方向，并持续迭代实现。", needsStage: ["map-current", "identify-failures", "validate", "review"], staged: true },
+    { id: "v10-readonly-audit", task: "开启子代理，用多智能体只读审计当前项目的测试覆盖和架构风险，不要改代码。", needsStage: ["map-current", "identify-failures", "propose-strategy", "review"], noWrite: true },
     { id: "ambiguous", task: "开启子代理，帮我看看这个东西哪里不对", needsStage: ["clarify"], clarify: true },
   ];
   const results = [];
@@ -2453,7 +3049,7 @@ function runHandoffTests() {
       assert(Array.isArray(stage.skills), `${testCase.id}: stage ${stage.id} skills must be array`);
       assert(stage.expectedOutput, `${testCase.id}: stage ${stage.id} missing expectedOutput`);
       assert(stage.acceptanceCriteria?.length, `${testCase.id}: stage ${stage.id} missing acceptanceCriteria`);
-      if (stage.id === "explore" || stage.id === "review") {
+      if (["explore", "map-current", "identify-failures", "propose-strategy", "review"].includes(stage.id)) {
         assert(stage.role === "explorer", `${testCase.id}: ${stage.id} stage must use explorer role`);
         assert(stage.sandboxMode === "read-only", `${testCase.id}: ${stage.id} stage must be read-only`);
       }
@@ -2612,6 +3208,7 @@ function main() {
     for (let index = 0; index < rest.length; index += 1) {
       const arg = rest[index];
       if (arg === "--json") mode = "json";
+      else if (arg === "--verbose") mode = "verbose-json";
       else if (arg === "--explain") mode = "explain";
       else if (arg === "--offline") offline = true;
       else if (arg === "--no-cache") noCache = true;
@@ -2627,6 +3224,14 @@ function main() {
     const task = args.join(" ").trim();
     if (!task) throw new Error("judge requires a task string");
     printJudgement(runModelJudgement(task, { offline, noCache, forceModel, budget }), mode);
+    return;
+  }
+  if (command === "managed") {
+    const mode = rest[0] === "--json" ? "json" : "text";
+    const args = mode === "json" ? rest.slice(1) : rest;
+    const task = args.join(" ").trim();
+    if (!task) throw new Error("managed requires a task string");
+    printManagedDelegation(runModelJudgement(task, { noCache: true }), mode);
     return;
   }
   if (command === "prompt") {
@@ -2647,6 +3252,22 @@ function main() {
   if (command === "eval") {
     const mode = rest.includes("--json") ? "json" : "text";
     runEval(mode);
+    return;
+  }
+  if (command === "test-performance") {
+    runPerformanceTests();
+    return;
+  }
+  if (command === "test-managed") {
+    runManagedDelegationTests();
+    return;
+  }
+  if (command === "test-skills-phase") {
+    runSkillsPhaseTests();
+    return;
+  }
+  if (command === "test-judge-matrix") {
+    runJudgeMatrixTests();
     return;
   }
   if (command === "test-judge") {
