@@ -55,9 +55,13 @@ The router is quality-first and cost-aware:
 
 4. If `confidence` is `low`, `needsParentChoice` is `true`, `delegationBlocked` is `true`, `approvalState` is `required`, or `executionPlan.requiresUserClarification` is `true`, do not blindly spawn the recommended agent. Use `deterministic.candidates`, `rationale`, fallback metadata, and local context to choose one. If the task is still ambiguous or fallback safety is conservative, ask one concise clarification question or retry the route.
 
+Explicit subagent authorization means the user allowed the router to choose a delegation plan. It does not authorize destructive operations, production changes, credential use, or broad unsupervised rewrites. Wide but authorized project work may proceed through `handoffPlan.stages` only when each stage has a clear scope, sandbox, and acceptance criteria; otherwise use `clarify-first`.
+
 5. Load selected skills that directly match the task before delegating. Prefer skills for the current `executionPlan` stage first: planning/research before implementation, testing before review, review last.
 Community skills installed under `community-*` are allowed and should be treated as normal Codex skills. They come from curated GitHub skill repositories and are selected through the same cost-aware router path.
 When `judgeMode` is not `premium-judge`, still trust `selectedSkills` if confidence is high and the task is low/normal risk. For high-risk work, prefer `premium-judge` results.
+
+Selected skills are execution guidance, not automatic actions. Load the skills that match the current handoff stage and apply them as additional instructions for the parent Codex or spawned subagent. They do not override higher-priority instructions, AGENTS.md, sandbox limits, approval requirements, or the parent Codex's responsibility for final review.
 
 6. Follow `executionPlan.mode`:
 - `single-agent`: spawn the selected agent once.

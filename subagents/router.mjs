@@ -128,7 +128,7 @@ const INTENT_RULES = [
   {
     id: "review",
     label: "review and risk analysis",
-    patterns: [[/审查|检查|代码审查|review|diff|regression|correctness|security review|pr\b|pull request/i, 45]],
+    patterns: [[/审查|审计|检查|代码审查|review|audit|diff|regression|correctness|security review|pr\b|pull request/i, 45]],
     preferredAgents: ["reviewer", "code-reviewer", "architect-reviewer"],
     categories: ["04-quality-security"],
     preferredSandbox: "read-only",
@@ -200,7 +200,7 @@ const INTENT_RULES = [
   {
     id: "data-ai",
     label: "data, ML, or AI systems",
-    patterns: [[/data|analytics|ml|machine learning|llm|rag|prompt|dataset|openai|responses api|agents sdk|langgraph|agent|数据|机器学习|大模型|向量|智能体/i, 42]],
+    patterns: [[/data|analytics|ml|machine learning|llm|rag|prompt|dataset|openai|responses api|agents sdk|langgraph|数据|机器学习|大模型|向量/i, 42]],
     preferredAgents: ["ai-engineer", "llm-architect", "data-engineer", "data-analyst"],
     categories: ["05-data-ai"],
     preferredSandbox: "workspace-write",
@@ -224,7 +224,7 @@ const INTENT_RULES = [
   {
     id: "planning",
     label: "planning, architecture, or sequencing",
-    patterns: [[/plan|roadmap|architecture|design|goal|执行计划|实现方案|规划|计划|架构|设计|多代理|多智能体|持续迭代/i, 36]],
+    patterns: [[/plan|roadmap|architecture|design|goal|multi-agent|multiple subagents|skills|skill-driven|orchestration|执行计划|实现方案|规划|计划|架构|设计|多代理|多智能体|多个子代理|持续迭代|完整优化|优化方向/i, 36]],
     preferredAgents: ["project-manager", "architect-reviewer", "business-analyst", "code-mapper"],
     categories: ["08-business-product", "04-quality-security", "01-core-development"],
     preferredSandbox: "read-only",
@@ -593,11 +593,11 @@ function scoreAgent(agent, task, intents) {
   breakdown.keyword += Math.min(fieldMatchScore(agent.instructions, words, 1), 16);
 
   const writeTask = /fix|implement|build|create|edit|update|refactor|修复|实现|创建|修改|改|写|补齐|重构/i.test(task);
-  const readTask = /review|audit|inspect|analy[sz]e|diff|审查|审核|分析|调研|检查/i.test(task);
+  const readTask = /review|audit|inspect|analy[sz]e|diff|审查|审计|审核|分析|调研|检查/i.test(task) || isNoWriteTask(task);
   if (writeTask && agent.sandboxMode === "workspace-write") breakdown.sandbox += 18;
   if (readTask && agent.sandboxMode === "read-only") breakdown.sandbox += 18;
   if (writeTask && agent.sandboxMode === "read-only" && !/review|audit|审查|审核/.test(task)) breakdown.penalty -= 16;
-  if (readTask && agent.sandboxMode === "workspace-write" && /review|audit|审查|审核/.test(task)) breakdown.penalty -= 22;
+  if (readTask && agent.sandboxMode === "workspace-write" && /review|audit|审查|审计|审核|不要改|只读/.test(task)) breakdown.penalty -= 22;
 
   const total = Object.values(breakdown).reduce((sum, value) => sum + value, 0);
   return { agent, score: total, breakdown, reasons: unique(reasons) };
@@ -615,10 +615,26 @@ function confidenceFor(ranked, intents) {
 
 function isVagueTask(task, ranked) {
   const cleaned = cleanTask(task);
-  const vague = /奇怪|问题|情况|东西|这个|看看|帮我看|不对|something|thing|issue/i.test(cleaned);
+  const vague = /奇怪|问题|情况|东西|这个|看看|帮我看|不对|优化一下|改一下|弄一下|something|thing|issue/i.test(cleaned);
   const concrete = /api|auth|database|react|vue|swift|docker|kubernetes|pytest|diff|error|stack|file|接口|鉴权|数据库|前端|页面|部署|测试|代码|文件|日志/i.test(cleaned);
   const topKeyword = ranked[0]?.breakdown?.keyword || 0;
   return vague && !concrete && topKeyword < 8;
+}
+
+function isNoWriteTask(task) {
+  return /read[- ]?only|do not edit|don't edit|no write|不要改|不要修改|不改代码|只读|仅读|审计/i.test(cleanTask(task));
+}
+
+function isProjectScopeTask(task) {
+  return /project|repo|repository|codebase|workspace|当前项目|这个项目|我们这个项目|项目|仓库|代码库/i.test(cleanTask(task));
+}
+
+function isExplicitBroadAuthorization(task) {
+  const cleaned = cleanTask(task);
+  const broadWorkflow = /multi-agent|subagents?|skills?|orchestrat|多个子代理|多代理|多智能体|子代理|智能体|skills?/i.test(cleaned);
+  const authorization = /完整|全面|持续迭代|持续优化|几个优化方向|自动|自主|允许|授权|可以|全量|跨模块|端到端|完整优化/i.test(cleaned);
+  const action = /optimi[sz]e|improve|iterate|implement|execute|review|audit|完善|优化|迭代|实现|执行|审查|检查|规划|计划/i.test(cleaned);
+  return broadWorkflow && authorization && action && isProjectScopeTask(task);
 }
 
 function computeModelPolicy(task, agent, routeLike = {}) {
@@ -699,9 +715,11 @@ function computeTaskProfile(task, routeLike = {}) {
   const cleaned = cleanTask(task);
   const intentIds = (routeLike.matchedIntents || []).map((intent) => intent.id);
   const signals = [];
-  const writeIntent = /fix|implement|build|create|edit|update|refactor|修复|实现|创建|修改|改|写|补齐|重构/i.test(cleaned)
+  const noWrite = isNoWriteTask(cleaned);
+  const broadAuthorized = isExplicitBroadAuthorization(cleaned);
+  const writeIntent = !noWrite && /fix|implement|build|create|edit|update|refactor|optimi[sz]e|improve|iterate|execute|修复|实现|创建|修改|改|写|补齐|重构|优化|完善|迭代|执行/i.test(cleaned)
     ? "expected"
-    : /review|audit|analy[sz]e|审查|分析|调研|检查/i.test(cleaned)
+    : /review|audit|analy[sz]e|审查|审计|分析|调研|检查/i.test(cleaned)
       ? "none"
       : "possible";
 
@@ -711,7 +729,7 @@ function computeTaskProfile(task, routeLike = {}) {
 
   const highRisk = /security|auth|permission|secret|privacy|production|incident|migration|data loss|安全|鉴权|权限|隐私|生产|事故|迁移|数据丢失/i.test(cleaned);
   const crossSystem = /microservice|distributed|integration|cross[- ]?module|multiple|全局|跨模块|多服务|分布式|集成/i.test(cleaned);
-  const broadPlan = /plan|architecture|roadmap|multi-agent|执行计划|架构|规划|多代理/i.test(cleaned);
+  const broadPlan = /plan|architecture|roadmap|multi-agent|multiple subagents|orchestrat|执行计划|架构|规划|多代理|多智能体|多个子代理|完整优化|持续迭代/i.test(cleaned);
 
   if (highRisk) {
     risk = /production|incident|data loss|生产|事故|数据丢失/i.test(cleaned) ? "critical" : "high";
@@ -722,12 +740,17 @@ function computeTaskProfile(task, routeLike = {}) {
     scope = "unknown";
     signals.push("low routing confidence");
   }
+  if (broadAuthorized) {
+    risk = risk === "critical" ? "critical" : "high";
+    scope = crossSystem ? "cross-system" : "subsystem";
+    signals.push("explicit broad project authorization");
+  }
   if (intentIds.some((id) => ["security", "review", "devops", "data-ai"].includes(id))) {
     risk = risk === "critical" ? "critical" : "high";
     signals.push(`important intent: ${intentIds.find((id) => ["security", "review", "devops", "data-ai"].includes(id))}`);
   }
 
-  if (crossSystem || broadPlan) {
+  if (crossSystem || broadPlan || broadAuthorized) {
     complexity = "high";
     scope = crossSystem ? "cross-system" : "subsystem";
     signals.push(crossSystem ? "cross-system scope" : "planning/architecture scope");
@@ -934,20 +957,27 @@ function completeSkillPhases(groups = {}) {
 function buildExecutionPlan(task, routeLike, taskProfile, selectedSkillsByPhase) {
   const stages = [];
   let mode = "single-agent";
+  const broadAuthorized = isExplicitBroadAuthorization(task);
+  const noWrite = isNoWriteTask(task);
   let requiresReview = ["high", "critical"].includes(taskProfile.risk)
     || (taskProfile.complexity === "high" && taskProfile.writeIntent === "expected")
+    || broadAuthorized
     || routeLike.matchedIntents?.some((intent) => intent.id === "review" || intent.id === "security");
-  const requiresTests = taskProfile.writeIntent === "expected" || routeLike.matchedIntents?.some((intent) => intent.id === "testing" || intent.id === "debug");
-  const requiresUserClarification = routeLike.confidence === "low" || routeLike.needsParentChoice;
+  const requiresTests = !noWrite && (taskProfile.writeIntent === "expected" || broadAuthorized || routeLike.matchedIntents?.some((intent) => intent.id === "testing" || intent.id === "debug"));
+  const requiresUserClarification = !broadAuthorized && (routeLike.confidence === "low" || routeLike.needsParentChoice);
   const parallelizable = taskProfile.complexity === "high" && !requiresUserClarification;
 
   if (requiresUserClarification) {
     mode = "clarify-first";
     stages.push("Ask one concise clarification question before spawning subagents.");
-  } else if (taskProfile.complexity === "high" || /执行计划|implement this plan|multi-agent|多代理/i.test(task)) {
+  } else if (taskProfile.complexity === "high" || broadAuthorized || /执行计划|implement this plan|multi-agent|multiple subagents|多代理|多智能体|多个子代理/i.test(task)) {
     mode = "staged";
     stages.push("Explorer maps scope, ownership boundaries, and likely risks.");
-    stages.push("Worker implements the scoped change with selected skills.");
+    if (noWrite || taskProfile.writeIntent === "none") {
+      stages.push("Read-only specialist analyzes findings and hands scoped recommendations back to the parent.");
+    } else {
+      stages.push("Worker implements the scoped change with selected skills.");
+    }
     if (requiresTests) stages.push("Worker or test-focused agent runs validation and adds/updates tests.");
     if (requiresReview) stages.push("Reviewer performs read-only risk review before final summary.");
   } else if (requiresReview && taskProfile.writeIntent === "expected") {
@@ -1012,6 +1042,7 @@ function buildParentReviewHandoffPlan(task, reason = "routing fallback requires 
 function buildHandoffPlan(task, routeLike, taskProfile, executionPlan, skillsByPhase) {
   const agentName = routeLike.recommended?.name || "selected-agent";
   const modelPolicy = routeLike.modelPolicy || computeModelPolicy(task, routeLike.recommended, routeLike);
+  const noWrite = isNoWriteTask(task) || taskProfile.writeIntent === "none";
   const baseStage = (id, agent, role, sandbox, phases, objective, acceptance) => ({
     id,
     agent,
@@ -1037,7 +1068,7 @@ function buildHandoffPlan(task, routeLike, taskProfile, executionPlan, skillsByP
   if (executionPlan.mode === "staged") {
     stages.push(baseStage("explore", "code-mapper", "explorer", "read-only", ["planning", "research", "design"], "Map scope, risks, ownership boundaries, and implementation order.", ["Affected subsystems and risky files are named.", "Worker scope is bounded."]));
     const primaryRole = routeLike.recommended?.runtimeRole || "worker";
-    if (primaryRole === "worker") {
+    if (primaryRole === "worker" && !noWrite) {
       stages.push(baseStage("implement", agentName, "worker", writableSandboxFor("worker", routeLike.recommended?.sandboxMode || "workspace-write"), ["implementation", "debugging"], "Implement the scoped change without touching unrelated files.", ["Changed files match the scoped boundary.", "No unrelated user changes are overwritten."]));
     } else {
       stages.push(baseStage("analyze", agentName, primaryRole, "read-only", ["planning", "research", "review"], "Analyze the scoped change and hand implementation back to the parent.", ["No write-capable work is implied by a read-only agent.", "Findings are specific enough for a worker handoff if needed."]));
@@ -1077,16 +1108,17 @@ function qualityGatesFor(route, judgePolicy) {
   return gates;
 }
 
-function rejectedCandidatesFor(route) {
-  const selected = route.recommended?.name;
+function rejectedCandidatesFor(route, selectedAgentName = route.recommended?.name) {
+  const selected = selectedAgentName || route.recommended?.name;
+  const selectedCandidate = route.candidates?.find((candidate) => candidate.name === selected) || route.recommended || {};
   return (route.candidates || [])
     .filter((candidate) => candidate.name !== selected)
     .slice(0, 5)
     .map((candidate) => ({
       name: candidate.name,
       score: candidate.score,
-      reason: candidate.sandboxMode !== route.recommended?.sandboxMode
-        ? `lower score and sandbox ${candidate.sandboxMode} differs from selected ${route.recommended?.sandboxMode}`
+      reason: candidate.sandboxMode !== selectedCandidate.sandboxMode
+        ? `lower score and sandbox ${candidate.sandboxMode} differs from selected ${selectedCandidate.sandboxMode}`
         : `lower score margin versus selected ${selected}`,
     }));
 }
@@ -1168,7 +1200,7 @@ function attachRoutingMetadata(result, route, skillCandidates = [], judgePolicy 
     handoffPlan,
     decisionTrace: decisionTraceFor(result.task || route.task, route, judgePolicy, result),
     qualityGates: qualityGatesFor(route, judgePolicy),
-    rejectedCandidates: rejectedCandidatesFor(route),
+    rejectedCandidates: rejectedCandidatesFor(route, result.finalAgent),
     skillRationale: skillRationaleFor(result.selectedSkills, skillCandidates, route),
     fallbackReason: fallbackMeta.fallbackReason || "",
     failureClass: fallbackMeta.failureClass || classifyFailure(fallbackMeta.fallbackReason || ""),
@@ -1192,7 +1224,7 @@ function skillMatches(task) {
     return rule.skills.map((name) => ({
       name,
       ruleId: rule.id || "unnamed",
-      phase: rule.phase || "implementation",
+      phase: phaseForSkill({ name, phase: rule.phase || "implementation" }),
       priority: rule.priority || 50,
       reason: rule.reason,
       confidence: rule.confidence,
@@ -1229,12 +1261,20 @@ function skillRegistryByName() {
   return byName;
 }
 
+function phaseForSkill(entry) {
+  const name = entry.name || "";
+  if (name === "superpowers:executing-plans") return "implementation";
+  if (name === "superpowers:test-driven-development" || /testing|lint-and-validate|test/i.test(name)) return "testing";
+  if (/code-review|security|threat-model|review/i.test(name)) return "review";
+  return entry.phase || "implementation";
+}
+
 function enrichConfiguredSkill(entry, community = loadCommunitySkillManifest()) {
   const communitySkill = community.byName.get(entry.name);
   return {
     name: entry.name,
     description: entry.description || entry.reason,
-    phase: entry.phase || "implementation",
+    phase: phaseForSkill(entry),
     ruleId: entry.ruleId,
     reason: entry.reason,
     confidence: entry.confidence || "medium",
@@ -1283,9 +1323,11 @@ function routeTask(task, options = {}) {
   const vagueTask = isVagueTask(task, ranked);
   let confidence = confidenceFor(ranked, intents);
   if (vagueTask) confidence = "low";
-  const needsParentChoice = confidence === "low";
+  const broadAuthorized = isExplicitBroadAuthorization(task);
+  const needsParentChoice = confidence === "low" && !broadAuthorized;
+  if (broadAuthorized && confidence === "low") confidence = "medium";
   const codebaseImplied = /code|repo|project|file|diff|代码|仓库|项目|文件/.test(cleanTask(task));
-  if (confidence === "low" && codebaseImplied) {
+  if (needsParentChoice && codebaseImplied) {
     best = registry.agents.find((agent) => agent.name === "code-mapper") || best;
   }
   let skillEntries = skillMatches(task);
@@ -2026,6 +2068,12 @@ const EVAL_CASES = [
   { id: "community-figma", task: "开启子代理，根据 Figma 设计稿实现页面", expected: { skillsInclude: ["community-openai-figma-implement-design"] } },
   { id: "community-release", task: "开启子代理，生成 release notes 和 changelog", expected: { skillsInclude: ["community-jmerta-release-notes"] } },
   { id: "v9-multi-agent-project-audit", task: "开启子代理，使用多智能体对这个项目进行审查优化并持续迭代", expected: { intentIncludes: ["review", "planning"], judgeModel: "gpt-5.5", skillsInclude: ["superpowers:writing-plans"], requiresReview: true } },
+  { id: "v10-current-project-multi-agent-optimize", task: "开启子代理，使用多智能体对当前项目做审查，确定几个优化方向，并持续迭代实现。", expected: { intentIncludes: ["review", "planning"], judgeModel: "gpt-5.5", selectedModel: "gpt-5.5", executionMode: "staged", skillsInclude: ["superpowers:writing-plans", "superpowers:executing-plans", "superpowers:subagent-driven-development"], skillsExclude: ["community-spellbook-openai-agents", "community-spellbook-langgraph"], requiresReview: true, requiresTests: true, needsParentChoice: false } },
+  { id: "v10-current-project-multi-agent-vague", task: "开启子代理，多智能体帮我优化一下当前项目。", expected: { judgeModel: "gpt-5.5", executionMode: "clarify-first", needsParentChoice: true } },
+  { id: "v10-current-diff-multi-agent-security-plan", task: "开启子代理，使用多智能体审查当前 diff 里的生产鉴权和权限漏洞，并制定修复计划。", expected: { intentIncludes: ["review", "security", "planning"], judgeModel: "gpt-5.5", selectedModel: "gpt-5.5", cacheEligible: false, requiresReview: true } },
+  { id: "v10-explicit-skills-project-optimization", task: "开启子代理，请显式使用 skills 来规划并执行当前项目的优化。", expected: { intentIncludes: ["planning"], judgeModel: "gpt-5.5", executionMode: "staged", skillsInclude: ["superpowers:writing-plans", "superpowers:executing-plans", "superpowers:subagent-driven-development"], skillsExclude: ["community-spellbook-openai-agents", "community-spellbook-langgraph"] } },
+  { id: "v10-readonly-multi-agent-audit", task: "开启子代理，用多智能体只读审计当前项目的测试覆盖和架构风险，不要改代码。", expected: { intentIncludes: ["review", "testing", "planning"], judgeModel: "gpt-5.5", sandbox: "read-only", requiresReview: true, requiresTests: false } },
+  { id: "v10-openai-agent-framework-explicit", task: "开启子代理，设计 OpenAI Agents SDK 与 LangGraph 调度策略", expected: { intentIncludes: ["data-ai", "planning"], skillsInclude: ["community-spellbook-openai-agents", "community-spellbook-langgraph"], judgeModel: "gpt-5.5" } },
   { id: "v9-skill-budget-planning", task: "开启子代理，写好详细计划方案然后使用 goal 模式实现", expected: { intentIncludes: ["planning"], skillsInclude: ["superpowers:writing-plans"], judgeModel: "gpt-5.5" } },
   { id: "v9-high-risk-fallback-auth", task: "开启子代理，critical 模式修复生产 API 鉴权和权限漏洞", options: { budget: "critical" }, expected: { intentIncludes: ["backend", "security"], judgeModel: "gpt-5.5", selectedModel: "gpt-5.5", requiresTests: true, requiresReview: true } },
   { id: "v9-public-readme-release", task: "开启子代理，完善公开 GitHub README 发布说明和安装步骤", expected: { intentIncludes: ["docs", "github"], skillsInclude: ["github:github"] } },
@@ -2055,6 +2103,7 @@ function evaluateCase(testCase) {
   if (expected.role) check(route.recommended.runtimeRole === expected.role, `expected role ${expected.role}, got ${route.recommended.runtimeRole}`);
   if (expected.sandbox) check(route.recommended.sandboxMode === expected.sandbox, `expected sandbox ${expected.sandbox}, got ${route.recommended.sandboxMode}`);
   if (expected.skillsInclude) for (const skill of expected.skillsInclude) check(suggested.includes(skill), `missing skill ${skill}`);
+  if (expected.skillsExclude) for (const skill of expected.skillsExclude) check(!suggested.includes(skill), `unexpected skill ${skill}`);
   if (expected.selectedModel) check(route.modelPolicy.selectedModel === expected.selectedModel, `expected selectedModel ${expected.selectedModel}, got ${route.modelPolicy.selectedModel}`);
   if (expected.judgeMode) check(policy.judgeMode === expected.judgeMode, `expected judgeMode ${expected.judgeMode}, got ${policy.judgeMode}`);
   if (expected.judgeModel) check(policy.judgeModel === expected.judgeModel, `expected judgeModel ${expected.judgeModel}, got ${policy.judgeModel}`);
@@ -2315,6 +2364,10 @@ function runRecoveryTests() {
   assert(highRisk.requiresParentReview, "high-risk offline fallback must require parent review");
   assert(highRisk.fallbackSafety === "conservative", `expected conservative fallback, got ${highRisk.fallbackSafety}`);
   assert(highRisk.failureClass === "offline", `expected offline failure class, got ${highRisk.failureClass}`);
+  assert(highRisk.delegationBlocked, "high-risk offline fallback must block delegation");
+  assert(highRisk.approvalState === "required", `expected approvalState required, got ${highRisk.approvalState}`);
+  assert(highRisk.executionPlan.mode === "parent-review-required", `expected parent-review-required mode, got ${highRisk.executionPlan.mode}`);
+  assert(highRisk.handoffPlan.stages.length === 1 && highRisk.handoffPlan.stages[0].id === "parent-review", "high-risk fallback handoff must only contain parent-review");
 
   const lowRisk = runModelJudgement("开启子代理，修正 README 里的一个拼写错误", { noCache: true });
   assert(!lowRisk.requiresParentReview, "low-risk deterministic route should not require parent review");
@@ -2355,6 +2408,8 @@ function runHandoffTests() {
     { id: "frontend-bug", task: "开启子代理，帮我修前端 bug", needsStage: ["primary", "validate"] },
     { id: "ci-failure", task: "开启子代理，修复 CI workflow 失败", needsStage: ["primary", "validate"] },
     { id: "openai-api", task: "开启子代理，设计 OpenAI Responses API 调用封装", needsStage: ["primary", "review"] },
+    { id: "v10-project-optimize", task: "开启子代理，使用多智能体对当前项目做审查，确定几个优化方向，并持续迭代实现。", needsStage: ["explore", "validate", "review"], staged: true },
+    { id: "v10-readonly-audit", task: "开启子代理，用多智能体只读审计当前项目的测试覆盖和架构风险，不要改代码。", needsStage: ["explore", "analyze", "review"], noWrite: true },
     { id: "ambiguous", task: "开启子代理，帮我看看这个东西哪里不对", needsStage: ["clarify"], clarify: true },
   ];
   const results = [];
@@ -2388,6 +2443,8 @@ function runHandoffTests() {
     }, route, buildSkillCandidates(testCase.task, 18), computeJudgePolicy(testCase.task, route, { offline: true }));
     const stageIds = result.handoffPlan.stages.map((stage) => stage.id);
     for (const stage of testCase.needsStage) assert(stageIds.includes(stage), `${testCase.id}: missing handoff stage ${stage}; got ${stageIds.join(", ")}`);
+    if (testCase.staged) assert(result.executionPlan.mode === "staged", `${testCase.id}: expected staged mode, got ${result.executionPlan.mode}`);
+    if (testCase.noWrite) assert(!stageIds.includes("implement"), `${testCase.id}: read-only task must not include implement stage`);
     for (const stage of result.handoffPlan.stages) {
       assert(stage.agent, `${testCase.id}: stage ${stage.id} missing agent`);
       assert(stage.role, `${testCase.id}: stage ${stage.id} missing role`);
@@ -2396,6 +2453,17 @@ function runHandoffTests() {
       assert(Array.isArray(stage.skills), `${testCase.id}: stage ${stage.id} skills must be array`);
       assert(stage.expectedOutput, `${testCase.id}: stage ${stage.id} missing expectedOutput`);
       assert(stage.acceptanceCriteria?.length, `${testCase.id}: stage ${stage.id} missing acceptanceCriteria`);
+      if (stage.id === "explore" || stage.id === "review") {
+        assert(stage.role === "explorer", `${testCase.id}: ${stage.id} stage must use explorer role`);
+        assert(stage.sandboxMode === "read-only", `${testCase.id}: ${stage.id} stage must be read-only`);
+      }
+      if (stage.id === "validate") {
+        assert(stage.role === "worker", `${testCase.id}: validate stage must use worker role`);
+        assert(stage.sandboxMode === "workspace-write", `${testCase.id}: validate stage must be workspace-write`);
+      }
+      if (stage.id === "implement") {
+        assert(stage.role === "worker", `${testCase.id}: implement stage must use worker role`);
+      }
     }
     if (result.taskProfile.writeIntent === "expected") assert(result.handoffPlan.stages.some((stage) => stage.id === "validate"), `${testCase.id}: write task missing validation stage`);
     if (["high", "critical"].includes(result.taskProfile.risk) && result.taskProfile.writeIntent === "expected") assert(result.handoffPlan.stages.some((stage) => stage.id === "review"), `${testCase.id}: high-risk write task missing review stage`);
@@ -2446,6 +2514,14 @@ function runSkillRepairTests() {
   assert(judgement.reasoningEffort === "high", "critical policy should require high reasoning");
   assert(judgement.selectedSkillsByPhase.planning.includes("superpowers:writing-plans"), "selected skill should project into planning phase");
   assert(!Object.values(judgement.selectedSkillsByPhase).flat().includes("non-selected-extra"), "phase map must not include unselected skills");
+
+  const skillsTask = "开启子代理，请显式使用 skills 来规划并执行当前项目的优化。";
+  const skillsRoute = routeTask(skillsTask, { candidateLimit: 8 });
+  assert(skillsRoute.suggestedSkills.includes("superpowers:writing-plans"), "explicit skills route should include writing-plans");
+  assert(skillsRoute.suggestedSkills.includes("superpowers:executing-plans"), "explicit skills route should include executing-plans");
+  assert(skillsRoute.suggestedSkills.includes("superpowers:subagent-driven-development"), "explicit skills route should include subagent-driven-development");
+  assert(skillsRoute.selectedSkillsByPhase.planning.includes("superpowers:writing-plans"), "writing-plans should be in planning phase");
+  assert(skillsRoute.selectedSkillsByPhase.implementation.includes("superpowers:executing-plans"), "executing-plans should be in implementation phase");
 
   let invalidSkillFailed = false;
   try {

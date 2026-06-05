@@ -1,4 +1,4 @@
-# Codex Subagent Router v9
+# Codex Subagent Router v10
 
 ![Codex Subagent Router hero](assets/codex-subagent-router-v8-hero.png)
 
@@ -16,6 +16,7 @@ The goal is simple: when you explicitly ask Codex to use subagents, the parent C
 - Explainable decisions through `decisionTrace`, `qualityGates`, `rejectedCandidates`, and `skillRationale`.
 - Conservative fallback behavior through `failureClass`, `fallbackSafety`, `requiresParentReview`, `delegationBlocked`, and `approvalState`.
 - v9 skill repair: configured local skills omitted by the initial candidate budget can be repaired without discarding an otherwise valid GPT-5.5 judgement.
+- v10 orchestration routing: explicit broad multi-agent project work becomes staged, while vague broad work still clarifies first.
 - Built-in eval, recovery, handoff, skill-repair, doctor, and report commands.
 
 ## How It Works
@@ -43,6 +44,21 @@ The router combines four sources of truth:
 - `subagents/strategy-config.json`: intent, skill, cost, cache, and candidate-budget policy.
 - `subagents/community-skills-manifest.json`: imported community skills.
 - Local Codex skill discovery from `~/.codex/skills`, `~/.agents/skills`, and plugin caches.
+
+## Parent Codex Boundary
+
+The router does not execute work by itself. It returns a routing decision for the parent Codex: which agent identity to use, which skills to load, which model and reasoning effort to request, and which handoff stages are safe. The parent Codex remains responsible for loading the relevant skill instructions, spawning any subagent, integrating the result, protecting unrelated user changes, and running final verification before reporting completion.
+
+Selected skills are execution guidance, not automatic actions. They do not override system, developer, user, AGENTS.md, sandbox, approval, or final-review requirements.
+
+## Clarify-First Behavior
+
+Explicitly asking for subagents enables routing, but it does not remove ambiguity checks. If the route has low confidence, needs parent choice, requires user clarification, is delegation-blocked, or returns `parent-review-required`, the parent Codex should ask one concise clarification question or manually review the fallback before spawning a worker.
+
+Broad requests are split into two cases:
+
+- Authorized broad work, such as "use multiple agents and skills to fully optimize this project", becomes a `staged` plan with explore, analyze or implement, validate, and review stages.
+- Vague broad work, such as "use multiple agents to optimize this", remains `clarify-first` until the goal, files, risk boundary, or acceptance criteria are clear.
 
 ## Routing Modes
 
@@ -128,28 +144,31 @@ For the live GPT-5.5 smoke test, use the installed path so local Codex CLI paths
 ~/.codex/subagents/router.mjs test-judge
 ```
 
-## Current v9 Result
+## Current v10 Result
 
-The final v9 verification passed:
+The final v10 verification passed:
 
 - 16/16 regression tests.
-- 65/65 eval cases.
+- 71/71 eval cases.
 - Recovery tests passed.
 - Handoff tests passed.
 - Skill-repair tests passed.
 - Doctor/report passed.
-- High-risk fallback now blocks automatic worker handoff and requires parent review.
-- GPT-5.5 critical routing smoke test passed for the multi-agent project-audit task.
+- Explicit multi-agent project optimization now routes to `staged` instead of over-clarifying.
+- Vague multi-agent project optimization still routes to `clarify-first`.
+- Generic "agent/智能体" wording no longer pulls OpenAI/LangGraph skills unless those technologies are explicitly named.
+- GPT-5.5 critical routing smoke test passed for the multi-agent project optimization task.
 
-See [`outputs/subagent-router-v9-final-report.md`](outputs/subagent-router-v9-final-report.md) for the full report.
+See [`outputs/subagent-router-v10-final-report.md`](outputs/subagent-router-v10-final-report.md) for the full report.
 
-## v9 Reliability Changes
+## v9-v10 Reliability Changes
 
 - Candidate skills from strong strategy rules are protected from truncation by the initial skill budget.
 - If GPT-5.5 selects a configured, locally available skill that was outside the initial candidate list, the router repairs it, emits `routingWarnings`, and keeps the rest of the judgement.
 - Unknown skills and non-candidate agents still fail safely.
 - `selectedSkillsByPhase` is rebuilt from final `selectedSkills`, so handoff stages cannot receive unselected skills.
 - High-risk fallback results use `parent-review-required` mode and do not include executable `primary` or `implement` stages.
+- Workflow skills are phase-aware: plan writing stays in planning, plan execution is available to implementation, and test/review guidance stays in the matching stage.
 - Repository-local config, schema, registry, and manifest files are used when running from a clone; runtime cache still lives under `~/.codex/subagents`.
 
 ## Cache and Local Data

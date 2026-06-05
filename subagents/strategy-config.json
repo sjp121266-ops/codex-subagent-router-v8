@@ -1,5 +1,5 @@
 {
-  "version": 3,
+  "version": 4,
   "skillRules": [
     {
       "id": "frontend",
@@ -195,7 +195,7 @@
         "openai-docs"
       ],
       "patterns": [
-        "openai|agents sdk|responses api|llm|langgraph|agent|大模型|智能体|模型|responses"
+        "openai|agents sdk|responses api|llm|langgraph|大模型|模型|responses"
       ]
     },
     {
@@ -315,7 +315,7 @@
         "community-matt-to-issues"
       ],
       "patterns": [
-        "architecture|system design|prd|issue|planning|refactor|goal|multi-agent|架构|系统设计|需求|计划|重构|拆解|多代理|多智能体|持续迭代"
+        "architecture|system design|prd|issue|planning|refactor|goal|multi-agent|multiple subagents|skills|skill-driven|orchestration|架构|系统设计|需求|计划|规划|重构|拆解|多代理|多智能体|多个子代理|持续迭代|完整优化|优化方向"
       ]
     },
     {
