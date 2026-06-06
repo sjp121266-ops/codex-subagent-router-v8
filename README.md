@@ -11,7 +11,7 @@ It is built for people who want multi-agent Codex workflows without blindly send
 - Selects from VoltAgent-style agent identities and bundled Agency prompt-pack specialists.
 - Matches each task to relevant Codex skills, community skills, model tier, and reasoning effort.
 - Returns structured routing data for `finalAgent`, `selectedSkills`, `selectedModel`, `executionPlan`, `handoffPlan`, `qualityGates`, and fallback state.
-- Produces managed delegation output for the parent Codex, including write boundaries, stage inputs/outputs, parent responsibilities, and next safe action.
+- Produces managed delegation output for the parent Codex, including a planning brief, agent work cards, batch plan, handoff contracts, verification board, write boundaries, stage inputs/outputs, parent responsibilities, and next safe action.
 - Keeps provider prompts compact by default, with explicit hydration modes when a self-contained prompt is needed.
 - Fails safely when a route is ambiguous, high-risk, blocked, or requires parent review.
 

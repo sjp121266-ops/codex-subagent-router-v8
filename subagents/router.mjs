@@ -547,6 +547,7 @@ Usage:
   router.mjs test-config-explain
   router.mjs test-route-cache
   router.mjs test-managed-contract
+  router.mjs test-planning-board
   router.mjs test-agent-roster
   router.mjs test-managed-readiness
   router.mjs test-execution-adapter
@@ -3369,6 +3370,187 @@ function toolSafetyDiagnostics(task = "", taskKind = classifyTaskKind(task)) {
   return null;
 }
 
+function stageStatusFor(stage, readinessState, safetyDiagnostics, androidEnvironment) {
+  if (readinessState === "parent-review-required" || stage.id === "parent-review") return "requires-parent-review";
+  if (readinessState === "clarify-first" || stage.id === "clarify") return "pending";
+  if (/device|connected|install|launch|logcat|screenshot/i.test(stage.id) && androidEnvironment?.deviceState && androidEnvironment.deviceState !== "ready") return "blocked";
+  const blocked = [...(safetyDiagnostics?.blockedChecks || []), ...(androidEnvironment?.blockedChecks || [])];
+  if (blocked.length && /(oauth|token|credential|webhook|queue|download|publish|deploy|login|device|connected|install|launch|logcat|screenshot)/i.test(`${stage.id} ${stage.expectedOutput || ""}`)) return "blocked";
+  return "safe-to-run";
+}
+
+function coordinationModeFor(task, executionMode, readinessState, stageDetails, profile) {
+  if (readinessState === "clarify-first") return "clarify-first";
+  if (readinessState === "parent-review-required") return "parent-review-required";
+  const cleaned = cleanTask(task);
+  if (/全部|全量|多个|多项目|多目录|分批|batch|batches|project.+tool|项目.*工具|工具.*项目/i.test(cleaned)) return "parallel-batches";
+  if (["high", "critical"].includes(profile.risk) && stageDetails.some((stage) => stage.id === "review")) return "supervisor-review";
+  if (executionMode === "single-agent" || stageDetails.length <= 1) return "single-agent";
+  return "sequential-team";
+}
+
+function planningBriefFor({ task, coordinationMode, result, profile, readinessState, stageDetails }) {
+  const objective = clampText(String(task || "").replace(/\s+/g, " ").trim(), 180) || "Coordinate the requested Codex subagent work.";
+  const whyMultiAgent = coordinationMode === "single-agent"
+    ? "One focused agent is enough because the route has a narrow scope."
+    : coordinationMode === "parallel-batches"
+      ? "Independent sample groups can be mapped or validated in batches before parent synthesis."
+      : coordinationMode === "supervisor-review" || coordinationMode === "parent-review-required"
+        ? "Parent Codex must supervise because risk, fallback, or review gates are active."
+        : "The task benefits from mapper, specialist, validator, and reviewer handoffs.";
+  const safeExpectation = readinessState === "ready"
+    ? "Start with nextAction, then advance only after stage evidence is available."
+    : readinessState === "clarify-first"
+      ? "Ask one scope question before spawning agents."
+      : "Review the route and safety state before spawning agents.";
+  return {
+    objective,
+    coordinationMode,
+    taskKind: profile.taskKind || "unknown",
+    risk: profile.risk || "unknown",
+    stageCount: stageDetails.length,
+    primaryAgent: result.finalAgent,
+    whyMultiAgent,
+    safeExpectation,
+    automaticLimits: ["destructive actions", "credentials", "production changes", "external side effects"],
+  };
+}
+
+function agentWorkPlanFor(agentRoster, stageDetails, stageInputs, stageOutputs) {
+  if (!agentRoster) return [];
+  const roles = [
+    ["mapper", "Map scope and evidence"],
+    ["primary", "Own the main reasoning lane"],
+    ["implementer", "Apply scoped changes"],
+    ["validator", "Run validation and collect evidence"],
+    ["reviewer", "Review correctness and residual risk"],
+  ];
+  return roles.map(([rosterRole, responsibility]) => {
+    const agent = agentRoster[rosterRole];
+    if (!agent) {
+      return {
+        rosterRole,
+        agent: null,
+        responsibility: rosterRole === "implementer" ? "No implementation stage is planned for this route." : responsibility,
+        permission: "not-used",
+        canRunInParallel: false,
+        inputs: [],
+        outputs: [],
+        acceptance: ["Role is intentionally absent for this task shape."],
+        handoffTo: [],
+      };
+    }
+    const ownedStages = stageDetails.filter((stage) => stage.agent === agent.name || (rosterRole === "primary" && stage.agent === agentRoster.primary?.name));
+    const firstStage = ownedStages[0];
+    return {
+      rosterRole,
+      agent: agent.name,
+      agentProvider: agent.provider || "voltagent",
+      responsibility,
+      permission: agent.sandboxMode || agent.runtimeRole || "unknown",
+      canRunInParallel: (agent.sandboxMode === "read-only" || agent.runtimeRole === "explorer") && rosterRole !== "reviewer",
+      inputs: firstStage ? (stageInputs[firstStage.id] || []) : ["Parent Codex context and prior stage evidence"],
+      outputs: ownedStages.map((stage) => stageOutputs[stage.id] || stage.expectedOutput || stage.id).slice(0, 3),
+      acceptance: ownedStages.flatMap((stage) => stage.acceptanceCriteria || []).slice(0, 4),
+      handoffTo: ownedStages.map((stage) => {
+        const index = stageDetails.findIndex((candidate) => candidate.id === stage.id);
+        const next = stageDetails[index + 1];
+        return next ? `${stage.id} -> ${next.id}` : `${stage.id} -> parent-summary`;
+      }),
+    };
+  });
+}
+
+function batchPlanFor(task, stageDetails, safetyDiagnostics, androidEnvironment, coordinationMode) {
+  const safeChecks = [...(safetyDiagnostics?.safeChecks || []), ...(androidEnvironment?.localChecks || [])]
+    .filter((item, index, list) => item && list.indexOf(item) === index);
+  const blockedChecks = [...(safetyDiagnostics?.blockedChecks || []), ...(androidEnvironment?.blockedChecks || [])]
+    .filter((item, index, list) => item && list.indexOf(item) === index);
+  if (coordinationMode !== "parallel-batches") {
+    return [{
+      id: "primary-flow",
+      sampleScope: "current requested task",
+      recommendedAgent: stageDetails[0]?.agent || "parent-codex",
+      stages: stageDetails.map((stage) => stage.id),
+      canRunInParallel: false,
+      safeChecks,
+      blockedChecks,
+      finalArtifact: "stage evidence and parent Codex summary",
+    }];
+  }
+  return [
+    {
+      id: "inventory-batch",
+      sampleScope: /项目|project/i.test(task) && /工具|tool/i.test(task) ? "project and tool directories" : "all named samples",
+      recommendedAgent: "code-mapper",
+      stages: stageDetails.filter((stage) => stage.role === "explorer").map((stage) => stage.id).slice(0, 3),
+      canRunInParallel: true,
+      safeChecks: ["path inventory", "manifest/config/script discovery", ...safeChecks].slice(0, 6),
+      blockedChecks,
+      finalArtifact: "sample matrix with task kind and safe validation entrypoints",
+    },
+    {
+      id: "local-validation-batch",
+      sampleScope: "independent local checks by technology family",
+      recommendedAgent: stageDetails.find((stage) => stage.role === "worker")?.agent || "test-automator",
+      stages: stageDetails.filter((stage) => stage.role === "worker").map((stage) => stage.id),
+      canRunInParallel: true,
+      safeChecks: safeChecks.length ? safeChecks : ["local lint/test/build/doctor checks when present"],
+      blockedChecks,
+      finalArtifact: "per-batch validation evidence or environment blockers",
+    },
+    {
+      id: "supervisor-summary",
+      sampleScope: "all completed batches",
+      recommendedAgent: "parent-codex",
+      stages: ["review", "final-summary"].filter((id) => stageDetails.some((stage) => stage.id === id) || id === "final-summary"),
+      canRunInParallel: false,
+      safeChecks: ["merge evidence", "deduplicate blockers", "prepare final report"],
+      blockedChecks,
+      finalArtifact: "user-facing report with fixes, tests, and remaining limits",
+    },
+  ];
+}
+
+function handoffContractsFor(stageDetails, stageOutputs) {
+  return stageDetails.map((stage, index) => {
+    const next = stageDetails[index + 1];
+    return {
+      fromStage: stage.id,
+      toStage: next?.id || "parent-summary",
+      fromAgent: stage.agent,
+      toAgent: next?.agent || "parent-codex",
+      requiredEvidence: (stage.acceptanceCriteria || []).length ? stage.acceptanceCriteria : [stageOutputs[stage.id] || "Stage result is available."],
+      stopCondition: next ? `Do not start ${next.id} until ${stage.id} acceptance evidence is recorded.` : "Stop after parent Codex summarizes evidence and residual risks.",
+      resumeTrigger: next ? `Complete ${stage.id} acceptance criteria.` : "All stages completed or blocked items are explicitly recorded.",
+    };
+  });
+}
+
+function verificationBoardFor(stageDetails, readinessState, safetyDiagnostics, androidEnvironment) {
+  const blockedChecks = [...(safetyDiagnostics?.blockedChecks || []), ...(androidEnvironment?.blockedChecks || [])]
+    .filter((item, index, list) => item && list.indexOf(item) === index);
+  const safeChecks = [...(safetyDiagnostics?.safeChecks || []), ...(androidEnvironment?.localChecks || [])]
+    .filter((item, index, list) => item && list.indexOf(item) === index);
+  const stageChecks = stageDetails.map((stage) => ({
+    stageId: stage.id,
+    agent: stage.agent,
+    status: stageStatusFor(stage, readinessState, safetyDiagnostics, androidEnvironment),
+    checks: (stage.acceptanceCriteria || []).slice(0, 4),
+  }));
+  return {
+    summary: {
+      totalStages: stageDetails.length,
+      safeToRun: stageChecks.filter((check) => check.status === "safe-to-run").length,
+      blocked: stageChecks.filter((check) => check.status === "blocked").length,
+      requiresParentReview: readinessState === "parent-review-required" || stageChecks.some((check) => check.status === "requires-parent-review"),
+    },
+    stageChecks,
+    safeChecks,
+    blockedChecks,
+  };
+}
+
 function compactManagedPlanForProfile(plan, profile = "compact") {
   if (profile !== "compact") return plan;
   const compactRosterAgent = (agent) => agent ? {
@@ -3431,6 +3613,47 @@ function compactManagedPlanForProfile(plan, profile = "compact") {
       whenCodexWillAsk: clampText(plan.userSummary.whenCodexWillAsk, 180),
       executionAdapter: clampText(plan.userSummary.executionAdapter, 160),
     } : plan.userSummary,
+    planningBrief: plan.planningBrief ? {
+      ...plan.planningBrief,
+      objective: clampText(plan.planningBrief.objective, 160),
+      whyMultiAgent: clampText(plan.planningBrief.whyMultiAgent, 160),
+      safeExpectation: clampText(plan.planningBrief.safeExpectation, 180),
+      automaticLimits: (plan.planningBrief.automaticLimits || []).slice(0, 4),
+    } : plan.planningBrief,
+    agentWorkPlan: (plan.agentWorkPlan || []).map((card) => ({
+      rosterRole: card.rosterRole,
+      agent: card.agent,
+      agentProvider: card.agentProvider,
+      responsibility: clampText(card.responsibility, 120),
+      permission: card.permission,
+      canRunInParallel: card.canRunInParallel,
+      inputs: (card.inputs || []).slice(0, 2).map((item) => clampText(item, 90)),
+      outputs: (card.outputs || []).slice(0, 2).map((item) => clampText(item, 100)),
+      acceptance: (card.acceptance || []).slice(0, 2).map((item) => clampText(item, 100)),
+      handoffTo: (card.handoffTo || []).slice(0, 2),
+    })),
+    batchPlan: (plan.batchPlan || []).map((batch) => ({
+      ...batch,
+      safeChecks: (batch.safeChecks || []).slice(0, 5).map((item) => clampText(item, 80)),
+      blockedChecks: (batch.blockedChecks || []).slice(0, 5).map((item) => clampText(item, 80)),
+    })),
+    handoffContracts: (plan.handoffContracts || []).map((contract) => ({
+      ...contract,
+      requiredEvidence: (contract.requiredEvidence || []).slice(0, 2).map((item) => clampText(item, 110)),
+      stopCondition: clampText(contract.stopCondition, 140),
+      resumeTrigger: clampText(contract.resumeTrigger, 120),
+    })),
+    verificationBoard: plan.verificationBoard ? {
+      summary: plan.verificationBoard.summary,
+      stageChecks: (plan.verificationBoard.stageChecks || []).map((check) => ({
+        stageId: check.stageId,
+        agent: check.agent,
+        status: check.status,
+        checks: (check.checks || []).slice(0, 2).map((item) => clampText(item, 100)),
+      })),
+      safeChecks: (plan.verificationBoard.safeChecks || []).slice(0, 6).map((item) => clampText(item, 80)),
+      blockedChecks: (plan.verificationBoard.blockedChecks || []).slice(0, 6).map((item) => clampText(item, 80)),
+    } : plan.verificationBoard,
     writeBoundaries: plan.writeBoundaries ? {
       policy: clampText(plan.writeBoundaries.policy, 180),
       allowedWriters: plan.writeBoundaries.allowedWriters,
@@ -3952,6 +4175,8 @@ function managedDelegationPlan(result, options = {}) {
     : asksNow
       ? "clarify-first"
       : "ready";
+  const executionMode = result.executionPlan?.mode || "single-agent";
+  const coordinationMode = coordinationModeFor(result.task || "", executionMode, readinessState, stageDetails, profile);
   const firstExecutableStage = stageDetails.find((stage) => stage.id !== "clarify" && stage.id !== "parent-review") || stageDetails[0];
   const nextAction = readinessState === "clarify-first"
     ? {
@@ -4015,7 +4240,7 @@ function managedDelegationPlan(result, options = {}) {
     safetyDiagnostics.note,
   ] : [];
   const plan = {
-    mode: result.executionPlan?.mode || "single-agent",
+    mode: executionMode,
     agent: result.finalAgent,
     agentProvider: result.finalAgentProvider || result.deterministic?.finalAgentProvider || result.deterministic?.recommended?.provider || "voltagent",
     agentId: result.finalAgentId || result.deterministic?.finalAgentId || result.deterministic?.recommended?.id || `voltagent:${result.finalAgent}`,
@@ -4060,6 +4285,7 @@ function managedDelegationPlan(result, options = {}) {
       whenCodexWillAsk: "Codex asks only for destructive actions, credentials, production changes, unsupported native spawn requirements, or if one missing detail blocks safe delegation.",
       executionAdapter: executionAdapter.userImpact,
     },
+    planningBrief: planningBriefFor({ task: result.task || "", coordinationMode, result, profile, readinessState, stageDetails }),
     clarificationQuestion: asksNow ? (result.executionPlan?.clarificationQuestion || result.handoffPlan?.clarificationQuestion || "请补充一个关键范围或目标，以便安全派发子代理。") : "",
     executionContract: {
       taskKind: profile.taskKind || "unknown",
@@ -4073,6 +4299,10 @@ function managedDelegationPlan(result, options = {}) {
     },
     androidEnvironment,
     safetyDiagnostics,
+    agentWorkPlan: agentWorkPlanFor(result.agentRoster, stageDetails, stageInputs, stageOutputs),
+    batchPlan: batchPlanFor(result.task || "", stageDetails, safetyDiagnostics, androidEnvironment, coordinationMode),
+    handoffContracts: handoffContractsFor(stageDetails, stageOutputs),
+    verificationBoard: verificationBoardFor(stageDetails, readinessState, safetyDiagnostics, androidEnvironment),
     writeBoundaries,
     parentResponsibilities: [
       "Load only the selected skills needed for the current stage.",
@@ -4114,6 +4344,10 @@ function printManagedDelegation(result, mode = "text", options = {}) {
   console.log(`Why: ${plan.userSummary.whyThisAgent}`);
   console.log(`No question now: ${plan.userSummary.whyNoQuestionNow}`);
   console.log(`Will ask when: ${plan.userSummary.whenCodexWillAsk}`);
+  if (plan.planningBrief) {
+    console.log(`Planning mode: ${plan.planningBrief.coordinationMode}; task kind=${plan.planningBrief.taskKind}; risk=${plan.planningBrief.risk}`);
+    console.log(`Planning reason: ${plan.planningBrief.whyMultiAgent}`);
+  }
   if (plan.clarificationQuestion) console.log(`Question: ${plan.clarificationQuestion}`);
   console.log("Goal stages:");
   for (const stage of plan.goalLoop) {
@@ -5158,6 +5392,53 @@ function runManagedContractTests() {
   }, null, 2));
 }
 
+function runPlanningBoardTests() {
+  const multiSample = managedDelegationPlan(deterministicManagedResult("使用多智能体分批测试 /Users/sjp1212/Documents/项目 和 /Users/sjp1212/Documents/工具 的本地项目，按领域分组，输出批次计划、并行边界、交接验收和最终报告"));
+  assert(multiSample.planningBrief?.coordinationMode === "parallel-batches", `multi-sample task should use parallel-batches, got ${multiSample.planningBrief?.coordinationMode}`);
+  assert(multiSample.batchPlan?.length >= 3, "multi-sample task should expose inventory, validation, and supervisor batches");
+  assert(multiSample.batchPlan.some((batch) => batch.canRunInParallel), "multi-sample batch plan should mark parallel-safe batches");
+  assert(multiSample.handoffContracts?.length === multiSample.goalLoop.length, "handoff contracts should cover every goal stage");
+  assert(multiSample.verificationBoard?.stageChecks?.length === multiSample.goalLoop.length, "verification board should cover every goal stage");
+
+  const android = managedDelegationPlan(deterministicManagedResult("优化 Android 项目，测试、修复、复测、报告：先只读盘点，再本地 Gradle 验证，再 adb 设备检查，最后复测报告"));
+  assert(android.handoffContracts?.some((contract) => contract.toStage && contract.requiredEvidence?.length), "android route should expose point-to-point handoff contracts");
+  assert(android.verificationBoard?.stageChecks?.some((check) => ["safe-to-run", "blocked"].includes(check.status)), "android route should expose runnable or blocked verification states");
+
+  const credential = managedDelegationPlan(deterministicManagedResult("开启子代理，只读审查 /Users/sjp1212/Documents/工具/get_token OAuth token 工具，不执行 OAuth、不输出 token"));
+  const implementerCard = credential.agentWorkPlan?.find((card) => card.rosterRole === "implementer");
+  assert(credential.executionContract.writeIntent === "none", "credential route should remain read-only");
+  assert(!implementerCard?.agent, "credential route should not assign an implementer");
+  assert(credential.verificationBoard?.blockedChecks?.some((item) => /OAuth|token|auth cache/i.test(item)), "credential verification board should block OAuth/token output");
+
+  const vague = managedDelegationPlan(deterministicManagedResult("开启子代理，多代理帮我优化一下这个"));
+  assert(vague.planningBrief?.coordinationMode === "clarify-first", "vague route should keep clarify-first planning mode");
+  assert(vague.verificationBoard?.stageChecks?.every((check) => check.status === "pending"), "clarify-first verification board should stay pending");
+
+  const highRisk = managedDelegationPlan(deterministicManagedResult("开启子代理，生产鉴权事故，修复权限漏洞并补测试"));
+  assert(["supervisor-review", "parent-review-required"].includes(highRisk.planningBrief?.coordinationMode), `high-risk route should use supervisor or parent review, got ${highRisk.planningBrief?.coordinationMode}`);
+  assert(highRisk.verificationBoard?.summary?.requiresParentReview || highRisk.goalLoop.some((stage) => /review/i.test(stage.goal)), "high-risk board should require review gate");
+  assert(highRisk.contextLedger.estimatedInputTokens < 6000, `compact planning board should stay under token budget, got ${highRisk.contextLedger.estimatedInputTokens}`);
+
+  console.log(JSON.stringify({
+    pass: true,
+    multiSample: {
+      coordinationMode: multiSample.planningBrief.coordinationMode,
+      batches: multiSample.batchPlan.map((batch) => batch.id),
+      handoffs: multiSample.handoffContracts.length,
+    },
+    credential: {
+      writeIntent: credential.executionContract.writeIntent,
+      implementer: implementerCard?.agent || null,
+      blocked: credential.verificationBoard.blockedChecks,
+    },
+    highRisk: {
+      coordinationMode: highRisk.planningBrief.coordinationMode,
+      reviewRequired: highRisk.verificationBoard.summary.requiresParentReview,
+      tokens: highRisk.contextLedger.estimatedInputTokens,
+    },
+  }, null, 2));
+}
+
 function runSkillsPhaseTests() {
   const cases = [
     "开启子代理，请显式使用 skills 来规划并执行当前项目的优化。",
@@ -5231,7 +5512,9 @@ function runConfigTests() {
   for (const required of ["security", "auth", "production", "current-diff"]) {
     assert((config.highRiskRules || []).some((rule) => new RegExp(required === "current-diff" ? "current|diff|当前" : required, "i").test(`${rule.id || ""} ${rule.pattern || ""}`)), `missing high-risk rule for ${required}`);
   }
-  console.log(JSON.stringify({ pass: true, taskKinds: Object.keys(config.taskKindPolicy || {}), highRiskRules: config.highRiskRules.map((rule) => rule.id) }, null, 2));
+  assert(config.managedUX?.planningBoard?.enabled, "managedUX planningBoard should be enabled");
+  assert(config.managedUX.planningBoard.modes.parallelBatches === "parallel-batches", "planningBoard should define parallel-batches mode");
+  console.log(JSON.stringify({ pass: true, taskKinds: Object.keys(config.taskKindPolicy || {}), highRiskRules: config.highRiskRules.map((rule) => rule.id), planningBoard: config.managedUX.planningBoard }, null, 2));
 }
 
 function runConfigExplainTests() {
@@ -6204,6 +6487,10 @@ function main() {
   }
   if (command === "test-managed-contract") {
     runManagedContractTests();
+    return;
+  }
+  if (command === "test-planning-board") {
+    runPlanningBoardTests();
     return;
   }
   if (command === "test-skills-phase") {

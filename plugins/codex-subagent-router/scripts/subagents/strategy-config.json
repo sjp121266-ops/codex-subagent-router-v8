@@ -645,12 +645,27 @@
   "managedUX": {
     "explanationStyle": "concise",
     "maxClarifyingQuestions": 1,
-    "hideInternalFields": true
+    "hideInternalFields": true,
+    "planningBoard": {
+      "enabled": true,
+      "modes": {
+        "singleAgent": "single-agent",
+        "sequentialTeam": "sequential-team",
+        "parallelBatches": "parallel-batches",
+        "supervisorReview": "supervisor-review",
+        "clarifyFirst": "clarify-first",
+        "parentReviewRequired": "parent-review-required"
+      }
+    }
   },
   "executionProfiles": {
     "single-agent": "One focused subagent can handle the task directly.",
     "staged": "Use an explorer or planner first, then a worker, then verification.",
     "parallel-review": "Run implementation and independent review or verification as separate work.",
-    "clarify-first": "Ask for one clarification before spawning because the route is low confidence."
+    "clarify-first": "Ask for one clarification before spawning because the route is low confidence.",
+    "sequential-team": "Run mapped stages in order with explicit handoff evidence.",
+    "parallel-batches": "Run independent read-only or local-validation batches in parallel, then merge evidence in parent Codex.",
+    "supervisor-review": "Parent Codex supervises high-risk or cross-agent work before write-capable delegation.",
+    "parent-review-required": "Parent Codex must inspect safety or fallback state before spawning any subagent."
   }
 }

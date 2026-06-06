@@ -1,6 +1,6 @@
 # Codex Subagent Router Plugin
 
-This personal Codex plugin packages the Subagent Router for local use. It provides the `subagent-router` skill plus the router CLI and metadata needed to choose VoltAgent and Agency agent identities, Codex skills, model tiers, sandbox modes, execution adapters, staged handoff plans, and budgeted prompt hydration.
+This personal Codex plugin packages the Subagent Router for local use. It provides the `subagent-router` skill plus the router CLI and metadata needed to choose VoltAgent and Agency agent identities, Codex skills, model tiers, sandbox modes, execution adapters, staged handoff plans, multi-agent planning boards, and budgeted prompt hydration.
 
 ## What Is Included
 
