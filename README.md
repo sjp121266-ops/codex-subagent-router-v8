@@ -1,4 +1,4 @@
-# Codex Subagent Router v15
+# Codex Subagent Router v16
 
 ![Codex Subagent Router hero](assets/codex-subagent-router-v8-hero.png)
 
@@ -28,8 +28,11 @@ The goal is simple: when you explicitly ask Codex to use subagents, the parent C
 - v13 cache maintenance: `cache-status` and `cache-prune` make judgement/route cache health visible and cleanable.
 - v15 Agency provider: bundled `msitarzewski/agency-agents` prompt-pack specialists participate in the same candidate pool as VoltAgent agents.
 - v15 provider metadata: `finalAgentProvider`, `finalAgentId`, `agentProviderRationale`, `providerPromptPath`, `providerPromptPreview`, and `dispatchPromptSource` explain whether the selected identity came from VoltAgent or Agency.
-- v15 dispatch upgrade: Agency prompt bodies are embedded in `delegationPrompt` as role/methodology guidance while Codex system rules, AGENTS.md, sandbox, approvals, and parent verification remain authoritative.
 - v15 provider tests: `test-agency-provider`, `test-provider-routing`, and `test-provider-dispatch` verify catalog loading, provider selection, and managed dispatch behavior.
+- v16 context efficiency: Agency prompts are indexed as compact agent cards and are not pasted into managed output by default.
+- v16 prompt hydration: `reference`, `summary`, `hybrid`, and `full` modes let Codex trade context size against self-contained dispatch needs.
+- v16 context ledger: `managed --json --profile compact` and `inspect-context` report managed JSON bytes, delegation prompt bytes, provider prompt bytes, estimated tokens, hydration mode, and context risk.
+- v16 quality-preserving cascade: low-risk product/marketing routes stay fast while security, auth, production, incident, current diff, and other high-risk work still use GPT-5.5 gates.
 - Built-in eval, performance, managed UX, managed-contract, config, route-cache, skills-phase, judge-matrix, recovery, handoff, skill-repair, doctor, and report commands.
 
 ## How It Works
@@ -54,7 +57,7 @@ flowchart TD
 The router combines five sources of truth:
 
 - `subagents/registry.json`: VoltAgent agent metadata.
-- `subagents/agency-agents/catalog.json` and `subagents/agency-agents/prompts/`: bundled Agency provider metadata and prompt bodies.
+- `subagents/agency-agents/catalog.json`, `subagents/agency-agents/agency-agent-index.json`, and `subagents/agency-agents/prompts/`: bundled Agency provider metadata, compact agent cards, and prompt bodies.
 - `subagents/strategy-config.json`: intent, taskKind, skill, cost, cache, model-risk, managed UX, agent roster, and candidate-budget policy.
 - `subagents/community-skills-manifest.json`: imported community skills.
 - Local Codex skill discovery from `~/.codex/skills`, `~/.agents/skills`, and plugin caches.
@@ -66,6 +69,8 @@ The router does not execute work by itself. It returns a routing decision for th
 Native custom-name spawning is host-dependent. When the current Codex surface cannot directly spawn a provider-prefixed identity such as `agency:reddit-community-builder` or a VoltAgent name such as `react-specialist`, `managed --json` exposes an `executionAdapter` and falls back to a generic `explorer` or `worker` bridge. The selected provider identity is still preserved by injecting the generated `delegationPrompt` into that generic role, so routing quality and skill choice remain intact; only the transport layer changes.
 
 Agency agents are used as a prompt/provider layer, not as higher-priority instructions. Their prompt bodies provide role and methodology guidance only. Codex system/developer/user instructions, AGENTS.md, sandbox rules, approval rules, and parent verification always win.
+
+v16 does not paste full Agency prompt bodies into normal managed output. The router first uses `agency-agent-index.json` agent cards, then returns a `dispatchPromptRef`, `compactRoleCard`, `promptHydrationPlan`, and `contextLedger`. Use full prompt hydration only for debugging, external isolated execution, or when a self-contained prompt is explicitly required.
 
 Selected skills are execution guidance, not automatic actions. They do not override system, developer, user, AGENTS.md, sandbox, approval, or final-review requirements.
 
@@ -159,7 +164,20 @@ node subagents/router.mjs judge --json "开启子代理，修复 API 鉴权问�
 Run managed delegation for a normal user request:
 
 ```bash
-node subagents/router.mjs managed --json "开启子代理，调用合适子代理，用 goal 模式持续实现"
+node subagents/router.mjs managed --json --profile compact "开启子代理，调用合适子代理，用 goal 模式持续实现"
+```
+
+Inspect context cost before dispatch:
+
+```bash
+node subagents/router.mjs inspect-context "开启子代理，帮我做 Reddit 社区增长策略"
+```
+
+Hydrate a provider prompt only when needed:
+
+```bash
+node subagents/router.mjs prompt agency:reddit-community-builder "帮我做 Reddit 社区增长策略" --hydrate summary --budget 2000
+node subagents/router.mjs prompt agency:reddit-community-builder "帮我做 Reddit 社区增长策略" --hydrate full --budget 40000
 ```
 
 Show a human-readable explanation:
@@ -211,6 +229,9 @@ node subagents/router.mjs test-cache-maintenance
 node subagents/router.mjs test-agency-provider
 node subagents/router.mjs test-provider-routing
 node subagents/router.mjs test-provider-dispatch
+node subagents/router.mjs test-agent-index
+node subagents/router.mjs test-prompt-hydration
+node subagents/router.mjs test-context-budget
 node subagents/router.mjs doctor
 node subagents/router.mjs report
 ```

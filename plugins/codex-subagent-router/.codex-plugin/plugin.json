@@ -1,6 +1,6 @@
 {
   "name": "codex-subagent-router",
-  "version": "0.1.0+codex.20260605175916",
+  "version": "0.1.0+codex.20260606071830",
   "description": "Quality-first Codex subagent routing for selecting VoltAgent and Agency identities, skills, models, and staged delegation plans.",
   "author": {
     "name": "sjp121266-ops",
@@ -22,7 +22,7 @@
   "interface": {
     "displayName": "Codex Subagent Router",
     "shortDescription": "\u81ea\u52a8\u9009\u62e9 Codex \u5b50\u4ee3\u7406\u3001skills\u3001\u6a21\u578b\u548c\u6267\u884c\u9636\u6bb5\u3002",
-    "longDescription": "Codex Subagent Router packages the local v15 routing system as a personal Codex plugin. It helps the parent Codex choose the right VoltAgent or Agency agent identity, runtime role, sandbox, skills, model strength, execution adapter, execution stages, fallback behavior, and managed next action for explicit subagent requests. Agency prompt-pack specialists from msitarzewski/agency-agents are bundled as a provider layer for product, marketing, design, sales, research, support, and selected engineering-adjacent tasks.",
+    "longDescription": "Codex Subagent Router packages the local v16 routing system as a personal Codex plugin. It helps the parent Codex choose the right VoltAgent or Agency agent identity, runtime role, sandbox, skills, model strength, execution adapter, execution stages, fallback behavior, and managed next action for explicit subagent requests. Agency prompt-pack specialists from msitarzewski/agency-agents are bundled as a provider layer, with v16 agent-card indexing, context ledger, and budgeted prompt hydration so normal delegation does not paste full provider prompts into context.",
     "developerName": "sjp121266-ops",
     "category": "Productivity",
     "capabilities": [

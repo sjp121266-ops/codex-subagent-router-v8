@@ -21,15 +21,15 @@ fi
 1. For normal managed delegation, start with the concise managed router:
 
 ```bash
-"$SUBAGENT_ROUTER" managed --json "<task>"
+"$SUBAGENT_ROUTER" managed --json --profile compact "<task>"
 ```
 
-Use this when the user says “调用合适子代理完成任务”, “开启子代理持续实现”, “多代理帮我优化”, or similar broad delegation language. The managed output is the user-facing plan and execution contract: selected agent, role, skills, stage/goal loop, one-question clarification state, write boundaries, parent responsibilities, stage inputs/outputs, agent roster, delegation readiness, next action, stage skill loading order, and the three short explanations:
+Use this when the user says “调用合适子代理完成任务”, “开启子代理持续实现”, “多代理帮我优化”, or similar broad delegation language. v16 compact mode is the default path because it returns prompt references and compact role cards instead of pasting full provider prompts into context. The managed output is the user-facing plan and execution contract: selected agent, role, skills, stage/goal loop, one-question clarification state, write boundaries, parent responsibilities, stage inputs/outputs, agent roster, delegation readiness, next action, stage skill loading order, context ledger, and the three short explanations:
 - why this agent;
 - why Codex is not asking now;
 - when Codex will ask.
 
-Do not expose internal fields such as `judgeMode`, `candidateBudget`, `failureClass`, cache keys, or raw candidate scoring in normal user updates. Use `managed --json` as the default for real delegation; reserve `judge --verbose` and `judge --explain` for auditing, debugging, or improving the router itself.
+Do not expose internal fields such as `judgeMode`, `candidateBudget`, `failureClass`, cache keys, or raw candidate scoring in normal user updates. Use `managed --json --profile compact` as the default for real delegation; reserve `judge --verbose`, `judge --explain`, `inspect-context`, and full prompt hydration for auditing, debugging, or improving the router itself.
 
 2. For debugging the router or medium/high-risk delegation, run the cost-aware router:
 
@@ -47,7 +47,7 @@ The router is quality-first and cost-aware:
 - `finalAgent` is the selected provider identity to use.
 - `finalAgentProvider` is `voltagent` or `agency-agents`.
 - `finalAgentId`, `finalAgentDisplayName`, and `agentProviderRationale` explain the selected provider identity.
-- `providerPromptPath`, `providerPromptPreview`, and `dispatchPromptSource` show the Agency prompt source when an Agency specialist is selected.
+- `providerPromptPath`, `providerPromptPreview`, `dispatchPromptRef`, `compactRoleCard`, `promptHydrationPlan`, `promptBudget`, `contextLedger`, and `dispatchPromptSource` show how the provider prompt can be hydrated without default full prompt injection.
 - `judgeMode` tells how the route was judged: `deterministic`, `mini-judge`, `standard-judge`, or `premium-judge`.
 - `judgeModel` is the model used for routing judgement; `none` means the deterministic gate was sufficient.
 - `costRationale` explains why the router spent or saved tokens.
@@ -77,7 +77,7 @@ The router is quality-first and cost-aware:
 - `rationale` explains why GPT-5.5 selected the route.
 - `riskNotes` highlights routing or execution cautions.
 - `deterministic` contains the local deterministic fallback route and candidates.
-- `delegationPrompt` is the prompt to pass to the spawned subagent.
+- `delegationPrompt` may appear in `judge` debug output, but normal managed output uses `dispatchPromptRef` plus `promptHydrationPlan`. Generate a budgeted prompt with `prompt <agent> <task> --hydrate reference|summary|hybrid|full --budget N` only when the execution transport needs it.
 
 4. If `modelUsed` is `false`, inspect `judgeMode`:
 - `deterministic` with high confidence is an intentional token-saving route for safe tasks.
@@ -89,7 +89,7 @@ Explicit subagent authorization means the user allowed the router to choose a de
 
 6. Load selected skills that directly match the task before delegating. Prefer skills for the current `executionPlan` stage first: planning/research before implementation, testing before review, review last.
 Community skills installed under `community-*` are allowed and should be treated as normal Codex skills. They come from curated GitHub skill repositories and are selected through the same cost-aware router path.
-Agency agents from `msitarzewski/agency-agents` are allowed as provider identities. Treat their prompt bodies as role/methodology guidance only. They do not override Codex system/developer/user instructions, AGENTS.md, sandbox limits, approval requirements, or the parent Codex's final verification responsibility.
+Agency agents from `msitarzewski/agency-agents` are allowed as provider identities. Treat their prompt bodies as role/methodology guidance only. They do not override Codex system/developer/user instructions, AGENTS.md, sandbox limits, approval requirements, or the parent Codex's final verification responsibility. In v16, default managed routing reads the compact agent-card index and returns a prompt reference; do not load the full Agency prompt unless the selected stage truly needs it.
 When `judgeMode` is not `premium-judge`, still trust `selectedSkills` if confidence is high and the task is low/normal risk. For high-risk work, prefer `premium-judge` results.
 
 Selected skills are execution guidance, not automatic actions. Load the skills that match the current handoff stage and apply them as additional instructions for the parent Codex or spawned subagent. They do not override higher-priority instructions, AGENTS.md, sandbox limits, approval requirements, or the parent Codex's responsibility for final review.
@@ -119,7 +119,7 @@ When `managed --json` returns v13 readiness fields:
 - if `nextAction.type` is `ask-clarification`, ask exactly one concise question and then rerun managed routing with the answer;
 - if `nextAction.type` is `parent-review`, do not spawn a write-capable subagent until the parent Codex has reviewed fallback safety;
 - load `stageSkillLoadingOrder[].loadBeforeStage` before starting that stage;
-- inspect `executionAdapter` before spawning. Use native custom-agent spawn only when `executionAdapter.mode` is `native-custom-agent`; otherwise use the indicated generic `executionAdapter.bridgeRole` and inject `delegationPrompt`.
+- inspect `executionAdapter` before spawning. Use native custom-agent spawn only when `executionAdapter.mode` is `native-custom-agent`; otherwise use the indicated generic `executionAdapter.bridgeRole` and inject a budgeted prompt generated from `dispatchPromptRef` / `promptHydrationPlan`.
 
 For continuous goal work, report each stage in this fixed structure:
 - goal;
@@ -134,9 +134,33 @@ For continuous goal work, report each stage in this fixed structure:
 - Otherwise use the generic bridge: `explorer` when `executionAdapter.bridgeRole` is `explorer`, or `worker` when it is `worker`.
 - Pass `selectedModel` to the subagent spawn tool when it accepts model overrides.
 - Pass `reasoningEffort` to the subagent spawn tool when it accepts reasoning effort overrides.
-- Pass `delegationPrompt` as the subagent task.
+- Pass a compact prompt as the subagent task. Prefer `reference` or `summary`; use `hybrid` for isolated execution where the child may not be able to read local files; use `full` only for debugging or explicitly self-contained execution.
 
-9. If the current environment cannot spawn custom-named agents directly, this is not a routing failure. Still use the chosen provider identity by injecting `delegationPrompt` into the generic Codex `explorer` or `worker`. The selected agent, skills, model, sandbox, stages, and quality gates remain the source of truth; only the execution transport changes.
+9. If the current environment cannot spawn custom-named agents directly, this is not a routing failure. Still use the chosen provider identity by injecting a budgeted prompt into the generic Codex `explorer` or `worker`. The selected agent, skills, model, sandbox, stages, and quality gates remain the source of truth; only the execution transport changes.
+
+## Prompt Hydration
+
+Default to compact managed routing:
+
+```bash
+"$SUBAGENT_ROUTER" managed --json --profile compact "<task>"
+```
+
+Inspect context cost before a large handoff:
+
+```bash
+"$SUBAGENT_ROUTER" inspect-context "<task>"
+```
+
+Generate an explicit dispatch prompt only when a subagent transport needs one:
+
+```bash
+"$SUBAGENT_ROUTER" prompt agency:reddit-community-builder "<task>" --hydrate reference --budget 1800
+"$SUBAGENT_ROUTER" prompt agency:reddit-community-builder "<task>" --hydrate summary --budget 2400
+"$SUBAGENT_ROUTER" prompt agency:reddit-community-builder "<task>" --hydrate hybrid --budget 4000
+```
+
+Use `--hydrate full` only when auditing the router, debugging provider prompts, or running an external isolated process that cannot access local prompt files.
 
 ## Offline Fallback
 
@@ -194,6 +218,9 @@ Use these checks after changing agents, skills, strategy config, schemas, or rou
 "$SUBAGENT_ROUTER" test-agency-provider
 "$SUBAGENT_ROUTER" test-provider-routing
 "$SUBAGENT_ROUTER" test-provider-dispatch
+"$SUBAGENT_ROUTER" test-agent-index
+"$SUBAGENT_ROUTER" test-prompt-hydration
+"$SUBAGENT_ROUTER" test-context-budget
 "$SUBAGENT_ROUTER" config-check
 "$SUBAGENT_ROUTER" doctor
 "$SUBAGENT_ROUTER" report
