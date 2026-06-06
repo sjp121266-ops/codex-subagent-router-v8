@@ -1,14 +1,14 @@
-# Codex Subagent Router v13
+# Codex Subagent Router v15
 
 ![Codex Subagent Router hero](assets/codex-subagent-router-v8-hero.png)
 
-Quality-first routing for Codex subagents. This repository packages a local router that selects VoltAgent agent identities, Codex skills, community skills, model tiers, recovery behavior, and multi-agent handoff plans for Codex workflows.
+Quality-first routing for Codex subagents. This repository packages a local router that selects VoltAgent and Agency agent identities, Codex skills, community skills, model tiers, recovery behavior, and multi-agent handoff plans for Codex workflows.
 
 The goal is simple: when you explicitly ask Codex to use subagents, the parent Codex can automatically choose the right specialist, the right skills, the right sandbox, and the right model strength without blindly spending GPT-5.5 tokens on every task.
 
 ## Highlights
 
-- 167 VoltAgent agent identities in the generated registry snapshot.
+- 351 total agent identities in the tested environment: 167 VoltAgent agents plus 184 bundled Agency agents.
 - 279 available skills detected in the tested environment.
 - 74 imported community skills from curated GitHub skill sources.
 - Quality-first model policy: GPT-5.5 for high-risk work, cheaper routing only for safe and obvious tasks.
@@ -26,6 +26,10 @@ The goal is simple: when you explicitly ask Codex to use subagents, the parent C
 - v13 managed readiness: `managed --json` adds `delegationReadiness`, `nextAction`, and `stageSkillLoadingOrder` so the parent Codex can move directly into the next safe stage.
 - v13 eval governance: deterministic eval expanded to 112 cases with taskKind bucket pass-rate reporting.
 - v13 cache maintenance: `cache-status` and `cache-prune` make judgement/route cache health visible and cleanable.
+- v15 Agency provider: bundled `msitarzewski/agency-agents` prompt-pack specialists participate in the same candidate pool as VoltAgent agents.
+- v15 provider metadata: `finalAgentProvider`, `finalAgentId`, `agentProviderRationale`, `providerPromptPath`, `providerPromptPreview`, and `dispatchPromptSource` explain whether the selected identity came from VoltAgent or Agency.
+- v15 dispatch upgrade: Agency prompt bodies are embedded in `delegationPrompt` as role/methodology guidance while Codex system rules, AGENTS.md, sandbox, approvals, and parent verification remain authoritative.
+- v15 provider tests: `test-agency-provider`, `test-provider-routing`, and `test-provider-dispatch` verify catalog loading, provider selection, and managed dispatch behavior.
 - Built-in eval, performance, managed UX, managed-contract, config, route-cache, skills-phase, judge-matrix, recovery, handoff, skill-repair, doctor, and report commands.
 
 ## How It Works
@@ -47,9 +51,10 @@ flowchart TD
   J -->|"requires review"| L["parent-review-required / no worker stage"]
 ```
 
-The router combines four sources of truth:
+The router combines five sources of truth:
 
 - `subagents/registry.json`: VoltAgent agent metadata.
+- `subagents/agency-agents/catalog.json` and `subagents/agency-agents/prompts/`: bundled Agency provider metadata and prompt bodies.
 - `subagents/strategy-config.json`: intent, taskKind, skill, cost, cache, model-risk, managed UX, agent roster, and candidate-budget policy.
 - `subagents/community-skills-manifest.json`: imported community skills.
 - Local Codex skill discovery from `~/.codex/skills`, `~/.agents/skills`, and plugin caches.
@@ -58,7 +63,9 @@ The router combines four sources of truth:
 
 The router does not execute work by itself. It returns a routing decision for the parent Codex: which agent identity to use, which skills to load, which model and reasoning effort to request, and which handoff stages are safe. The parent Codex remains responsible for loading the relevant skill instructions, spawning any subagent, integrating the result, protecting unrelated user changes, and running final verification before reporting completion.
 
-Native custom-name spawning is host-dependent. When the current Codex surface cannot directly spawn a VoltAgent name such as `security-auditor` or `react-specialist`, `managed --json` now exposes an `executionAdapter` and falls back to a generic `explorer` or `worker` bridge. The selected VoltAgent identity is still preserved by injecting the generated `delegationPrompt` into that generic role, so routing quality and skill choice remain intact; only the transport layer changes.
+Native custom-name spawning is host-dependent. When the current Codex surface cannot directly spawn a provider-prefixed identity such as `agency:reddit-community-builder` or a VoltAgent name such as `react-specialist`, `managed --json` exposes an `executionAdapter` and falls back to a generic `explorer` or `worker` bridge. The selected provider identity is still preserved by injecting the generated `delegationPrompt` into that generic role, so routing quality and skill choice remain intact; only the transport layer changes.
+
+Agency agents are used as a prompt/provider layer, not as higher-priority instructions. Their prompt bodies provide role and methodology guidance only. Codex system/developer/user instructions, AGENTS.md, sandbox rules, approval rules, and parent verification always win.
 
 Selected skills are execution guidance, not automatic actions. They do not override system, developer, user, AGENTS.md, sandbox, approval, or final-review requirements.
 
@@ -89,6 +96,7 @@ The delegated subagent model is selected separately from the routing judge. A ch
 - `subagents/judgement.schema.json`: structured model judgement schema.
 - `subagents/community-skills-manifest.json`: imported community skill manifest.
 - `subagents/registry.json`: VoltAgent agent registry snapshot.
+- `subagents/agency-agents/`: bundled Agency provider catalog and prompt bodies.
 - `subagents/import-community-skills.mjs`: community skill importer.
 - `plugins/codex-subagent-router/`: personal Codex plugin package for this router.
 - `~/.codex/subagents/skill-registry-snapshot.json`: local runtime snapshot used to avoid repeated plugin-cache scans.
@@ -107,6 +115,8 @@ cp subagents/strategy-config.json ~/.codex/subagents/strategy-config.json
 cp subagents/judgement.schema.json ~/.codex/subagents/judgement.schema.json
 cp subagents/community-skills-manifest.json ~/.codex/subagents/community-skills-manifest.json
 cp subagents/registry.json ~/.codex/subagents/registry.json
+rm -rf ~/.codex/subagents/agency-agents
+cp -R subagents/agency-agents ~/.codex/subagents/agency-agents
 cp skills/subagent-router/SKILL.md ~/.codex/skills/subagent-router/SKILL.md
 chmod +x ~/.codex/subagents/router.mjs
 ```
@@ -198,6 +208,9 @@ node subagents/router.mjs test-route-cache
 node subagents/router.mjs test-agent-roster
 node subagents/router.mjs test-managed-readiness
 node subagents/router.mjs test-cache-maintenance
+node subagents/router.mjs test-agency-provider
+node subagents/router.mjs test-provider-routing
+node subagents/router.mjs test-provider-dispatch
 node subagents/router.mjs doctor
 node subagents/router.mjs report
 ```
@@ -208,12 +221,15 @@ For the live GPT-5.5 smoke test, use the installed path so local Codex CLI paths
 ~/.codex/subagents/router.mjs test-judge
 ```
 
-## Current v13 Result
+## Current v15 Result
 
-The final v13 verification passed:
+The final v15 verification passed:
 
 - 16/16 regression tests.
-- 112/112 eval cases across 8 taskKind buckets.
+- 136/136 eval cases across 8 taskKind buckets, including 24 Agency provider cases.
+- Agency provider tests passed: 184 bundled Agency agents load from the offline catalog and prompts.
+- Provider routing tests passed: Reddit/community, product adoption, sales pipeline, React engineering, and security/auth cases select the expected provider and quality gate.
+- Provider dispatch tests passed: Agency selections expose provider metadata and embed the Agency prompt body into `delegationPrompt`.
 - Performance test passed: compact prompt is about 49% smaller than the v10-style estimate; default JSON is about 88% smaller than verbose JSON.
 - Managed delegation and managed-contract tests passed: authorized goal requests produce staged plans; high-risk write tasks include validation/review; managed JSON includes stage inputs/outputs and write boundaries without exposing internal budgets.
 - Managed readiness tests passed: ready requests return `nextAction.type = "spawn"`, vague requests return one clarification, and blocked high-risk fallbacks return parent review.
@@ -231,13 +247,32 @@ The final v13 verification passed:
 - Generic "agent/智能体" wording no longer pulls OpenAI/LangGraph skills unless those technologies are explicitly named.
 - GPT-5.5 critical routing smoke test passed for high-risk current diff auth review.
 
-See [`outputs/subagent-router-v13-final-report.md`](outputs/subagent-router-v13-final-report.md) for the full report.
+See [`outputs/subagent-router-v15-agency-agents-final-report.md`](outputs/subagent-router-v15-agency-agents-final-report.md) for the full report.
 
 ## v14 Execution Adapter Changes
 
 - `managed --json` now includes `executionAdapter`, which tells the parent Codex whether to use native custom-agent spawn, the generic explorer/worker bridge, or `codex exec` isolation.
 - `nextAction.spawn.executionAdapter` mirrors the immediate stage transport so parent Codex can act without inspecting verbose internals.
 - `doctor`, `report`, and `test-execution-adapter` now cover the custom-agent spawn boundary.
+
+## v15 Agency Provider Examples
+
+```bash
+node subagents/router.mjs managed --json "开启子代理，帮我做 Reddit 社区增长策略"
+node subagents/router.mjs managed --json "开启子代理，只读分析产品 adoption 下降原因，不要改代码"
+node subagents/router.mjs managed --json "开启子代理，审查 API 鉴权漏洞"
+```
+
+Expected shape:
+
+- Reddit/community and product adoption tasks can select `agency-agents` specialists such as `agency:reddit-community-builder` or `agency:product-manager`.
+- React implementation remains on VoltAgent engineering specialists when they are a better fit.
+- Security/auth/current diff/production tasks still use GPT-5.5 quality gates and conservative review behavior.
+
+## Acknowledgements
+
+- [VoltAgent/awesome-codex-subagents](https://github.com/VoltAgent/awesome-codex-subagents): source inspiration for the VoltAgent Codex agent registry.
+- [msitarzewski/agency-agents](https://github.com/msitarzewski/agency-agents): MIT-licensed Markdown specialist prompt collection bundled as the v15 Agency provider.
 - See [`outputs/subagent-router-v14-execution-adapter-report.md`](outputs/subagent-router-v14-execution-adapter-report.md) for the focused report.
 
 ## v13 Reliability and UX Changes

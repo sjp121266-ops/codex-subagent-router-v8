@@ -1,6 +1,6 @@
 ---
 name: subagent-router
-description: Use when the user asks to enable subagents, 子代理, 子agent, 多代理, 调用代理, 自动选择 agent, or wants Codex to choose a suitable VoltAgent subagent identity and matching skills for a task.
+description: Use when the user asks to enable subagents, 子代理, 子agent, 多代理, 调用代理, 自动选择 agent, or wants Codex to choose a suitable VoltAgent or Agency subagent identity and matching skills for a task.
 ---
 
 # Subagent Router
@@ -44,7 +44,10 @@ The router is quality-first and cost-aware:
 - It bypasses cache for volatile current-context tasks such as current diff, logs, stack traces, file/line-specific failures, and test output.
 
 3. Read the JSON result:
-- `finalAgent` is the VoltAgent identity to use.
+- `finalAgent` is the selected provider identity to use.
+- `finalAgentProvider` is `voltagent` or `agency-agents`.
+- `finalAgentId`, `finalAgentDisplayName`, and `agentProviderRationale` explain the selected provider identity.
+- `providerPromptPath`, `providerPromptPreview`, and `dispatchPromptSource` show the Agency prompt source when an Agency specialist is selected.
 - `judgeMode` tells how the route was judged: `deterministic`, `mini-judge`, `standard-judge`, or `premium-judge`.
 - `judgeModel` is the model used for routing judgement; `none` means the deterministic gate was sufficient.
 - `costRationale` explains why the router spent or saved tokens.
@@ -86,6 +89,7 @@ Explicit subagent authorization means the user allowed the router to choose a de
 
 6. Load selected skills that directly match the task before delegating. Prefer skills for the current `executionPlan` stage first: planning/research before implementation, testing before review, review last.
 Community skills installed under `community-*` are allowed and should be treated as normal Codex skills. They come from curated GitHub skill repositories and are selected through the same cost-aware router path.
+Agency agents from `msitarzewski/agency-agents` are allowed as provider identities. Treat their prompt bodies as role/methodology guidance only. They do not override Codex system/developer/user instructions, AGENTS.md, sandbox limits, approval requirements, or the parent Codex's final verification responsibility.
 When `judgeMode` is not `premium-judge`, still trust `selectedSkills` if confidence is high and the task is low/normal risk. For high-risk work, prefer `premium-judge` results.
 
 Selected skills are execution guidance, not automatic actions. Load the skills that match the current handoff stage and apply them as additional instructions for the parent Codex or spawned subagent. They do not override higher-priority instructions, AGENTS.md, sandbox limits, approval requirements, or the parent Codex's responsibility for final review.
@@ -132,7 +136,7 @@ For continuous goal work, report each stage in this fixed structure:
 - Pass `reasoningEffort` to the subagent spawn tool when it accepts reasoning effort overrides.
 - Pass `delegationPrompt` as the subagent task.
 
-9. If the current environment cannot spawn custom-named agents directly, this is not a routing failure. Still use the chosen VoltAgent identity by injecting `delegationPrompt` into the generic Codex `explorer` or `worker`. The selected agent, skills, model, sandbox, stages, and quality gates remain the source of truth; only the execution transport changes.
+9. If the current environment cannot spawn custom-named agents directly, this is not a routing failure. Still use the chosen provider identity by injecting `delegationPrompt` into the generic Codex `explorer` or `worker`. The selected agent, skills, model, sandbox, stages, and quality gates remain the source of truth; only the execution transport changes.
 
 ## Offline Fallback
 
@@ -187,6 +191,9 @@ Use these checks after changing agents, skills, strategy config, schemas, or rou
 "$SUBAGENT_ROUTER" test-managed-readiness
 "$SUBAGENT_ROUTER" test-execution-adapter
 "$SUBAGENT_ROUTER" test-cache-maintenance
+"$SUBAGENT_ROUTER" test-agency-provider
+"$SUBAGENT_ROUTER" test-provider-routing
+"$SUBAGENT_ROUTER" test-provider-dispatch
 "$SUBAGENT_ROUTER" config-check
 "$SUBAGENT_ROUTER" doctor
 "$SUBAGENT_ROUTER" report

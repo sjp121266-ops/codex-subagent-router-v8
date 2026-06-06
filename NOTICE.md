@@ -7,6 +7,7 @@ This repository is an integration layer for Codex subagent routing. It reference
 | Source | Repository | How it is used |
 | --- | --- | --- |
 | VoltAgent Codex subagents | https://github.com/VoltAgent/awesome-codex-subagents | Source of Codex subagent role identities represented in `subagents/registry.json`. |
+| Agency Agents | https://github.com/msitarzewski/agency-agents | MIT-licensed Markdown specialist prompt collection bundled in `subagents/agency-agents/` as the v15 Agency provider. Prompt text is used as role/methodology guidance for Codex delegation. |
 | OpenAI skills | https://github.com/openai/skills | Community skill metadata imported into `subagents/community-skills-manifest.json`. |
 | Codex Spellbook | https://github.com/kid-sid/codex-spellbook | Community engineering skill metadata imported into the manifest. |
 | Matt Pocock skills | https://github.com/mattpocock/skills | Community workflow skill metadata imported into the manifest. |

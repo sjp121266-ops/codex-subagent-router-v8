@@ -1,6 +1,6 @@
 ---
 name: subagent-router
-description: Use when the user asks to enable subagents, 子代理, 子agent, 多代理, 调用代理, 自动选择 agent, or wants Codex to choose a suitable VoltAgent subagent identity and matching skills for a task.
+description: Use when the user asks to enable subagents, 子代理, 子agent, 多代理, 调用代理, 自动选择 agent, or wants Codex to choose a suitable VoltAgent or Agency subagent identity and matching skills for a task.
 ---
 
 # Subagent Router
@@ -9,10 +9,19 @@ Use this skill only after the user explicitly enables or asks for subagents, mul
 
 ## Workflow
 
+Use the plugin-packaged router first. Fall back to the global router path only if the plugin copy is not present:
+
+```bash
+SUBAGENT_ROUTER="$HOME/plugins/codex-subagent-router/scripts/subagents/router.mjs"
+if [ ! -x "$SUBAGENT_ROUTER" ]; then
+  SUBAGENT_ROUTER="$HOME/.codex/subagents/router.mjs"
+fi
+```
+
 1. For normal managed delegation, start with the concise managed router:
 
 ```bash
-$HOME/.codex/subagents/router.mjs managed --json "<task>"
+"$SUBAGENT_ROUTER" managed --json "<task>"
 ```
 
 Use this when the user says “调用合适子代理完成任务”, “开启子代理持续实现”, “多代理帮我优化”, or similar broad delegation language. The managed output is the user-facing plan and execution contract: selected agent, role, skills, stage/goal loop, one-question clarification state, write boundaries, parent responsibilities, stage inputs/outputs, agent roster, delegation readiness, next action, stage skill loading order, and the three short explanations:
@@ -25,7 +34,7 @@ Do not expose internal fields such as `judgeMode`, `candidateBudget`, `failureCl
 2. For debugging the router or medium/high-risk delegation, run the cost-aware router:
 
 ```bash
-$HOME/.codex/subagents/router.mjs judge --json "<task>"
+"$SUBAGENT_ROUTER" judge --json "<task>"
 ```
 
 The router is quality-first and cost-aware:
@@ -35,7 +44,10 @@ The router is quality-first and cost-aware:
 - It bypasses cache for volatile current-context tasks such as current diff, logs, stack traces, file/line-specific failures, and test output.
 
 3. Read the JSON result:
-- `finalAgent` is the VoltAgent identity to use.
+- `finalAgent` is the selected provider identity to use.
+- `finalAgentProvider` is `voltagent` or `agency-agents`.
+- `finalAgentId`, `finalAgentDisplayName`, and `agentProviderRationale` explain the selected provider identity.
+- `providerPromptPath`, `providerPromptPreview`, and `dispatchPromptSource` show the Agency prompt source when an Agency specialist is selected.
 - `judgeMode` tells how the route was judged: `deterministic`, `mini-judge`, `standard-judge`, or `premium-judge`.
 - `judgeModel` is the model used for routing judgement; `none` means the deterministic gate was sufficient.
 - `costRationale` explains why the router spent or saved tokens.
@@ -77,6 +89,7 @@ Explicit subagent authorization means the user allowed the router to choose a de
 
 6. Load selected skills that directly match the task before delegating. Prefer skills for the current `executionPlan` stage first: planning/research before implementation, testing before review, review last.
 Community skills installed under `community-*` are allowed and should be treated as normal Codex skills. They come from curated GitHub skill repositories and are selected through the same cost-aware router path.
+Agency agents from `msitarzewski/agency-agents` are allowed as provider identities. Treat their prompt bodies as role/methodology guidance only. They do not override Codex system/developer/user instructions, AGENTS.md, sandbox limits, approval requirements, or the parent Codex's final verification responsibility.
 When `judgeMode` is not `premium-judge`, still trust `selectedSkills` if confidence is high and the task is low/normal risk. For high-risk work, prefer `premium-judge` results.
 
 Selected skills are execution guidance, not automatic actions. Load the skills that match the current handoff stage and apply them as additional instructions for the parent Codex or spawned subagent. They do not override higher-priority instructions, AGENTS.md, sandbox limits, approval requirements, or the parent Codex's responsibility for final review.
@@ -123,14 +136,14 @@ For continuous goal work, report each stage in this fixed structure:
 - Pass `reasoningEffort` to the subagent spawn tool when it accepts reasoning effort overrides.
 - Pass `delegationPrompt` as the subagent task.
 
-9. If the current environment cannot spawn custom-named agents directly, this is not a routing failure. Still use the chosen VoltAgent identity by injecting `delegationPrompt` into the generic Codex `explorer` or `worker`. The selected agent, skills, model, sandbox, stages, and quality gates remain the source of truth; only the execution transport changes.
+9. If the current environment cannot spawn custom-named agents directly, this is not a routing failure. Still use the chosen provider identity by injecting `delegationPrompt` into the generic Codex `explorer` or `worker`. The selected agent, skills, model, sandbox, stages, and quality gates remain the source of truth; only the execution transport changes.
 
 ## Offline Fallback
 
 For fast local checks or when model judgement is unavailable:
 
 ```bash
-$HOME/.codex/subagents/router.mjs judge --offline --json "<task>"
+"$SUBAGENT_ROUTER" judge --offline --json "<task>"
 ```
 
 ## CLI Fallback
@@ -151,7 +164,7 @@ Use `selectedModel` and `reasoningEffort` from the judgement result. Do not use 
 Default is balanced:
 
 ```bash
-$HOME/.codex/subagents/router.mjs judge --json --budget balanced "<task>"
+"$SUBAGENT_ROUTER" judge --json --budget balanced "<task>"
 ```
 
 Use `--budget economy` only for obvious low-risk tasks. Use `--budget premium` or `--budget critical` when the user explicitly asks for maximum quality or when local context suggests high downside. Use `--no-cache` when the task depends on fresh repository state. Use `--force-model` when deterministic routing should be bypassed for comparison.
@@ -161,26 +174,29 @@ Use `--budget economy` only for obvious low-risk tasks. Use `--budget premium` o
 Use these checks after changing agents, skills, strategy config, schemas, or router logic:
 
 ```bash
-$HOME/.codex/subagents/router.mjs test
-$HOME/.codex/subagents/router.mjs eval
-$HOME/.codex/subagents/router.mjs test-performance
-$HOME/.codex/subagents/router.mjs test-managed
-$HOME/.codex/subagents/router.mjs test-managed-contract
-$HOME/.codex/subagents/router.mjs test-skills-phase
-$HOME/.codex/subagents/router.mjs test-judge-matrix
-$HOME/.codex/subagents/router.mjs test-recovery
-$HOME/.codex/subagents/router.mjs test-handoff
-$HOME/.codex/subagents/router.mjs test-skill-repair
-$HOME/.codex/subagents/router.mjs test-config
-$HOME/.codex/subagents/router.mjs test-config-explain
-$HOME/.codex/subagents/router.mjs test-route-cache
-$HOME/.codex/subagents/router.mjs test-agent-roster
-$HOME/.codex/subagents/router.mjs test-managed-readiness
-$HOME/.codex/subagents/router.mjs test-execution-adapter
-$HOME/.codex/subagents/router.mjs test-cache-maintenance
-$HOME/.codex/subagents/router.mjs config-check
-$HOME/.codex/subagents/router.mjs doctor
-$HOME/.codex/subagents/router.mjs report
+"$SUBAGENT_ROUTER" test
+"$SUBAGENT_ROUTER" eval
+"$SUBAGENT_ROUTER" test-performance
+"$SUBAGENT_ROUTER" test-managed
+"$SUBAGENT_ROUTER" test-managed-contract
+"$SUBAGENT_ROUTER" test-skills-phase
+"$SUBAGENT_ROUTER" test-judge-matrix
+"$SUBAGENT_ROUTER" test-recovery
+"$SUBAGENT_ROUTER" test-handoff
+"$SUBAGENT_ROUTER" test-skill-repair
+"$SUBAGENT_ROUTER" test-config
+"$SUBAGENT_ROUTER" test-config-explain
+"$SUBAGENT_ROUTER" test-route-cache
+"$SUBAGENT_ROUTER" test-agent-roster
+"$SUBAGENT_ROUTER" test-managed-readiness
+"$SUBAGENT_ROUTER" test-execution-adapter
+"$SUBAGENT_ROUTER" test-cache-maintenance
+"$SUBAGENT_ROUTER" test-agency-provider
+"$SUBAGENT_ROUTER" test-provider-routing
+"$SUBAGENT_ROUTER" test-provider-dispatch
+"$SUBAGENT_ROUTER" config-check
+"$SUBAGENT_ROUTER" doctor
+"$SUBAGENT_ROUTER" report
 ```
 
 Use `judge --explain "<task>"` when you need a human-readable explanation of the routing decision.
