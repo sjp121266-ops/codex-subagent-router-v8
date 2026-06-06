@@ -59,6 +59,20 @@ const DEFAULT_COST_POLICY = {
 };
 
 const DEFAULT_TASK_KIND_POLICY = {
+  "web-app-qa": {
+    keywords: [
+      "vite|next\\.?js|react|vue|svelte|package\\.json|npm run|pnpm|yarn|vitest|jest|tsconfig|tailwind|web app|前端项目|网页项目|静态站点|无限画布|libtv画布|自动插件剪辑|open cut",
+    ],
+    preferredAgents: ["test-automator", "qa-expert", "frontend-developer", "browser-debugger", "code-mapper"],
+    allowedPhases: ["planning", "research", "design", "implementation", "debugging", "testing", "review", "matched"],
+  },
+  "monorepo-wasm-qa": {
+    keywords: [
+      "monorepo|turbo|turborepo|wasm|webassembly|wasm-pack|rust|cargo|build:wasm|opencut-classic|workspace packages|分层验证|多栈",
+    ],
+    preferredAgents: ["test-automator", "qa-expert", "code-mapper", "devops-engineer", "build-engineer"],
+    allowedPhases: ["planning", "research", "design", "debugging", "testing", "review", "matched"],
+  },
   "chrome-extension-qa": {
     keywords: [
       "chrome extension|browser extension|manifest\\s*v?3|manifest\\.json|mv3|service_worker|service worker|content script|content-scripts|popup\\.html|popup\\.js|sidepanel|side panel|chrome 插件|谷歌浏览器插件|浏览器插件|扩展程序",
@@ -71,6 +85,13 @@ const DEFAULT_TASK_KIND_POLICY = {
       "rpa|playwright|pyside6|qt_qpa_platform|offscreen|flow-smoke|flow smoke|pytest|桌面\\s*RPA|自动化控制台|扫码登录|隔离环境|浏览器隔离",
     ],
     preferredAgents: ["test-automator", "qa-expert", "debugger", "automation-engineer", "code-mapper"],
+    allowedPhases: ["planning", "research", "design", "implementation", "debugging", "testing", "review", "matched"],
+  },
+  "desktop-automation-qa": {
+    keywords: [
+      "jianying|capcut|剪映|操控剪映|desktop automation|gui automation|pyautogui|uiautomation|appium|本地 GUI|桌面自动化",
+    ],
+    preferredAgents: ["test-automator", "qa-expert", "debugger", "code-mapper"],
     allowedPhases: ["planning", "research", "design", "implementation", "debugging", "testing", "review", "matched"],
   },
   "comfyui-workflow-qa": {
@@ -86,6 +107,27 @@ const DEFAULT_TASK_KIND_POLICY = {
     ],
     preferredAgents: ["security-auditor", "security-engineer", "reviewer", "code-mapper"],
     allowedPhases: ["planning", "research", "debugging", "testing", "review", "matched"],
+  },
+  "integration-bot-qa": {
+    keywords: [
+      "feishu|lark|飞书|机器人|bot|webhook|callback|oauth app|openapi|cli integration|connector|bridge|coze|工作流|音乐寻找|集成验证",
+    ],
+    preferredAgents: ["test-automator", "qa-expert", "backend-developer", "api-designer", "code-mapper"],
+    allowedPhases: ["planning", "research", "debugging", "testing", "review", "matched"],
+  },
+  "static-artifact-inspection": {
+    keywords: [
+      "static artifact|static html|html 产物|报价 html|报价html|超级瑞宝文档|抖音整体流程|抖音违禁词|视频反推|客户视频|宣传海报|ppt|obsidian|资料目录|文档目录|只做文件组织|HTML 引用结构|文件组织",
+    ],
+    preferredAgents: ["code-mapper", "docs-researcher", "documentation-engineer", "research-analyst"],
+    allowedPhases: ["planning", "research", "testing", "review", "matched"],
+  },
+  "empty-sample-blocker": {
+    keywords: [
+      "empty directory|empty sample|no visible files|空目录|没有文件|无可见文件|只记录 blocker|RPA 空目录",
+    ],
+    preferredAgents: ["code-mapper", "qa-expert", "docs-researcher"],
+    allowedPhases: ["planning", "research", "testing", "review", "matched"],
   },
   "artifact-inspection": {
     keywords: [
@@ -191,6 +233,18 @@ const EFFORT_ORDER = new Map([
 
 const DEFAULT_SKILL_RULES = [
   {
+    reason: "Web, Vite, Next, React, static HTML, or browser-facing local app QA",
+    confidence: "high",
+    skills: ["build-web-apps:frontend-testing-debugging", "agyb-essentials:lint-and-validate", "playwright"],
+    patterns: [/vite|next\.?js|react|vue|svelte|package\.json|npm run|pnpm|yarn|vitest|jest|tsconfig|tailwind|web app|前端项目|网页项目|静态站点|无限画布|libtv画布|自动插件剪辑|open cut/i],
+  },
+  {
+    reason: "Monorepo, Turbo, Rust, WASM, Docker, or multi-stack local QA",
+    confidence: "high",
+    skills: ["agyb-essentials:lint-and-validate", "agyb-essentials:systematic-debugging"],
+    patterns: [/monorepo|turbo|turborepo|wasm|webassembly|wasm-pack|rust|cargo|build:wasm|opencut-classic|workspace packages|分层验证|多栈/i],
+  },
+  {
     reason: "Chrome extension, Manifest V3, content script, service worker, popup, side panel, or browser extension QA",
     confidence: "high",
     skills: ["build-web-apps:frontend-testing-debugging", "agyb-essentials:lint-and-validate", "playwright"],
@@ -203,6 +257,12 @@ const DEFAULT_SKILL_RULES = [
     patterns: [/rpa|playwright|pyside6|qt_qpa_platform|offscreen|flow-smoke|flow smoke|pytest|桌面\s*RPA|自动化控制台|扫码登录|隔离环境|浏览器隔离/i],
   },
   {
+    reason: "Desktop GUI automation, Jianying/CapCut control, or local app automation validation",
+    confidence: "high",
+    skills: ["playwright", "agyb-essentials:lint-and-validate", "agyb-essentials:systematic-debugging"],
+    patterns: [/jianying|capcut|剪映|操控剪映|desktop automation|gui automation|pyautogui|uiautomation|appium|本地 GUI|桌面自动化/i],
+  },
+  {
     reason: "ComfyUI wrapper or workflow validation without queueing costful generation",
     confidence: "high",
     skills: ["agyb-essentials:lint-and-validate", "agyb-essentials:systematic-debugging"],
@@ -213,6 +273,24 @@ const DEFAULT_SKILL_RULES = [
     confidence: "high",
     skills: ["security-best-practices", "security-threat-model", "agyb-essentials:lint-and-validate"],
     patterns: [/oauth|token|credential|refresh_token|access_token|auth\.json|auth cache|get_token|凭证|令牌|登录态|密钥|secret|不要输出\s*token/i],
+  },
+  {
+    reason: "Integration bot, webhook, connector, local bridge, or platform API validation with external side effects blocked",
+    confidence: "high",
+    skills: ["agyb-essentials:lint-and-validate", "agyb-essentials:systematic-debugging"],
+    patterns: [/feishu|lark|飞书|机器人|bot|webhook|callback|oauth app|openapi|cli integration|connector|bridge|coze|工作流|音乐寻找|集成验证/i],
+  },
+  {
+    reason: "Static HTML, document folder, quotation page, media artifact, or read-only asset structure inspection",
+    confidence: "high",
+    skills: ["agyb-essentials:lint-and-validate"],
+    patterns: [/static artifact|static html|html 产物|报价 html|报价html|超级瑞宝文档|抖音整体流程|抖音违禁词|视频反推|客户视频|宣传海报|ppt|obsidian|资料目录|文档目录|只做文件组织|HTML 引用结构|文件组织/i],
+  },
+  {
+    reason: "Empty sample directory or missing project evidence should block execution planning",
+    confidence: "high",
+    skills: ["agyb-essentials:lint-and-validate"],
+    patterns: [/empty directory|empty sample|no visible files|空目录|没有文件|无可见文件|只记录 blocker|RPA 空目录/i],
   },
   {
     reason: "Existing transcript, document, SRT, JSON, or generated artifact inspection",
@@ -1202,12 +1280,96 @@ function patternListMatches(patterns = [], text = "") {
   return patterns.some((pattern) => new RegExp(pattern, "i").test(text));
 }
 
+function extractLocalPaths(text = "") {
+  return String(text || "").match(/\/Users\/sjp1212\/[^\n\r，。；;'"<>`]+/g)?.map((raw) => raw.trim().replace(/[.)\]]+$/, "")) || [];
+}
+
+function cleanExtractedPath(rawPath = "") {
+  return String(rawPath || "").replace(/\s+(这个|做|进行|只做|完整|full|read-only|local|测试|检查|审查).*$/i, "").trim();
+}
+
+function projectPathHasAny(text = "", names = []) {
+  for (const rawPath of extractLocalPaths(text)) {
+    const candidate = cleanExtractedPath(rawPath);
+    try {
+      if (!candidate || !fs.existsSync(candidate)) continue;
+      const root = fs.statSync(candidate).isDirectory() ? candidate : path.dirname(candidate);
+      for (const name of names) {
+        if (fs.existsSync(path.join(root, name))) return true;
+      }
+    } catch {
+      // Natural language can include partial paths; ignore them.
+    }
+  }
+  return false;
+}
+
+function hasEmptySampleBlockerSignal(text = "") {
+  const cleaned = cleanTask(text);
+  if (patternListMatches(configuredTaskKindPolicy()["empty-sample-blocker"]?.keywords || [], cleaned)) return true;
+  for (const rawPath of extractLocalPaths(text)) {
+    const candidate = cleanExtractedPath(rawPath);
+    try {
+      if (!candidate || !fs.existsSync(candidate) || !fs.statSync(candidate).isDirectory()) continue;
+      const entries = fs.readdirSync(candidate).filter((entry) => !entry.startsWith(".") && entry !== "__pycache__");
+      if (entries.length === 0) return true;
+    } catch {
+      // Natural language can include partial paths; ignore them.
+    }
+  }
+  return false;
+}
+
+function hasAndroidProjectEvidence(text = "") {
+  const cleaned = cleanTask(text);
+  return /期末作业：人脸识别|AndroidManifest\.xml|settings\.gradle|build\.gradle|gradlew|app\/src\/androidTest|app\/src\/main\/AndroidManifest\.xml|connectedDebugAndroidTest|assembleDebugAndroidTest|testDebugUnitTest/i.test(cleaned)
+    || projectPathHasAny(text, ["settings.gradle", "build.gradle", "gradlew", "app/build.gradle", "app/src/androidTest", "app/src/main/AndroidManifest.xml"]);
+}
+
+function hasChromeExtensionProjectEvidence(text = "") {
+  const cleaned = cleanTask(text);
+  return /谷歌浏览器插件|GitHub谷歌插件|抓取视频插件|抖音视频在线下载插件|manifest\.json|manifest\s*v?3|mv3|service_worker|service worker|content script|content-scripts|popup\.html|sidepanel|side panel|chrome 插件|浏览器插件|扩展程序/i.test(cleaned)
+    || projectPathHasAny(text, ["manifest.json", "src/manifest.json", "public/manifest.json", "popup.html", "sidepanel.html", "background.js", "service-worker.js", "content.js"]);
+}
+
 function hasAndroidQaSignal(text = "") {
-  return /android|安卓|gradle|apk|adb|emulator|模拟器|真机|connectedDebugAndroidTest|instrumentation|仪器测试|androidTest|CameraX|logcat|安装\s*APK|截图/i.test(cleanTask(text));
+  const cleaned = cleanTask(text);
+  return hasAndroidProjectEvidence(text)
+    || (/android app|android project|安卓项目|apk|gradle|adb|emulator|模拟器|真机|instrumentation|仪器测试|androidTest|CameraX|logcat|安装\s*APK/i.test(cleaned) && !hasChromeExtensionProjectEvidence(text));
 }
 
 function hasChromeExtensionQaSignal(text = "") {
-  return patternListMatches(configuredTaskKindPolicy()["chrome-extension-qa"]?.keywords || [], cleanTask(text));
+  return hasChromeExtensionProjectEvidence(text) || patternListMatches(configuredTaskKindPolicy()["chrome-extension-qa"]?.keywords || [], cleanTask(text));
+}
+
+function hasWebAppQaSignal(text = "") {
+  const cleaned = cleanTask(text);
+  const localQaContext = /\/Users\/sjp1212|package\.json|npm run|pnpm|yarn|local qa|local validation|本地|项目.*(测试|验证|QA)|只做.*(验证|测试|检查)/i.test(cleaned);
+  return (localQaContext && patternListMatches(configuredTaskKindPolicy()["web-app-qa"]?.keywords || [], cleaned))
+    || (projectPathHasAny(text, ["package.json", "vite.config.ts", "vite.config.js", "next.config.js", "tsconfig.json"]) && !hasChromeExtensionProjectEvidence(text));
+}
+
+function hasMonorepoWasmQaSignal(text = "") {
+  const cleaned = cleanTask(text);
+  return patternListMatches(configuredTaskKindPolicy()["monorepo-wasm-qa"]?.keywords || [], cleaned)
+    || projectPathHasAny(text, ["turbo.json", "Cargo.toml", "docker-compose.yml", "Dockerfile", "packages", "apps"]);
+}
+
+function hasDesktopAutomationQaSignal(text = "") {
+  const cleaned = cleanTask(text);
+  return patternListMatches(configuredTaskKindPolicy()["desktop-automation-qa"]?.keywords || [], cleaned)
+    || (/剪映|capcut|jianying|desktop|gui|pyautogui|uiautomation/i.test(cleaned) && /py_compile|doctor|smoke|本地|测试|验证|qa/i.test(cleaned));
+}
+
+function hasIntegrationBotQaSignal(text = "") {
+  const cleaned = cleanTask(text);
+  if (/get_token/i.test(cleaned)) return false;
+  return patternListMatches(configuredTaskKindPolicy()["integration-bot-qa"]?.keywords || [], cleaned)
+    || (/飞书|lark|feishu|bot|webhook|connector|bridge|coze|音乐寻找|集成/i.test(cleaned) && /local|本地|只读|validation|验证|测试|检查/i.test(cleaned));
+}
+
+function hasStaticArtifactInspectionSignal(text = "") {
+  return patternListMatches(configuredTaskKindPolicy()["static-artifact-inspection"]?.keywords || [], cleanTask(text));
 }
 
 function hasDesktopRpaQaSignal(text = "") {
@@ -1251,13 +1413,19 @@ function classifyTaskKind(task, routeLike = {}) {
   const debugSignals = /debug|bug|error|exception|crash|fail|flaky|regression|stack trace|traceback|\blog\b|日志|错误|报错|异常|崩溃|失败|修复|排查|定位.+(问题|异常|错误|失败|crash|bug)/i.test(cleaned);
   const analysisSignals = /review|audit|analy[sz]e|inspect|diagnose|map|评审|审查|审计|分析|调研|检查|诊断|只读|不要改|不改代码/i.test(cleaned);
 
+  if (hasEmptySampleBlockerSignal(task)) return "empty-sample-blocker";
   if (patternListMatches(policy["incident-response"]?.keywords, cleaned)) return "incident-response";
-  if (hasCredentialToolingSignal(cleaned)) return "credential-tooling";
-  if (hasChromeExtensionQaSignal(cleaned) && !hasSecurityReviewSignal(cleaned)) return "chrome-extension-qa";
+  if (hasChromeExtensionQaSignal(task) && !hasSecurityReviewSignal(cleaned)) return "chrome-extension-qa";
+  if (hasAndroidQaSignal(task) && !hasSecurityReviewSignal(cleaned)) return "android-qa";
+  if (hasMonorepoWasmQaSignal(task) && !hasSecurityReviewSignal(cleaned)) return "monorepo-wasm-qa";
+  if (hasIntegrationBotQaSignal(task)) return "integration-bot-qa";
+  if (hasDesktopAutomationQaSignal(task) && !hasSecurityReviewSignal(cleaned)) return "desktop-automation-qa";
   if (hasDesktopRpaQaSignal(cleaned) && !hasSecurityReviewSignal(cleaned)) return "desktop-rpa-qa";
   if (hasComfyUiWorkflowQaSignal(cleaned)) return "comfyui-workflow-qa";
+  if (hasCredentialToolingSignal(cleaned)) return "credential-tooling";
+  if (hasStaticArtifactInspectionSignal(cleaned) && !hasSecurityReviewSignal(cleaned)) return "static-artifact-inspection";
   if (hasArtifactInspectionSignal(cleaned) && !hasSecurityReviewSignal(cleaned)) return "artifact-inspection";
-  if (hasAndroidQaSignal(cleaned) && !hasSecurityReviewSignal(cleaned)) return "android-qa";
+  if (hasWebAppQaSignal(task) && !hasSecurityReviewSignal(cleaned)) return "web-app-qa";
   if (hasExplicitSecurityRiskSignal(cleaned) && analysisSignals) return "engineering-analysis";
   if (debugSignals) return hasWriteVerb ? "engineering-execution" : "engineering-analysis";
   if (productSignals && (noWrite || analysisSignals || !hasWriteVerb)) return "product-analysis";
@@ -1278,9 +1446,18 @@ function preferredAgentsForTaskKind(taskKind) {
 function shouldKeepSkillForTaskKind(entry, taskKind, task) {
   const allowedPhases = configuredTaskKindPolicy()[taskKind]?.allowedPhases;
   const phase = entry.phase || "implementation";
-  if (["chrome-extension-qa", "desktop-rpa-qa", "comfyui-workflow-qa", "artifact-inspection"].includes(taskKind)) {
-    if (/security|threat-model|ce-code-review|code-review/i.test(entry.name) && !hasSecurityReviewSignal(task)) return false;
-    if (taskKind === "artifact-inspection") return ["planning", "research", "testing", "review", "matched"].includes(phase);
+  const name = entry.name || "";
+  const localQaKinds = ["web-app-qa", "monorepo-wasm-qa", "chrome-extension-qa", "desktop-rpa-qa", "desktop-automation-qa", "comfyui-workflow-qa", "integration-bot-qa", "artifact-inspection", "static-artifact-inspection", "empty-sample-blocker"];
+  if (localQaKinds.includes(taskKind)) {
+    if (/security|threat-model|ce-code-review|code-review/i.test(name) && !hasSecurityReviewSignal(task)) return false;
+    if (/android-emulator-qa|android-performance/i.test(name) && taskKind !== "android-qa") return false;
+    if (/frontend-app-builder|ce-frontend-design/i.test(name) && !["web-app-qa", "chrome-extension-qa"].includes(taskKind)) return false;
+    if (/community-openai-speech|documents/i.test(name) && taskKind !== "artifact-inspection") return false;
+    if (["monorepo-wasm-qa", "comfyui-workflow-qa", "integration-bot-qa", "static-artifact-inspection", "empty-sample-blocker"].includes(taskKind)
+      && /community-spellbook-(api-design|fastapi|go|python|typescript|openai-api)|compound-engineering:ce-slack-research|openai-docs|superpowers:brainstorming|github:gh-address-comments/i.test(name)) return false;
+    if (taskKind === "empty-sample-blocker") return ["planning", "research", "testing", "review"].includes(phase);
+    if (["artifact-inspection", "static-artifact-inspection", "integration-bot-qa"].includes(taskKind)) return ["planning", "research", "testing", "review", "matched"].includes(phase);
+    if (taskKind === "comfyui-workflow-qa") return ["planning", "research", "debugging", "testing", "review", "matched"].includes(phase);
     return ["planning", "research", "design", "implementation", "debugging", "testing", "review", "matched"].includes(phase);
   }
   if (taskKind === "credential-tooling") {
@@ -1349,8 +1526,9 @@ function computeModelPolicy(task, agent, routeLike = {}) {
     reasons.push("low confidence or ambiguous route");
   }
 
-  const importantIntentIds = taskKind === "android-qa" && !hasSecurityReviewSignal(cleaned)
-    ? intentIds.filter((id) => !["security", "review"].includes(id))
+  const safeQaTaskKinds = ["web-app-qa", "monorepo-wasm-qa", "android-qa", "chrome-extension-qa", "desktop-rpa-qa", "desktop-automation-qa", "comfyui-workflow-qa", "integration-bot-qa", "artifact-inspection", "static-artifact-inspection", "empty-sample-blocker"];
+  const importantIntentIds = safeQaTaskKinds.includes(taskKind) && !hasSecurityReviewSignal(cleaned)
+    ? intentIds.filter((id) => !["security", "review", "devops", "data-ai"].includes(id))
     : intentIds;
   if (importantIntentIds.some((id) => ["security", "review", "devops", "data-ai"].includes(id))) {
     reasons.push(`important intent: ${importantIntentIds.find((id) => ["security", "review", "devops", "data-ai"].includes(id))}`);
@@ -1422,8 +1600,8 @@ function computeTaskProfile(task, routeLike = {}) {
   let complexity = "low";
   let scope = "local";
 
-  const androidQa = taskKind === "android-qa";
-  const highRisk = androidQa && !hasSecurityReviewSignal(cleaned)
+  const safeLocalQa = ["web-app-qa", "monorepo-wasm-qa", "android-qa", "chrome-extension-qa", "desktop-rpa-qa", "desktop-automation-qa", "comfyui-workflow-qa", "integration-bot-qa", "artifact-inspection", "static-artifact-inspection", "empty-sample-blocker"].includes(taskKind) && !hasSecurityReviewSignal(cleaned);
+  const highRisk = safeLocalQa
     ? /production|incident|migration|data loss|生产|事故|迁移|数据丢失/i.test(cleaned)
     : /security|auth|permission|secret|privacy|production|incident|migration|data loss|安全|鉴权|权限|隐私|生产|事故|迁移|数据丢失/i.test(cleaned)
       || (loadStrategyConfig().highRiskRules || DEFAULT_HIGH_RISK_RULES).some((rule) => rule.pattern && new RegExp(rule.pattern, "i").test(cleaned));
@@ -1521,9 +1699,9 @@ function computeTaskProfile(task, routeLike = {}) {
     scope = isProjectScopeTask(task) ? "subsystem" : "local";
     signals.push("artifact inspection task");
   }
-  const safeQaKinds = ["android-qa", "chrome-extension-qa", "desktop-rpa-qa", "comfyui-workflow-qa", "artifact-inspection"];
+  const safeQaKinds = ["web-app-qa", "monorepo-wasm-qa", "android-qa", "chrome-extension-qa", "desktop-rpa-qa", "desktop-automation-qa", "comfyui-workflow-qa", "integration-bot-qa", "artifact-inspection", "static-artifact-inspection", "empty-sample-blocker"];
   const importantIntentIds = safeQaKinds.includes(taskKind) && !hasSecurityReviewSignal(cleaned)
-    ? intentIds.filter((id) => !["security", "review"].includes(id))
+    ? intentIds.filter((id) => !["security", "review", "devops", "data-ai"].includes(id))
     : intentIds;
   if (importantIntentIds.some((id) => ["security", "review", "devops", "data-ai"].includes(id))) {
     risk = risk === "critical" ? "critical" : "high";
@@ -1868,11 +2046,12 @@ function buildExecutionPlan(task, routeLike, taskProfile, selectedSkillsByPhase)
   let mode = "single-agent";
   const broadAuthorized = isExplicitBroadAuthorization(task);
   const taskKind = taskProfile.taskKind || classifyTaskKind(task, routeLike);
-  const readonlyToolKinds = ["artifact-inspection", "credential-tooling"];
+  const readonlyToolKinds = ["artifact-inspection", "static-artifact-inspection", "credential-tooling", "integration-bot-qa", "empty-sample-blocker"];
   const noWrite = taskKind === "android-qa" ? hasExplicitNoWriteDirective(task) : readonlyToolKinds.includes(taskKind) || isNoWriteTask(task);
   const matchedIntentIds = routeLike.matchedIntents?.map((intent) => intent.id) || [];
-  const securityReviewIntent = matchedIntentIds.includes("security") && !(["android-qa", "chrome-extension-qa", "desktop-rpa-qa", "comfyui-workflow-qa", "artifact-inspection"].includes(taskKind) && !hasSecurityReviewSignal(task));
-  const reviewIntent = matchedIntentIds.includes("review") && !(["android-qa", "chrome-extension-qa", "desktop-rpa-qa", "comfyui-workflow-qa", "artifact-inspection"].includes(taskKind) && !/review|审查|审计|代码审查|风险/i.test(cleanTask(task)));
+  const toolQaKinds = ["web-app-qa", "monorepo-wasm-qa", "android-qa", "chrome-extension-qa", "desktop-rpa-qa", "desktop-automation-qa", "comfyui-workflow-qa", "integration-bot-qa", "artifact-inspection", "static-artifact-inspection", "empty-sample-blocker"];
+  const securityReviewIntent = matchedIntentIds.includes("security") && !(toolQaKinds.includes(taskKind) && !hasSecurityReviewSignal(task));
+  const reviewIntent = matchedIntentIds.includes("review") && !(toolQaKinds.includes(taskKind) && !/review|审查|审计|代码审查|风险/i.test(cleanTask(task)));
   let requiresReview = ["high", "critical"].includes(taskProfile.risk)
     || (taskProfile.complexity === "high" && taskProfile.writeIntent === "expected")
     || broadAuthorized
@@ -1880,7 +2059,7 @@ function buildExecutionPlan(task, routeLike, taskProfile, selectedSkillsByPhase)
     || securityReviewIntent;
   if (["product-analysis", "engineering-analysis", "orchestration-design", "research-only"].includes(taskKind) && noWrite) requiresReview = requiresReview || !["product-analysis", "research-only"].includes(taskKind);
   if (taskKind === "incident-response") requiresReview = true;
-  const requiresTests = ["android-qa", "chrome-extension-qa", "desktop-rpa-qa", "comfyui-workflow-qa", "credential-tooling", "artifact-inspection"].includes(taskKind) ? true : !["product-analysis", "research-only"].includes(taskKind)
+  const requiresTests = [...toolQaKinds, "credential-tooling"].includes(taskKind) ? true : !["product-analysis", "research-only"].includes(taskKind)
     && (
       (!noWrite && (taskProfile.writeIntent === "expected" || broadAuthorized))
       || (!noWrite && routeLike.matchedIntents?.some((intent) => intent.id === "testing" || intent.id === "debug"))
@@ -1916,6 +2095,16 @@ function buildExecutionPlan(task, routeLike, taskProfile, selectedSkillsByPhase)
     stages.push("Maintenance agent checks config, cache, registry, and repository health.");
     if (taskProfile.writeIntent === "expected") stages.push("Worker applies scoped maintenance changes.");
     if (requiresTests) stages.push("Run focused validation for changed maintenance behavior.");
+  } else if (taskKind === "web-app-qa") {
+    mode = "staged";
+    stages.push("Map package scripts, framework config, test/build entry points, and browser-facing assets.");
+    stages.push("Run existing local lint, typecheck, test, build, or preview-safe checks when dependencies are already present.");
+    stages.push("Block npm install, deployment, publishing, account login, and real platform actions unless explicitly authorized.");
+  } else if (taskKind === "monorepo-wasm-qa") {
+    mode = "staged";
+    stages.push("Map monorepo packages, Turbo graph, Rust/WASM crates, Docker surfaces, and available local validation scripts.");
+    stages.push("Run layered local checks only where dependencies are present: package tests/builds, wasm build checks, and syntax/config validation.");
+    stages.push("Block deploy, Docker push, release publishing, network services, and costful external workflows unless explicitly authorized.");
   } else if (taskKind === "android-qa") {
     mode = "staged";
     stages.push("Map Android project test surfaces, Gradle tasks, APK outputs, and local SDK configuration.");
@@ -1934,6 +2123,11 @@ function buildExecutionPlan(task, routeLike, taskProfile, selectedSkillsByPhase)
     stages.push("Map Python RPA entry points, virtual environment, Playwright/PySide dependencies, and local smoke commands.");
     stages.push("Run doctor, offscreen flow smoke, and pytest using the project virtual environment when present.");
     stages.push("Keep real platform login, QR scanning, publishing, downloading, and live-site business actions blocked unless explicitly authorized.");
+  } else if (taskKind === "desktop-automation-qa") {
+    mode = "staged";
+    stages.push("Map desktop automation entry points, Python environment, GUI-control dependencies, and safe local smoke checks.");
+    stages.push("Run syntax, doctor, offscreen smoke, and local tests only when they do not control real desktop apps.");
+    stages.push("Keep real Jianying/CapCut control, rendering, downloading, publishing, QR/login, and desktop business actions blocked unless explicitly authorized.");
   } else if (taskKind === "comfyui-workflow-qa") {
     mode = "staged";
     stages.push("Map ComfyUI wrapper commands, workflow files, model/status checks, and validation-only paths.");
@@ -1944,11 +2138,26 @@ function buildExecutionPlan(task, routeLike, taskProfile, selectedSkillsByPhase)
     stages.push("Map credential/OAuth entry points, storage paths, and commands without reading or printing secret values.");
     stages.push("Run syntax and static safety checks only; do not execute OAuth browser flow or token-producing commands.");
     stages.push("Review no-secret-output boundaries and mark auth-cache/token disclosure as blocked.");
+  } else if (taskKind === "integration-bot-qa") {
+    mode = "staged";
+    stages.push("Map bot, webhook, connector, callback, and local bridge entry points without reading secrets.");
+    stages.push("Run syntax, config-name, and local validation checks that do not send messages or register online callbacks.");
+    stages.push("Block OAuth/browser auth, token output, webhook registration, real Feishu/Lark/Coze/platform messages, and paid/API-cost calls unless explicitly authorized.");
   } else if (taskKind === "artifact-inspection") {
     mode = "staged";
     stages.push("Map existing transcript, SRT, JSON, Markdown, and document-generation artifacts.");
     stages.push("Run script syntax checks and inspect artifact structure without starting transcription or network jobs.");
     stages.push("Summarize missing or malformed artifacts as read-only findings.");
+  } else if (taskKind === "static-artifact-inspection") {
+    mode = "staged";
+    stages.push("Map static HTML, document, media, Markdown, PPT, Obsidian, or generated artifact files.");
+    stages.push("Run file-structure, reference, syntax, and inventory checks without generating, uploading, or rewriting assets.");
+    stages.push("Summarize missing references, malformed HTML, or unclear source artifacts as read-only findings.");
+  } else if (taskKind === "empty-sample-blocker") {
+    mode = "staged";
+    stages.push("Confirm the sample path exists and whether visible project files or runnable entry points are present.");
+    stages.push("If the directory is empty or lacks evidence, stop at a blocker report instead of generating build or QA stages.");
+    stages.push("Block compile, tests, automation, login, download, publish, and platform actions because there is no verifiable project surface.");
   } else if (taskKind === "incident-response") {
     mode = "staged";
     stages.push("Incident mapper captures logs, blast radius, and rollback constraints without writing.");
@@ -2232,8 +2441,8 @@ function fallbackSafetyFor(route, errorMessage, judgePolicy) {
 
 function attachRoutingMetadata(result, route, skillCandidates = [], judgePolicy = {}, fallbackMeta = {}) {
   const taskKind = result.taskProfile?.taskKind || route.taskProfile?.taskKind || route.taskKind || "";
-  const preferredOverrideKinds = ["android-qa", "chrome-extension-qa", "desktop-rpa-qa", "comfyui-workflow-qa", "credential-tooling", "artifact-inspection"];
-  if (preferredOverrideKinds.includes(taskKind) && (taskKind === "credential-tooling" || !hasSecurityReviewSignal(result.task || route.task))) {
+  const preferredOverrideKinds = ["web-app-qa", "monorepo-wasm-qa", "android-qa", "chrome-extension-qa", "desktop-rpa-qa", "desktop-automation-qa", "comfyui-workflow-qa", "credential-tooling", "integration-bot-qa", "artifact-inspection", "static-artifact-inspection", "empty-sample-blocker"];
+  if (preferredOverrideKinds.includes(taskKind) && (["credential-tooling", "integration-bot-qa"].includes(taskKind) || !hasSecurityReviewSignal(result.task || route.task))) {
     const preferredNames = preferredAgentsForTaskKind(taskKind);
     const selectedPreferred = preferredNames.some((name) => result.finalAgent === name);
     const preferredCandidate = (route.candidates || []).find((candidate) => preferredNames.includes(candidate.name))
@@ -2449,7 +2658,7 @@ function routeTask(task, options = {}) {
   const taskKindPreferred = preferredAgentsForTaskKind(taskKind)
     .map((name) => allAgents.agents.find((agent) => agentMatches(agent, name)))
     .filter(Boolean);
-  const strongToolQaKinds = ["android-qa", "chrome-extension-qa", "desktop-rpa-qa", "comfyui-workflow-qa", "credential-tooling", "artifact-inspection"];
+  const strongToolQaKinds = ["web-app-qa", "monorepo-wasm-qa", "android-qa", "chrome-extension-qa", "desktop-rpa-qa", "desktop-automation-qa", "comfyui-workflow-qa", "credential-tooling", "integration-bot-qa", "artifact-inspection", "static-artifact-inspection", "empty-sample-blocker"];
   if (strongToolQaKinds.includes(taskKind)) {
     const rankedByName = new Set(ranked.map((entry) => entry.agent.name));
     const preferredEntries = taskKindPreferred
@@ -2483,7 +2692,7 @@ function routeTask(task, options = {}) {
   }
   const effectiveNoWrite = taskKind === "android-qa"
     ? hasExplicitNoWriteDirective(task)
-    : ["artifact-inspection", "credential-tooling"].includes(taskKind)
+    : ["artifact-inspection", "static-artifact-inspection", "credential-tooling", "integration-bot-qa", "empty-sample-blocker"].includes(taskKind)
       ? true
     : isNoWriteTask(task) || (/review|audit|inspect|check|审查|审计|检查/.test(cleanTask(task)) && !/fix|implement|edit|update|refactor|修复|实现|修改|更新|重构/.test(cleanTask(task)));
   if (effectiveNoWrite && best.sandboxMode !== "read-only") {
@@ -2524,6 +2733,15 @@ function routeTask(task, options = {}) {
     addConfiguredSkill("android-performance", "testing", "android-qa tasks may need Android runtime/performance evidence when device-side checks are available");
     addConfiguredSkill("agyb-essentials:lint-and-validate", "testing", "android-qa tasks must preserve Gradle build and test validation");
   }
+  if (taskKind === "web-app-qa") {
+    addConfiguredSkill("build-web-apps:frontend-testing-debugging", "debugging", "web-app-qa tasks need browser-facing validation guidance");
+    addConfiguredSkill("agyb-essentials:lint-and-validate", "testing", "web-app-qa tasks need script, lint, test, and build validation");
+    addConfiguredSkill("playwright", "testing", "web-app-qa may use local browser smoke checks without account actions");
+  }
+  if (taskKind === "monorepo-wasm-qa") {
+    addConfiguredSkill("agyb-essentials:lint-and-validate", "testing", "monorepo-wasm-qa tasks need layered local validation");
+    addConfiguredSkill("agyb-essentials:systematic-debugging", "debugging", "monorepo-wasm-qa tasks often expose environment or dependency blockers");
+  }
   if (taskKind === "chrome-extension-qa") {
     addConfiguredSkill("build-web-apps:frontend-testing-debugging", "debugging", "chrome-extension-qa tasks need browser-facing validation guidance");
     addConfiguredSkill("agyb-essentials:lint-and-validate", "testing", "chrome-extension-qa tasks must preserve manifest, JS, HTML, and package validation");
@@ -2534,6 +2752,11 @@ function routeTask(task, options = {}) {
     addConfiguredSkill("agyb-essentials:lint-and-validate", "testing", "desktop-rpa-qa tasks need pytest and syntax validation");
     addConfiguredSkill("agyb-essentials:systematic-debugging", "debugging", "desktop-rpa-qa tasks often expose environment blockers");
   }
+  if (taskKind === "desktop-automation-qa") {
+    addConfiguredSkill("playwright", "testing", "desktop-automation-qa may need local browser or GUI smoke checks");
+    addConfiguredSkill("agyb-essentials:lint-and-validate", "testing", "desktop-automation-qa tasks need syntax and local validation");
+    addConfiguredSkill("agyb-essentials:systematic-debugging", "debugging", "desktop-automation-qa tasks often expose environment blockers");
+  }
   if (taskKind === "comfyui-workflow-qa") {
     addConfiguredSkill("agyb-essentials:lint-and-validate", "testing", "comfyui-workflow-qa tasks run validate-only checks");
     addConfiguredSkill("agyb-essentials:systematic-debugging", "debugging", "comfyui-workflow-qa tasks may need service availability diagnostics");
@@ -2543,10 +2766,20 @@ function routeTask(task, options = {}) {
     addConfiguredSkill("security-threat-model", "review", "credential-tooling tasks should model token and auth-cache disclosure risks");
     addConfiguredSkill("agyb-essentials:lint-and-validate", "testing", "credential-tooling tasks should use syntax/static checks only");
   }
+  if (taskKind === "integration-bot-qa") {
+    addConfiguredSkill("agyb-essentials:lint-and-validate", "testing", "integration-bot-qa tasks need syntax and local config validation");
+    addConfiguredSkill("agyb-essentials:systematic-debugging", "debugging", "integration-bot-qa tasks often expose credential or service blockers");
+  }
   if (taskKind === "artifact-inspection") {
     addConfiguredSkill("documents", "research", "artifact-inspection tasks inspect document and transcript artifacts");
     addConfiguredSkill("community-openai-speech", "research", "artifact-inspection tasks may inspect speech/transcription artifacts without running transcription");
     addConfiguredSkill("agyb-essentials:lint-and-validate", "testing", "artifact-inspection tasks need script syntax and structure validation");
+  }
+  if (taskKind === "static-artifact-inspection") {
+    addConfiguredSkill("agyb-essentials:lint-and-validate", "testing", "static-artifact-inspection tasks need file, HTML reference, and helper script validation");
+  }
+  if (taskKind === "empty-sample-blocker") {
+    addConfiguredSkill("agyb-essentials:lint-and-validate", "testing", "empty-sample-blocker tasks only verify path and evidence availability");
   }
   if (vagueTask) {
     skillEntries = skillEntries.filter((entry) => !/debugging|failure|regression/i.test(entry.reason));
@@ -3295,6 +3528,20 @@ ${JSON.stringify(packet)}`;
 }
 
 function fallbackJudgement(task, route, skillCandidates, errorMessage = "", meta = {}) {
+  const taskKind = route.taskProfile?.taskKind || route.taskKind || classifyTaskKind(task, route);
+  const preferredOverrideKinds = ["web-app-qa", "monorepo-wasm-qa", "android-qa", "chrome-extension-qa", "desktop-rpa-qa", "desktop-automation-qa", "comfyui-workflow-qa", "credential-tooling", "integration-bot-qa", "artifact-inspection", "static-artifact-inspection", "empty-sample-blocker"];
+  if (preferredOverrideKinds.includes(taskKind) && (["credential-tooling", "integration-bot-qa"].includes(taskKind) || !hasSecurityReviewSignal(task))) {
+    const preferredNames = preferredAgentsForTaskKind(taskKind);
+    const preferredCandidate = (route.candidates || []).find((candidate) => preferredNames.includes(candidate.name))
+      || preferredNames.map((name) => findAgentByName(name)).find(Boolean);
+    if (preferredCandidate && route.recommended?.name !== preferredCandidate.name) {
+      route = {
+        ...route,
+        recommended: preferredCandidate,
+        modelPolicy: computeModelPolicy(task, preferredCandidate, { ...route, taskKind }),
+      };
+    }
+  }
   const selectedSkills = route.suggestedSkills;
   const fullAgent = findAgentByName(route.recommended.name) || route.recommended;
   const modelPolicy = route.modelPolicy || computeModelPolicy(task, route.recommended, route);
@@ -4509,6 +4756,14 @@ const EVAL_CASES = [
   { id: "v16-tool-comfyui-validate-no-queue", task: "开启子代理，测试 /Users/sjp1212/Documents/工具/调用comfyui 这个 ComfyUI wrapper，只运行 ./comfy status、models、validate workflows/text_to_image_api_template.json，不 queue、不生成、不触发付费 API 成本", expected: { taskKind: "comfyui-workflow-qa", agentIn: ["test-automator", "qa-expert", "workflow-orchestrator"], executionMode: "staged", requiresTests: true, skillsInclude: ["agyb-essentials:lint-and-validate"], skillsExclude: ["security-threat-model"] } },
   { id: "v16-tool-get-token-static-boundary", task: "开启子代理，只读审查 /Users/sjp1212/Documents/工具/get_token 这个 OAuth token 工具，做 python py_compile 和静态 no-secret-output 检查，不执行 OAuth、不输出 token", expected: { taskKind: "credential-tooling", agentIn: ["security-auditor", "security-engineer", "reviewer", "code-mapper"], executionMode: "staged", requiresTests: true, skillsInclude: ["security-best-practices", "agyb-essentials:lint-and-validate"], requiresReview: true } },
   { id: "v16-tool-transcription-artifact-inspection", task: "开启子代理，检查 /Users/sjp1212/Documents/工具/语音转录工具 的资料与产出脚本，只做 outputs/build_task_minutes_docx.py 语法检查并抽查现有 txt/srt/json/md 产物结构，不跑转录", expected: { taskKind: "artifact-inspection", agentIn: ["docs-researcher", "documentation-engineer", "research-analyst", "code-mapper"], executionMode: "staged", requiresTests: true, noImplementStage: true, skillsInclude: ["agyb-essentials:lint-and-validate"], skillsExclude: ["security-best-practices", "security-threat-model"] } },
+  { id: "v17-web-node-local-qa", task: "开启子代理，对 /Users/sjp1212/Documents/项目/无限画布 这个 Web/Node 项目做 full local QA：检查 package.json scripts 和现有依赖，运行 cheap lint/typecheck/test，不 npm install、不 deploy、不 publish", expected: { taskKind: "web-app-qa", agentIn: ["test-automator", "qa-expert", "frontend-developer", "browser-debugger"], executionMode: "staged", requiresTests: true, skillsInclude: ["build-web-apps:frontend-testing-debugging", "agyb-essentials:lint-and-validate"], skillsExclude: ["security-best-practices", "security-threat-model", "android-emulator-qa"] } },
+  { id: "v17-monorepo-wasm-local-qa", task: "开启子代理，对 /Users/sjp1212/Documents/项目/opencut-classic 这个 monorepo Turbo Rust WASM Docker 项目做分层本地验证，检查 wasm-pack、Cargo.toml、build:wasm，不 deploy、不 Docker push、不发布", expected: { taskKind: "monorepo-wasm-qa", agentIn: ["test-automator", "qa-expert", "code-mapper", "devops-engineer"], executionMode: "staged", requiresTests: true, skillsInclude: ["agyb-essentials:lint-and-validate"], skillsExclude: ["security-best-practices", "security-threat-model", "android-emulator-qa"] } },
+  { id: "v17-chrome-over-android-mixed-prompt", task: "开启子代理，测试 /Users/sjp1212/Documents/工具/抓取视频插件 这个 Chrome MV3 extension；Android 只是另一个样本类型，这个路径只做 manifest/JS/HTML 本地验证，不 adb、不真机、不下载真实视频", expected: { taskKind: "chrome-extension-qa", agentIn: ["test-automator", "frontend-developer", "browser-debugger", "qa-expert"], executionMode: "staged", requiresTests: true, skillsInclude: ["agyb-essentials:lint-and-validate"], skillsExclude: ["android-emulator-qa", "android-performance", "security-threat-model"] } },
+  { id: "v17-feishu-bot-local-qa", task: "开启子代理，对 /Users/sjp1212/Documents/项目/飞书机器人 做 local validation，只允许检查脚本/配置名和静态语法，不发送消息、不注册线上 webhook、不执行 OAuth、不输出 secret", expected: { taskKind: "integration-bot-qa", agentIn: ["test-automator", "qa-expert", "backend-developer", "api-designer", "code-mapper"], executionMode: "staged", requiresTests: true, noImplementStage: true, skillsInclude: ["agyb-essentials:lint-and-validate"] } },
+  { id: "v17-jianying-desktop-automation-qa", task: "开启子代理，测试 /Users/sjp1212/Documents/项目/操控剪映 这个 Python 桌面自动化项目，只做 py_compile/doctor/offscreen smoke，不操控真实剪映、不扫码登录、不下载发布", expected: { taskKind: "desktop-automation-qa", agentIn: ["test-automator", "qa-expert", "debugger", "code-mapper"], executionMode: "staged", requiresTests: true, skillsInclude: ["playwright", "agyb-essentials:lint-and-validate"], skillsExclude: ["security-best-practices", "security-threat-model"] } },
+  { id: "v17-static-html-artifact", task: "Read-only static artifact inspection for /Users/sjp1212/Documents/项目/陶哥定制报价html，只做文件组织和 HTML 引用结构检查，不生成文档、不上传下载、不实现功能", expected: { taskKind: "static-artifact-inspection", agentIn: ["code-mapper", "docs-researcher", "documentation-engineer", "research-analyst"], executionMode: "staged", requiresTests: true, noImplementStage: true, skillsInclude: ["agyb-essentials:lint-and-validate"], skillsExclude: ["security-best-practices", "security-threat-model"] } },
+  { id: "v17-empty-sample-blocker", task: "开启子代理，检查 /Users/sjp1212/Documents/项目/RPA 空目录的路由效果，no visible files，只记录 blocker，不生成实现计划", expected: { taskKind: "empty-sample-blocker", agentIn: ["code-mapper", "qa-expert", "docs-researcher"], executionMode: "staged", requiresTests: true, noImplementStage: true } },
+  { id: "v17-music-local-bridge-qa", task: "开启子代理，只读验证 /Users/sjp1212/Documents/项目/音乐寻找 这个本地 bridge/connector 项目，检查脚本和本地验证入口，不登录平台、不下载音乐、不调用付费 API、不上传", expected: { taskKind: "integration-bot-qa", agentIn: ["test-automator", "qa-expert", "backend-developer", "api-designer", "code-mapper"], executionMode: "staged", requiresTests: true, noImplementStage: true, skillsInclude: ["agyb-essentials:lint-and-validate"], skillsExclude: ["security-threat-model"] } },
   { id: "v13-public-hygiene", task: "开启子代理，公开发布前检查 secrets、本机路径和第三方致谢", expected: { intentIncludes: ["security", "review"], judgeModel: "gpt-5.5", requiresReview: true } },
   { id: "v9-skill-budget-planning", task: "开启子代理，写好详细计划方案然后使用 goal 模式实现", expected: { intentIncludes: ["planning"], skillsInclude: ["superpowers:writing-plans"], judgeModel: "gpt-5.5" } },
   { id: "v9-high-risk-fallback-auth", task: "开启子代理，critical 模式修复生产 API 鉴权和权限漏洞", options: { budget: "critical" }, expected: { intentIncludes: ["backend", "security"], judgeModel: "gpt-5.5", selectedModel: "gpt-5.5", requiresTests: true, requiresReview: true } },
