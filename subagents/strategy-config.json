@@ -1,6 +1,80 @@
 {
-  "version": 15,
+  "version": 16,
   "skillRules": [
+    {
+      "id": "chrome-extension-qa",
+      "phase": "testing",
+      "priority": 99,
+      "confidence": "high",
+      "reason": "Chrome extension, Manifest V3, content script, service worker, popup, side panel, or browser extension QA",
+      "skills": [
+        "build-web-apps:frontend-testing-debugging",
+        "agyb-essentials:lint-and-validate",
+        "playwright"
+      ],
+      "patterns": [
+        "chrome extension|browser extension|manifest\\s*v?3|manifest\\.json|mv3|service_worker|service worker|content script|content-scripts|popup\\.html|popup\\.js|sidepanel|side panel|chrome 插件|谷歌浏览器插件|浏览器插件|扩展程序"
+      ]
+    },
+    {
+      "id": "desktop-rpa-qa",
+      "phase": "testing",
+      "priority": 98,
+      "confidence": "high",
+      "reason": "Desktop RPA, PySide, Playwright, offscreen smoke, or local automation validation",
+      "skills": [
+        "playwright",
+        "agyb-essentials:lint-and-validate",
+        "agyb-essentials:systematic-debugging"
+      ],
+      "patterns": [
+        "rpa|playwright|pyside6|qt_qpa_platform|offscreen|flow-smoke|flow smoke|pytest|桌面\\s*RPA|自动化控制台|扫码登录|隔离环境|浏览器隔离"
+      ]
+    },
+    {
+      "id": "comfyui-workflow-qa",
+      "phase": "testing",
+      "priority": 98,
+      "confidence": "high",
+      "reason": "ComfyUI wrapper or workflow validation without queueing costful generation",
+      "skills": [
+        "agyb-essentials:lint-and-validate",
+        "agyb-essentials:systematic-debugging"
+      ],
+      "patterns": [
+        "comfyui|\\bcomfy\\b|workflow\\.json|validate\\s+workflows|模型检查|checkpoint|工作流验证"
+      ]
+    },
+    {
+      "id": "credential-tooling",
+      "phase": "review",
+      "priority": 100,
+      "confidence": "high",
+      "reason": "OAuth, token, credential, auth cache, or secret-output tooling needs no-secret-output boundaries",
+      "skills": [
+        "security-best-practices",
+        "security-threat-model",
+        "agyb-essentials:lint-and-validate"
+      ],
+      "patterns": [
+        "oauth|token|credential|refresh_token|access_token|auth\\.json|auth cache|get_token|凭证|令牌|登录态|密钥|secret|不要输出\\s*token"
+      ]
+    },
+    {
+      "id": "artifact-inspection",
+      "phase": "research",
+      "priority": 92,
+      "confidence": "high",
+      "reason": "Existing transcript, document, SRT, JSON, or generated artifact inspection",
+      "skills": [
+        "documents",
+        "community-openai-speech",
+        "agyb-essentials:lint-and-validate"
+      ],
+      "patterns": [
+        "transcription|transcript|srt|字幕|转录|语音转录|纪要|音频|m4a|wav|产物|artifact|现有\\s*\\.txt|现有\\s*\\.srt|资料与产出|产物结构"
+      ]
+    },
     {
       "id": "android-qa",
       "phase": "testing",
@@ -406,6 +480,31 @@
     }
   },
   "taskKindPolicy": {
+    "chrome-extension-qa": {
+      "keywords": ["chrome extension|browser extension|manifest\\s*v?3|manifest\\.json|mv3|service_worker|service worker|content script|content-scripts|popup\\.html|popup\\.js|sidepanel|side panel|chrome 插件|谷歌浏览器插件|浏览器插件|扩展程序"],
+      "preferredAgents": ["test-automator", "frontend-developer", "browser-debugger", "qa-expert", "code-mapper"],
+      "allowedPhases": ["planning", "research", "design", "implementation", "debugging", "testing", "review", "matched"]
+    },
+    "desktop-rpa-qa": {
+      "keywords": ["rpa|playwright|pyside6|qt_qpa_platform|offscreen|flow-smoke|flow smoke|pytest|桌面\\s*RPA|自动化控制台|扫码登录|隔离环境|浏览器隔离"],
+      "preferredAgents": ["test-automator", "qa-expert", "debugger", "automation-engineer", "code-mapper"],
+      "allowedPhases": ["planning", "research", "design", "implementation", "debugging", "testing", "review", "matched"]
+    },
+    "comfyui-workflow-qa": {
+      "keywords": ["comfyui|\\bcomfy\\b|workflow\\.json|validate\\s+workflows|模型检查|checkpoint|工作流验证"],
+      "preferredAgents": ["test-automator", "qa-expert", "workflow-orchestrator", "code-mapper"],
+      "allowedPhases": ["planning", "research", "design", "debugging", "testing", "review", "matched"]
+    },
+    "credential-tooling": {
+      "keywords": ["oauth|token|credential|refresh_token|access_token|auth\\.json|auth cache|get_token|凭证|令牌|登录态|密钥|secret|不要输出\\s*token"],
+      "preferredAgents": ["security-auditor", "security-engineer", "reviewer", "code-mapper"],
+      "allowedPhases": ["planning", "research", "debugging", "testing", "review", "matched"]
+    },
+    "artifact-inspection": {
+      "keywords": ["transcription|transcript|srt|字幕|转录|语音转录|纪要|音频|m4a|wav|产物|artifact|现有\\s*\\.txt|现有\\s*\\.srt|资料与产出|产物结构"],
+      "preferredAgents": ["docs-researcher", "documentation-engineer", "research-analyst", "code-mapper"],
+      "allowedPhases": ["planning", "research", "testing", "review", "matched"]
+    },
     "android-qa": {
       "keywords": ["android|安卓|gradle|apk|adb|emulator|模拟器|真机|connectedDebugAndroidTest|instrumentation|仪器测试|androidTest|CameraX|logcat|安装\\s*APK|截图"],
       "preferredAgents": ["test-automator", "qa-expert", "mobile-developer", "code-mapper"],

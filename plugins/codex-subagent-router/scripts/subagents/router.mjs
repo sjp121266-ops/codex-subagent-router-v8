@@ -59,6 +59,41 @@ const DEFAULT_COST_POLICY = {
 };
 
 const DEFAULT_TASK_KIND_POLICY = {
+  "chrome-extension-qa": {
+    keywords: [
+      "chrome extension|browser extension|manifest\\s*v?3|manifest\\.json|mv3|service_worker|service worker|content script|content-scripts|popup\\.html|popup\\.js|sidepanel|side panel|chrome 插件|谷歌浏览器插件|浏览器插件|扩展程序",
+    ],
+    preferredAgents: ["test-automator", "frontend-developer", "browser-debugger", "qa-expert", "code-mapper"],
+    allowedPhases: ["planning", "research", "design", "implementation", "debugging", "testing", "review", "matched"],
+  },
+  "desktop-rpa-qa": {
+    keywords: [
+      "rpa|playwright|pyside6|qt_qpa_platform|offscreen|flow-smoke|flow smoke|pytest|桌面\\s*RPA|自动化控制台|扫码登录|隔离环境|浏览器隔离",
+    ],
+    preferredAgents: ["test-automator", "qa-expert", "debugger", "automation-engineer", "code-mapper"],
+    allowedPhases: ["planning", "research", "design", "implementation", "debugging", "testing", "review", "matched"],
+  },
+  "comfyui-workflow-qa": {
+    keywords: [
+      "comfyui|\\bcomfy\\b|workflow\\.json|validate\\s+workflows|模型检查|checkpoint|工作流验证",
+    ],
+    preferredAgents: ["test-automator", "qa-expert", "workflow-orchestrator", "code-mapper"],
+    allowedPhases: ["planning", "research", "design", "debugging", "testing", "review", "matched"],
+  },
+  "credential-tooling": {
+    keywords: [
+      "oauth|token|credential|refresh_token|access_token|auth\\.json|auth cache|get_token|凭证|令牌|登录态|密钥|secret|不要输出\\s*token",
+    ],
+    preferredAgents: ["security-auditor", "security-engineer", "reviewer", "code-mapper"],
+    allowedPhases: ["planning", "research", "debugging", "testing", "review", "matched"],
+  },
+  "artifact-inspection": {
+    keywords: [
+      "transcription|transcript|srt|字幕|转录|语音转录|纪要|音频|m4a|wav|产物|artifact|现有\\s*\\.txt|现有\\s*\\.srt|资料与产出|产物结构",
+    ],
+    preferredAgents: ["docs-researcher", "documentation-engineer", "research-analyst", "code-mapper"],
+    allowedPhases: ["planning", "research", "testing", "review", "matched"],
+  },
   "android-qa": {
     keywords: [
       "android|安卓|gradle|apk|adb|emulator|模拟器|真机|connectedDebugAndroidTest|instrumentation|仪器测试|androidTest|CameraX|logcat|安装\\s*APK|截图",
@@ -155,6 +190,36 @@ const EFFORT_ORDER = new Map([
 ]);
 
 const DEFAULT_SKILL_RULES = [
+  {
+    reason: "Chrome extension, Manifest V3, content script, service worker, popup, side panel, or browser extension QA",
+    confidence: "high",
+    skills: ["build-web-apps:frontend-testing-debugging", "agyb-essentials:lint-and-validate", "playwright"],
+    patterns: [/chrome extension|browser extension|manifest\s*v?3|manifest\.json|mv3|service_worker|service worker|content script|content-scripts|popup\.html|popup\.js|sidepanel|side panel|chrome 插件|谷歌浏览器插件|浏览器插件|扩展程序/i],
+  },
+  {
+    reason: "Desktop RPA, PySide, Playwright, offscreen smoke, or local automation validation",
+    confidence: "high",
+    skills: ["playwright", "agyb-essentials:lint-and-validate", "agyb-essentials:systematic-debugging"],
+    patterns: [/rpa|playwright|pyside6|qt_qpa_platform|offscreen|flow-smoke|flow smoke|pytest|桌面\s*RPA|自动化控制台|扫码登录|隔离环境|浏览器隔离/i],
+  },
+  {
+    reason: "ComfyUI wrapper or workflow validation without queueing costful generation",
+    confidence: "high",
+    skills: ["agyb-essentials:lint-and-validate", "agyb-essentials:systematic-debugging"],
+    patterns: [/comfyui|\bcomfy\b|workflow\.json|validate\s+workflows|模型检查|checkpoint|工作流验证/i],
+  },
+  {
+    reason: "OAuth, token, credential, auth cache, or secret-output tooling needs no-secret-output boundaries",
+    confidence: "high",
+    skills: ["security-best-practices", "security-threat-model", "agyb-essentials:lint-and-validate"],
+    patterns: [/oauth|token|credential|refresh_token|access_token|auth\.json|auth cache|get_token|凭证|令牌|登录态|密钥|secret|不要输出\s*token/i],
+  },
+  {
+    reason: "Existing transcript, document, SRT, JSON, or generated artifact inspection",
+    confidence: "high",
+    skills: ["documents", "community-openai-speech", "agyb-essentials:lint-and-validate"],
+    patterns: [/transcription|transcript|srt|字幕|转录|语音转录|纪要|音频|m4a|wav|产物|artifact|现有\s*\.txt|现有\s*\.srt|资料与产出|产物结构/i],
+  },
   {
     reason: "Android, Gradle, APK, adb, emulator, or device-side QA workflow",
     confidence: "high",
@@ -1141,8 +1206,38 @@ function hasAndroidQaSignal(text = "") {
   return /android|安卓|gradle|apk|adb|emulator|模拟器|真机|connectedDebugAndroidTest|instrumentation|仪器测试|androidTest|CameraX|logcat|安装\s*APK|截图/i.test(cleanTask(text));
 }
 
+function hasChromeExtensionQaSignal(text = "") {
+  return patternListMatches(configuredTaskKindPolicy()["chrome-extension-qa"]?.keywords || [], cleanTask(text));
+}
+
+function hasDesktopRpaQaSignal(text = "") {
+  const cleaned = cleanTask(text);
+  return /rpa|pyside6|qt_qpa_platform|offscreen|flow-smoke|flow smoke|桌面\s*RPA|自动化控制台|扫码登录|浏览器隔离|抖音rpa/i.test(cleaned)
+    || (/playwright/i.test(cleaned) && /pyside|qt|rpa|offscreen|flow|扫码|桌面|抖音/i.test(cleaned));
+}
+
+function hasComfyUiWorkflowQaSignal(text = "") {
+  const cleaned = cleanTask(text);
+  return /comfyui|\bcomfy\b|workflow\.json|validate\s+workflows|checkpoint|工作流验证|模型检查/i.test(cleaned)
+    || (/(queue|no queue|不\s*queue|不要排队|生成成本|API\s*cost|付费|成本)/i.test(cleaned) && /workflow|工作流|模型|生成|comfy/i.test(cleaned));
+}
+
+function hasCredentialToolingSignal(text = "") {
+  return patternListMatches(configuredTaskKindPolicy()["credential-tooling"]?.keywords || [], cleanTask(text));
+}
+
+function hasArtifactInspectionSignal(text = "") {
+  return patternListMatches(configuredTaskKindPolicy()["artifact-inspection"]?.keywords || [], cleanTask(text));
+}
+
 function hasExplicitSecurityRiskSignal(text = "") {
   return /security|vulnerability|auth|oauth|token|credential|permission|secret|privacy|compliance|xss|csrf|sql injection|安全|漏洞|鉴权|认证|凭证|令牌|权限|隐私|合规|威胁/i.test(cleanTask(text));
+}
+
+function hasSecurityReviewSignal(text = "") {
+  const cleaned = cleanTask(text);
+  if (/本地安全验证|安全验证|local safe validation|safe local validation/i.test(cleaned)) return false;
+  return hasExplicitSecurityRiskSignal(cleaned);
 }
 
 function classifyTaskKind(task, routeLike = {}) {
@@ -1157,7 +1252,12 @@ function classifyTaskKind(task, routeLike = {}) {
   const analysisSignals = /review|audit|analy[sz]e|inspect|diagnose|map|评审|审查|审计|分析|调研|检查|诊断|只读|不要改|不改代码/i.test(cleaned);
 
   if (patternListMatches(policy["incident-response"]?.keywords, cleaned)) return "incident-response";
-  if (hasAndroidQaSignal(cleaned) && !hasExplicitSecurityRiskSignal(cleaned)) return "android-qa";
+  if (hasCredentialToolingSignal(cleaned)) return "credential-tooling";
+  if (hasChromeExtensionQaSignal(cleaned) && !hasSecurityReviewSignal(cleaned)) return "chrome-extension-qa";
+  if (hasDesktopRpaQaSignal(cleaned) && !hasSecurityReviewSignal(cleaned)) return "desktop-rpa-qa";
+  if (hasComfyUiWorkflowQaSignal(cleaned)) return "comfyui-workflow-qa";
+  if (hasArtifactInspectionSignal(cleaned) && !hasSecurityReviewSignal(cleaned)) return "artifact-inspection";
+  if (hasAndroidQaSignal(cleaned) && !hasSecurityReviewSignal(cleaned)) return "android-qa";
   if (hasExplicitSecurityRiskSignal(cleaned) && analysisSignals) return "engineering-analysis";
   if (debugSignals) return hasWriteVerb ? "engineering-execution" : "engineering-analysis";
   if (productSignals && (noWrite || analysisSignals || !hasWriteVerb)) return "product-analysis";
@@ -1178,8 +1278,16 @@ function preferredAgentsForTaskKind(taskKind) {
 function shouldKeepSkillForTaskKind(entry, taskKind, task) {
   const allowedPhases = configuredTaskKindPolicy()[taskKind]?.allowedPhases;
   const phase = entry.phase || "implementation";
+  if (["chrome-extension-qa", "desktop-rpa-qa", "comfyui-workflow-qa", "artifact-inspection"].includes(taskKind)) {
+    if (/security|threat-model|ce-code-review|code-review/i.test(entry.name) && !hasSecurityReviewSignal(task)) return false;
+    if (taskKind === "artifact-inspection") return ["planning", "research", "testing", "review", "matched"].includes(phase);
+    return ["planning", "research", "design", "implementation", "debugging", "testing", "review", "matched"].includes(phase);
+  }
+  if (taskKind === "credential-tooling") {
+    return ["planning", "research", "debugging", "testing", "review", "matched"].includes(phase);
+  }
   if (taskKind === "android-qa") {
-    if (/security|threat-model|ce-code-review|code-review/i.test(entry.name) && !hasExplicitSecurityRiskSignal(task)) return false;
+    if (/security|threat-model|ce-code-review|code-review/i.test(entry.name) && !hasSecurityReviewSignal(task)) return false;
     return ["planning", "research", "design", "implementation", "debugging", "testing", "review", "matched"].includes(phase);
   }
   if (taskKind === "research-only") {
@@ -1241,7 +1349,7 @@ function computeModelPolicy(task, agent, routeLike = {}) {
     reasons.push("low confidence or ambiguous route");
   }
 
-  const importantIntentIds = taskKind === "android-qa" && !hasExplicitSecurityRiskSignal(cleaned)
+  const importantIntentIds = taskKind === "android-qa" && !hasSecurityReviewSignal(cleaned)
     ? intentIds.filter((id) => !["security", "review"].includes(id))
     : intentIds;
   if (importantIntentIds.some((id) => ["security", "review", "devops", "data-ai"].includes(id))) {
@@ -1303,6 +1411,7 @@ function computeTaskProfile(task, routeLike = {}) {
   const broadAuthorized = isExplicitBroadAuthorization(cleaned);
   const taskKind = routeLike.taskKind || classifyTaskKind(task, routeLike);
   const noWrite = taskKind === "android-qa" ? hasExplicitNoWriteDirective(cleaned) : isNoWriteTask(cleaned);
+  const hasWriteVerb = /fix|implement|build|create|edit|update|refactor|optimi[sz]e|improve|iterate|execute|maintain|refresh|enhance|修复|修|实现|创建|修改|改|写|补齐|重构|优化|完善|增强|迭代|执行|维护|刷新/i.test(cleaned);
   const writeIntent = !noWrite && /fix|implement|build|create|edit|update|refactor|optimi[sz]e|improve|iterate|execute|maintain|refresh|enhance|修复|修|实现|创建|修改|改|写|补齐|重构|优化|完善|增强|迭代|执行|维护|刷新/i.test(cleaned)
     ? "expected"
     : /review|audit|analy[sz]e|审查|审计|分析|调研|检查/i.test(cleaned)
@@ -1314,7 +1423,7 @@ function computeTaskProfile(task, routeLike = {}) {
   let scope = "local";
 
   const androidQa = taskKind === "android-qa";
-  const highRisk = androidQa && !hasExplicitSecurityRiskSignal(cleaned)
+  const highRisk = androidQa && !hasSecurityReviewSignal(cleaned)
     ? /production|incident|migration|data loss|生产|事故|迁移|数据丢失/i.test(cleaned)
     : /security|auth|permission|secret|privacy|production|incident|migration|data loss|安全|鉴权|权限|隐私|生产|事故|迁移|数据丢失/i.test(cleaned)
       || (loadStrategyConfig().highRiskRules || DEFAULT_HIGH_RISK_RULES).some((rule) => rule.pattern && new RegExp(rule.pattern, "i").test(cleaned));
@@ -1382,7 +1491,38 @@ function computeTaskProfile(task, routeLike = {}) {
     signals.push("android qa task");
     if (/adb|emulator|模拟器|真机|connectedDebugAndroidTest|logcat|截图/i.test(cleaned)) signals.push("android device-side validation signal");
   }
-  const importantIntentIds = taskKind === "android-qa" && !hasExplicitSecurityRiskSignal(cleaned)
+  if (taskKind === "chrome-extension-qa") {
+    risk = highRisk ? risk : "medium";
+    complexity = /完整|全面|release:check|端到端|e2e|真实网站|Zendesk|GitHub|抖音/i.test(cleaned) ? "high" : "medium";
+    scope = isProjectScopeTask(task) ? "subsystem" : "local";
+    signals.push("chrome extension qa task");
+  }
+  if (taskKind === "desktop-rpa-qa") {
+    risk = highRisk ? risk : "medium";
+    complexity = /完整|全面|flow-smoke|pytest|playwright|登录|扫码|真实/i.test(cleaned) ? "high" : "medium";
+    scope = isProjectScopeTask(task) ? "subsystem" : "local";
+    signals.push("desktop rpa qa task");
+  }
+  if (taskKind === "comfyui-workflow-qa") {
+    risk = highRisk ? risk : "medium";
+    complexity = /完整|全面|models|validate|workflow|queue|生成|成本/i.test(cleaned) ? "medium" : "low";
+    scope = isProjectScopeTask(task) ? "subsystem" : "local";
+    signals.push("comfyui workflow qa task");
+  }
+  if (taskKind === "credential-tooling") {
+    risk = "high";
+    complexity = /oauth|browser flow|refresh_token|access_token|缓存|登录态/i.test(cleaned) ? "medium" : "low";
+    scope = isProjectScopeTask(task) ? "subsystem" : "local";
+    signals.push("credential tooling task");
+  }
+  if (taskKind === "artifact-inspection") {
+    risk = highRisk ? risk : "low";
+    complexity = /完整|全面|全部|结构|产物|outputs/i.test(cleaned) ? "medium" : "low";
+    scope = isProjectScopeTask(task) ? "subsystem" : "local";
+    signals.push("artifact inspection task");
+  }
+  const safeQaKinds = ["android-qa", "chrome-extension-qa", "desktop-rpa-qa", "comfyui-workflow-qa", "artifact-inspection"];
+  const importantIntentIds = safeQaKinds.includes(taskKind) && !hasSecurityReviewSignal(cleaned)
     ? intentIds.filter((id) => !["security", "review"].includes(id))
     : intentIds;
   if (importantIntentIds.some((id) => ["security", "review", "devops", "data-ai"].includes(id))) {
@@ -1406,7 +1546,9 @@ function computeTaskProfile(task, routeLike = {}) {
     signals.push("low-risk docs or formatting signal");
   }
 
-  const finalWriteIntent = taskKind === "android-qa" && !hasExplicitNoWriteDirective(cleaned)
+  const finalWriteIntent = ["artifact-inspection", "credential-tooling"].includes(taskKind)
+    ? (hasWriteVerb && !noWrite && taskKind !== "artifact-inspection" ? "possible" : "none")
+    : taskKind === "android-qa" && !hasExplicitNoWriteDirective(cleaned)
     ? (writeIntent === "none" ? "possible" : writeIntent)
     : ["product-analysis", "research-only"].includes(taskKind) || noWrite ? "none" : writeIntent;
   return { taskKind, complexity, risk, scope, writeIntent: finalWriteIntent, signals: unique(signals) };
@@ -1726,10 +1868,11 @@ function buildExecutionPlan(task, routeLike, taskProfile, selectedSkillsByPhase)
   let mode = "single-agent";
   const broadAuthorized = isExplicitBroadAuthorization(task);
   const taskKind = taskProfile.taskKind || classifyTaskKind(task, routeLike);
-  const noWrite = taskKind === "android-qa" ? hasExplicitNoWriteDirective(task) : isNoWriteTask(task);
+  const readonlyToolKinds = ["artifact-inspection", "credential-tooling"];
+  const noWrite = taskKind === "android-qa" ? hasExplicitNoWriteDirective(task) : readonlyToolKinds.includes(taskKind) || isNoWriteTask(task);
   const matchedIntentIds = routeLike.matchedIntents?.map((intent) => intent.id) || [];
-  const securityReviewIntent = matchedIntentIds.includes("security") && !(taskKind === "android-qa" && !hasExplicitSecurityRiskSignal(task));
-  const reviewIntent = matchedIntentIds.includes("review") && !(taskKind === "android-qa" && !/review|审查|审计|代码审查|风险/i.test(cleanTask(task)));
+  const securityReviewIntent = matchedIntentIds.includes("security") && !(["android-qa", "chrome-extension-qa", "desktop-rpa-qa", "comfyui-workflow-qa", "artifact-inspection"].includes(taskKind) && !hasSecurityReviewSignal(task));
+  const reviewIntent = matchedIntentIds.includes("review") && !(["android-qa", "chrome-extension-qa", "desktop-rpa-qa", "comfyui-workflow-qa", "artifact-inspection"].includes(taskKind) && !/review|审查|审计|代码审查|风险/i.test(cleanTask(task)));
   let requiresReview = ["high", "critical"].includes(taskProfile.risk)
     || (taskProfile.complexity === "high" && taskProfile.writeIntent === "expected")
     || broadAuthorized
@@ -1737,7 +1880,7 @@ function buildExecutionPlan(task, routeLike, taskProfile, selectedSkillsByPhase)
     || securityReviewIntent;
   if (["product-analysis", "engineering-analysis", "orchestration-design", "research-only"].includes(taskKind) && noWrite) requiresReview = requiresReview || !["product-analysis", "research-only"].includes(taskKind);
   if (taskKind === "incident-response") requiresReview = true;
-  const requiresTests = taskKind === "android-qa" ? true : !["product-analysis", "research-only"].includes(taskKind)
+  const requiresTests = ["android-qa", "chrome-extension-qa", "desktop-rpa-qa", "comfyui-workflow-qa", "credential-tooling", "artifact-inspection"].includes(taskKind) ? true : !["product-analysis", "research-only"].includes(taskKind)
     && (
       (!noWrite && (taskProfile.writeIntent === "expected" || broadAuthorized))
       || (!noWrite && routeLike.matchedIntents?.some((intent) => intent.id === "testing" || intent.id === "debug"))
@@ -1780,6 +1923,32 @@ function buildExecutionPlan(task, routeLike, taskProfile, selectedSkillsByPhase)
     stages.push("Check adb availability from PATH, local.properties, ANDROID_HOME/ANDROID_SDK_ROOT, and the default Android SDK path.");
     stages.push("If a device or emulator is connected, run connected tests, install or launch the app, capture screenshots, and collect logcat evidence.");
     stages.push("If no device is connected, mark connectedDebugAndroidTest, install/launch, screenshots, and logcat as blocked by device readiness.");
+  } else if (taskKind === "chrome-extension-qa") {
+    mode = "staged";
+    stages.push("Map Manifest V3 surfaces: manifest, service worker, content scripts, popup, side panel, permissions, and declared host access.");
+    stages.push("Run local static validation, npm/package checks when available, and syntax checks for extension JavaScript.");
+    stages.push("Verify popup/HTML asset references and release checks without logging into real sites or triggering downloads.");
+    stages.push("Mark real Zendesk, GitHub, Douyin, browser-store, download, or authenticated website actions as blocked unless explicitly authorized.");
+  } else if (taskKind === "desktop-rpa-qa") {
+    mode = "staged";
+    stages.push("Map Python RPA entry points, virtual environment, Playwright/PySide dependencies, and local smoke commands.");
+    stages.push("Run doctor, offscreen flow smoke, and pytest using the project virtual environment when present.");
+    stages.push("Keep real platform login, QR scanning, publishing, downloading, and live-site business actions blocked unless explicitly authorized.");
+  } else if (taskKind === "comfyui-workflow-qa") {
+    mode = "staged";
+    stages.push("Map ComfyUI wrapper commands, workflow files, model/status checks, and validation-only paths.");
+    stages.push("Run status, models, and workflow validate checks where safe; report service-unavailable as an environment blocker.");
+    stages.push("Block queue, generation, video/image production, paid API calls, and costful model actions unless explicitly authorized.");
+  } else if (taskKind === "credential-tooling") {
+    mode = "staged";
+    stages.push("Map credential/OAuth entry points, storage paths, and commands without reading or printing secret values.");
+    stages.push("Run syntax and static safety checks only; do not execute OAuth browser flow or token-producing commands.");
+    stages.push("Review no-secret-output boundaries and mark auth-cache/token disclosure as blocked.");
+  } else if (taskKind === "artifact-inspection") {
+    mode = "staged";
+    stages.push("Map existing transcript, SRT, JSON, Markdown, and document-generation artifacts.");
+    stages.push("Run script syntax checks and inspect artifact structure without starting transcription or network jobs.");
+    stages.push("Summarize missing or malformed artifacts as read-only findings.");
   } else if (taskKind === "incident-response") {
     mode = "staged";
     stages.push("Incident mapper captures logs, blast radius, and rollback constraints without writing.");
@@ -1860,7 +2029,7 @@ function buildHandoffPlan(task, routeLike, taskProfile, executionPlan, skillsByP
   const agentName = routeLike.recommended?.name || "selected-agent";
   const modelPolicy = routeLike.modelPolicy || computeModelPolicy(task, routeLike.recommended, routeLike);
   const taskKind = taskProfile.taskKind || classifyTaskKind(task, routeLike);
-  const noWrite = (taskKind === "android-qa" ? hasExplicitNoWriteDirective(task) : isNoWriteTask(task)) || taskProfile.writeIntent === "none";
+  const noWrite = (taskKind === "android-qa" ? hasExplicitNoWriteDirective(task) : ["artifact-inspection", "credential-tooling"].includes(taskKind) || isNoWriteTask(task)) || taskProfile.writeIntent === "none";
   const baseStage = (id, agent, role, sandbox, phases, objective, acceptance) => {
     const stageAgent = findAgentByName(agent);
     return {
@@ -1908,6 +2077,21 @@ function buildHandoffPlan(task, routeLike, taskProfile, executionPlan, skillsByP
       stages.push(baseStage("local-android-baseline", agentName, "worker", "workspace-write", ["testing", "debugging"], "Run local Android validation: unit tests, debug APK build, and androidTest APK build.", ["testDebugUnitTest result is reported.", "assembleDebug result is reported.", "assembleDebugAndroidTest result is reported."]));
       stages.push(baseStage("device-readiness", "test-automator", "worker", "workspace-write", ["testing"], "Resolve adb path and check connected device or emulator readiness.", ["adb path source is reported.", "Connected devices are listed, or device-side checks are explicitly blocked."]));
       stages.push(baseStage("device-qa-if-ready", "test-automator", "worker", "workspace-write", ["testing"], "When adb reports a connected target, run connected tests, install or launch the app, capture screenshots, and collect logcat evidence.", ["connectedDebugAndroidTest/install/launch evidence is reported when a device exists.", "Without a device, blocked checks are named instead of being marked as merely untested."]));
+    } else if (taskKind === "chrome-extension-qa") {
+      stages.push(baseStage("map-extension-surface", "code-mapper", "explorer", "read-only", ["planning", "research"], "Map Manifest V3, permissions, service worker, content scripts, popup, side panel, and host access.", ["Extension entry points and permissions are named.", "Real website and download actions remain blocked."]));
+      stages.push(baseStage("local-extension-validation", agentName, "worker", "workspace-write", ["testing", "debugging"], "Run local extension validation: package scripts when present, manifest JSON parse, JavaScript syntax, and HTML asset reference checks.", ["Local validation commands and results are reported.", "No authenticated site action or download is triggered."]));
+    } else if (taskKind === "desktop-rpa-qa") {
+      stages.push(baseStage("map-rpa-surface", "code-mapper", "explorer", "read-only", ["planning", "research"], "Map Python RPA entry points, venv availability, Playwright/PySide dependencies, and safe smoke commands.", ["Entry points and environment source are named.", "Real platform login and business actions remain blocked."]));
+      stages.push(baseStage("local-rpa-validation", agentName, "worker", "workspace-write", ["testing", "debugging"], "Run doctor, offscreen flow smoke, and pytest with the project virtual environment when available.", ["doctor/flow-smoke/pytest evidence is reported.", "Missing dependencies are recorded as environment blockers."]));
+    } else if (taskKind === "comfyui-workflow-qa") {
+      stages.push(baseStage("map-comfyui-surface", "code-mapper", "explorer", "read-only", ["planning", "research"], "Map ComfyUI wrapper commands, workflow files, model/status checks, and validation-only commands.", ["Wrapper commands and workflow files are named.", "Queue/generation remains blocked."]));
+      stages.push(baseStage("safe-comfyui-validation", agentName, "worker", "workspace-write", ["testing", "debugging"], "Run status, models, and workflow validate checks without queueing generation.", ["Service availability or blocker is reported.", "Workflow validate result is reported without generation."]));
+    } else if (taskKind === "credential-tooling") {
+      stages.push(baseStage("map-credential-surface", "code-mapper", "explorer", "read-only", ["planning", "research", "review"], "Map OAuth/token entry points, storage paths, and secret-output risk without reading secret values.", ["Credential paths are described without values.", "Token output and OAuth browser flow remain blocked."]));
+      stages.push(baseStage("static-credential-validation", agentName, "explorer", "read-only", ["testing", "review"], "Run syntax/static safety checks and review no-secret-output boundaries.", ["Syntax/static check result is reported.", "No token, refresh token, auth cache value, or credential is printed."]));
+    } else if (taskKind === "artifact-inspection") {
+      stages.push(baseStage("map-artifacts", agentName, "explorer", "read-only", ["planning", "research"], "Map existing transcript, SRT, JSON, Markdown, and document-generation artifacts.", ["Artifact types and locations are named.", "No transcription or network job is started."]));
+      stages.push(baseStage("artifact-structure-validation", agentName, "explorer", "read-only", ["testing", "review"], "Run script syntax checks and inspect artifact structure.", ["Script syntax check result is reported.", "Malformed or missing artifacts are recorded as findings."]));
     } else if (taskKind === "incident-response") {
       stages.push(baseStage("map-incident", "sre-engineer", "explorer", "read-only", ["planning", "research", "debugging"], "Map observed production incident signals, blast radius, and rollback constraints.", ["Incident signal and affected subsystem are named.", "No write occurs before scope is known."]));
       if (!noWrite && taskProfile.writeIntent === "expected") stages.push(baseStage("mitigate", agentName, "worker", "workspace-write", ["implementation", "debugging"], "Implement the smallest scoped mitigation or rollback-support change.", ["Write scope is bounded to the affected subsystem.", "Rollback or mitigation rationale is documented."]));
@@ -1978,6 +2162,13 @@ function qualityGatesFor(route, judgePolicy) {
     gates.push({ id: "incident-gpt55-gate", passed: judgePolicy.judgeModel === "gpt-5.5", reason: "Incident response requires GPT-5.5 judgement." });
     gates.push({ id: "incident-stage-gate", passed: route.executionPlan?.mode === "staged", reason: "Incident response should use staged mapping, mitigation/diagnosis, validation, and review." });
   }
+  if (["chrome-extension-qa", "desktop-rpa-qa", "comfyui-workflow-qa", "credential-tooling", "artifact-inspection"].includes(taskKind)) {
+    gates.push({ id: "tool-sample-task-kind-gate", passed: route.executionPlan?.mode === "staged", reason: `${taskKind} should produce staged local validation and blocked-action guidance.` });
+    if (taskKind !== "credential-tooling") {
+      const selected = Object.values(route.selectedSkillsByPhase || {}).flat().join(" ");
+      gates.push({ id: "tool-sample-security-noise-gate", passed: !/security-best-practices|security-threat-model/i.test(selected), reason: `${taskKind} should not over-select security skills unless explicit security/auth terms appear.` });
+    }
+  }
   if (taskKind === "engineering-execution") {
     gates.push({ id: "task-kind-stage-alignment", passed: route.executionPlan?.requiresTests === true, reason: "Engineering execution should include a validation path." });
   }
@@ -2041,8 +2232,9 @@ function fallbackSafetyFor(route, errorMessage, judgePolicy) {
 
 function attachRoutingMetadata(result, route, skillCandidates = [], judgePolicy = {}, fallbackMeta = {}) {
   const taskKind = result.taskProfile?.taskKind || route.taskProfile?.taskKind || route.taskKind || "";
-  if (taskKind === "android-qa" && !hasExplicitSecurityRiskSignal(result.task || route.task)) {
-    const preferredNames = preferredAgentsForTaskKind("android-qa");
+  const preferredOverrideKinds = ["android-qa", "chrome-extension-qa", "desktop-rpa-qa", "comfyui-workflow-qa", "credential-tooling", "artifact-inspection"];
+  if (preferredOverrideKinds.includes(taskKind) && (taskKind === "credential-tooling" || !hasSecurityReviewSignal(result.task || route.task))) {
+    const preferredNames = preferredAgentsForTaskKind(taskKind);
     const selectedPreferred = preferredNames.some((name) => result.finalAgent === name);
     const preferredCandidate = (route.candidates || []).find((candidate) => preferredNames.includes(candidate.name))
       || preferredNames.map((name) => findAgentByName(name)).find(Boolean);
@@ -2054,7 +2246,7 @@ function attachRoutingMetadata(result, route, skillCandidates = [], judgePolicy 
         sandboxMode: preferredCandidate.sandboxMode,
         routingWarnings: unique([
           ...(result.routingWarnings || []),
-          `android-qa route normalized finalAgent from ${result.finalAgent} to ${preferredCandidate.name}`,
+          `${taskKind} route normalized finalAgent from ${result.finalAgent} to ${preferredCandidate.name}`,
         ]),
       };
     }
@@ -2257,7 +2449,8 @@ function routeTask(task, options = {}) {
   const taskKindPreferred = preferredAgentsForTaskKind(taskKind)
     .map((name) => allAgents.agents.find((agent) => agentMatches(agent, name)))
     .filter(Boolean);
-  if (taskKind === "android-qa") {
+  const strongToolQaKinds = ["android-qa", "chrome-extension-qa", "desktop-rpa-qa", "comfyui-workflow-qa", "credential-tooling", "artifact-inspection"];
+  if (strongToolQaKinds.includes(taskKind)) {
     const rankedByName = new Set(ranked.map((entry) => entry.agent.name));
     const preferredEntries = taskKindPreferred
       .filter((agent) => !rankedByName.has(agent.name))
@@ -2267,7 +2460,7 @@ function routeTask(task, options = {}) {
       .slice(0, Math.max(5, candidateLimit));
   }
   const preferredRanked = ranked.find((entry) => taskKindPreferred.some((agent) => agent.name === entry.agent.name));
-  const kindPrefersOverride = ["orchestration-design", "product-analysis", "research-only", "release-publishing", "repo-maintenance", "incident-response", "android-qa"].includes(taskKind);
+  const kindPrefersOverride = ["orchestration-design", "product-analysis", "research-only", "release-publishing", "repo-maintenance", "incident-response", ...strongToolQaKinds].includes(taskKind);
   const topRanked = ranked[0];
   const exactAgencySpecialist =
     /小红书|xiaohongshu|抖音|douyin|tiktok|ux researcher|用户访谈|ui design|ui designer|accessibility|可访问|api tester|接口测试|customer service|客服|市场趋势|竞品/i.test(cleanTask(task));
@@ -2275,6 +2468,7 @@ function routeTask(task, options = {}) {
     topRanked?.agent.provider === "agency-agents"
     && (!preferredRanked || topRanked.score >= preferredRanked.score + 24)
     && (exactAgencySpecialist || intents.some((intent) => ["marketing", "sales", "design", "product", "research", "support"].includes(intent.id)))
+    && !strongToolQaKinds.includes(taskKind)
     && !/official docs|官方文档|repo|repository|current project|当前项目|仓库/i.test(cleanTask(task));
   if (agencySpecialistWon) {
     best = topRanked.agent;
@@ -2283,12 +2477,14 @@ function routeTask(task, options = {}) {
   } else if (kindPrefersOverride && taskKindPreferred.length) {
     best = taskKindPreferred[0];
   }
-  if (exactAgencySpecialist && !/official docs|官方文档|repo|repository|current project|当前项目|仓库/i.test(cleanTask(task))) {
+  if (exactAgencySpecialist && !strongToolQaKinds.includes(taskKind) && !/official docs|官方文档|repo|repository|current project|当前项目|仓库/i.test(cleanTask(task))) {
     const topAgency = ranked.find((entry) => entry.agent.provider === "agency-agents");
     if (topAgency && topRanked && topAgency.score >= topRanked.score - 20) best = topAgency.agent;
   }
   const effectiveNoWrite = taskKind === "android-qa"
     ? hasExplicitNoWriteDirective(task)
+    : ["artifact-inspection", "credential-tooling"].includes(taskKind)
+      ? true
     : isNoWriteTask(task) || (/review|audit|inspect|check|审查|审计|检查/.test(cleanTask(task)) && !/fix|implement|edit|update|refactor|修复|实现|修改|更新|重构/.test(cleanTask(task)));
   if (effectiveNoWrite && best.sandboxMode !== "read-only") {
     best = ranked.find((entry) => entry.agent.sandboxMode === "read-only")?.agent
@@ -2300,7 +2496,7 @@ function routeTask(task, options = {}) {
   let confidence = confidenceFor(ranked, intents);
   if (vagueTask) confidence = "low";
   const broadAuthorized = isExplicitBroadAuthorization(task);
-  const semanticStrongKind = ["incident-response", "repo-maintenance", "research-only", "release-publishing", "orchestration-design", "android-qa"].includes(taskKind) && !vagueTask;
+  const semanticStrongKind = ["incident-response", "repo-maintenance", "research-only", "release-publishing", "orchestration-design", ...strongToolQaKinds].includes(taskKind) && !vagueTask;
   if (semanticStrongKind && confidence === "low") confidence = "medium";
   const needsParentChoice = confidence === "low" && !broadAuthorized;
   if (broadAuthorized && confidence === "low") confidence = "medium";
@@ -2327,6 +2523,30 @@ function routeTask(task, options = {}) {
     addConfiguredSkill("android-emulator-qa", "testing", "android-qa tasks need adb, emulator, UI tree, screenshot, and logcat workflow guidance");
     addConfiguredSkill("android-performance", "testing", "android-qa tasks may need Android runtime/performance evidence when device-side checks are available");
     addConfiguredSkill("agyb-essentials:lint-and-validate", "testing", "android-qa tasks must preserve Gradle build and test validation");
+  }
+  if (taskKind === "chrome-extension-qa") {
+    addConfiguredSkill("build-web-apps:frontend-testing-debugging", "debugging", "chrome-extension-qa tasks need browser-facing validation guidance");
+    addConfiguredSkill("agyb-essentials:lint-and-validate", "testing", "chrome-extension-qa tasks must preserve manifest, JS, HTML, and package validation");
+    addConfiguredSkill("playwright", "testing", "chrome-extension-qa may need local browser smoke validation without real site actions");
+  }
+  if (taskKind === "desktop-rpa-qa") {
+    addConfiguredSkill("playwright", "testing", "desktop-rpa-qa tasks use Playwright smoke and browser automation checks");
+    addConfiguredSkill("agyb-essentials:lint-and-validate", "testing", "desktop-rpa-qa tasks need pytest and syntax validation");
+    addConfiguredSkill("agyb-essentials:systematic-debugging", "debugging", "desktop-rpa-qa tasks often expose environment blockers");
+  }
+  if (taskKind === "comfyui-workflow-qa") {
+    addConfiguredSkill("agyb-essentials:lint-and-validate", "testing", "comfyui-workflow-qa tasks run validate-only checks");
+    addConfiguredSkill("agyb-essentials:systematic-debugging", "debugging", "comfyui-workflow-qa tasks may need service availability diagnostics");
+  }
+  if (taskKind === "credential-tooling") {
+    addConfiguredSkill("security-best-practices", "review", "credential-tooling tasks need no-secret-output and OAuth safety boundaries");
+    addConfiguredSkill("security-threat-model", "review", "credential-tooling tasks should model token and auth-cache disclosure risks");
+    addConfiguredSkill("agyb-essentials:lint-and-validate", "testing", "credential-tooling tasks should use syntax/static checks only");
+  }
+  if (taskKind === "artifact-inspection") {
+    addConfiguredSkill("documents", "research", "artifact-inspection tasks inspect document and transcript artifacts");
+    addConfiguredSkill("community-openai-speech", "research", "artifact-inspection tasks may inspect speech/transcription artifacts without running transcription");
+    addConfiguredSkill("agyb-essentials:lint-and-validate", "testing", "artifact-inspection tasks need script syntax and structure validation");
   }
   if (vagueTask) {
     skillEntries = skillEntries.filter((entry) => !/debugging|failure|regression/i.test(entry.reason));
@@ -2858,6 +3078,62 @@ function androidEnvironmentDiagnostics(task = "") {
     blockedChecks: deviceState === "ready" ? [] : deviceChecks,
     note: note || (deviceState === "ready" ? "adb reports at least one connected device." : "adb is available, but no connected Android device or emulator is ready."),
   };
+}
+
+function toolSafetyDiagnostics(task = "", taskKind = classifyTaskKind(task)) {
+  const common = {
+    relevant: false,
+    taskKind,
+    safeChecks: [],
+    blockedChecks: [],
+    note: "",
+  };
+  if (taskKind === "chrome-extension-qa") {
+    return {
+      ...common,
+      relevant: true,
+      safeChecks: ["manifest JSON validation", "JavaScript syntax checks", "HTML/CSS asset reference checks", "package lint/check/test scripts when present"],
+      blockedChecks: ["real Zendesk/GitHub/Douyin authenticated actions", "browser store publishing", "real downloads", "credential entry"],
+      note: "Keep validation local unless the parent explicitly authorizes real-site interaction.",
+    };
+  }
+  if (taskKind === "desktop-rpa-qa") {
+    return {
+      ...common,
+      relevant: true,
+      safeChecks: ["project venv doctor", "offscreen flow smoke", "pytest", "Playwright dependency readiness"],
+      blockedChecks: ["QR/login flows", "real Douyin or live-site business actions", "publishing", "downloading"],
+      note: "Prefer a project .venv when present; treat missing GUI/browser dependencies as environment blockers.",
+    };
+  }
+  if (taskKind === "comfyui-workflow-qa") {
+    return {
+      ...common,
+      relevant: true,
+      safeChecks: ["./comfy status", "./comfy models", "./comfy validate <workflow.json>"],
+      blockedChecks: ["queue", "image/video generation", "paid API/model calls", "costful workflow execution"],
+      note: "Service-unavailable status/models results are environment blockers; workflow validation can still pass locally.",
+    };
+  }
+  if (taskKind === "credential-tooling") {
+    return {
+      ...common,
+      relevant: true,
+      safeChecks: ["syntax compilation", "static no-secret-output review", "storage-path review without values"],
+      blockedChecks: ["OAuth browser flow", "printing access_token/refresh_token", "reading or dumping auth cache values", "credential submission"],
+      note: "Do not execute commands that mint, refresh, display, or persist real credentials unless explicitly authorized.",
+    };
+  }
+  if (taskKind === "artifact-inspection") {
+    return {
+      ...common,
+      relevant: true,
+      safeChecks: ["script syntax checks", "existing .txt/.srt/.json/.md structure inspection", "document artifact inventory"],
+      blockedChecks: ["new transcription job", "network upload", "paid speech/API work", "rewriting source media"],
+      note: "Inspect existing artifacts only; report malformed outputs as findings.",
+    };
+  }
+  return null;
 }
 
 function compactManagedPlanForProfile(plan, profile = "compact") {
@@ -3474,6 +3750,7 @@ function managedDelegationPlan(result, options = {}) {
   const promptHydrationPlan = buildPromptHydrationPlan(selectedAgent, result.task, { profile: profileName, hydrate: options.hydrate, budget: options.budget });
   const compactCard = compactRoleCard(selectedAgent);
   const androidEnvironment = androidEnvironmentDiagnostics(result.task);
+  const safetyDiagnostics = toolSafetyDiagnostics(result.task, profile.taskKind);
   const androidParentResponsibilities = androidEnvironment ? [
     `For Android local validation, run or report ${androidEnvironment.localChecks.join(", ")} before device-side claims.`,
     androidEnvironment.adbInPath
@@ -3484,6 +3761,11 @@ function managedDelegationPlan(result, options = {}) {
     androidEnvironment.deviceState === "ready"
       ? "A connected Android target is available; connected tests, install/launch, screenshots, and logcat can proceed when in scope."
       : `Mark device-side checks as blocked by ${androidEnvironment.deviceState}: ${androidEnvironment.blockedChecks.join(", ")}.`,
+  ] : [];
+  const safetyParentResponsibilities = safetyDiagnostics?.relevant ? [
+    `For ${safetyDiagnostics.taskKind}, safe local checks are: ${safetyDiagnostics.safeChecks.join(", ")}.`,
+    `Mark blocked checks explicitly: ${safetyDiagnostics.blockedChecks.join(", ")}.`,
+    safetyDiagnostics.note,
   ] : [];
   const plan = {
     mode: result.executionPlan?.mode || "single-agent",
@@ -3543,6 +3825,7 @@ function managedDelegationPlan(result, options = {}) {
       executionAdapterMode: executionAdapter.mode,
     },
     androidEnvironment,
+    safetyDiagnostics,
     writeBoundaries,
     parentResponsibilities: [
       "Load only the selected skills needed for the current stage.",
@@ -3551,6 +3834,7 @@ function managedDelegationPlan(result, options = {}) {
       "Stop or switch to parent review for destructive, credential-gated, production, or unclear write actions.",
       "Check repository status before writing and do not overwrite unrelated user changes.",
       ...androidParentResponsibilities,
+      ...safetyParentResponsibilities,
     ],
     stageInputs,
     stageOutputs,
@@ -4218,6 +4502,13 @@ const EVAL_CASES = [
   { id: "v14-android-face-project-qa", task: "开启子代理，使用 /Users/sjp1212/Documents/项目/期末作业：人脸识别 这个 Android Kotlin 项目完整测试插件效果，运行 Gradle 单元测试、debug APK、androidTest APK，并检查 adb 真机/模拟器状态", expected: { taskKind: "android-qa", agentIn: ["test-automator", "qa-expert", "mobile-developer"], executionMode: "staged", requiresTests: true, skillsInclude: ["android-emulator-qa", "agyb-essentials:lint-and-validate"], skillsExclude: ["security-best-practices", "security-threat-model"] } },
   { id: "v14-android-adb-emulator-qa", task: "开启子代理，对 Android APK 做 adb emulator QA：connectedDebugAndroidTest、安装启动、截图和 logcat 验证", expected: { taskKind: "android-qa", agentIn: ["test-automator", "qa-expert", "mobile-developer"], executionMode: "staged", requiresTests: true, skillsInclude: ["android-emulator-qa"], skillsExclude: ["security-threat-model"] } },
   { id: "v14-android-security-stays-high-risk", task: "开启子代理，审查 Android 人脸识别 App 的隐私、权限和鉴权安全风险", expected: { taskKind: "engineering-analysis", judgeModel: "gpt-5.5", skillsInclude: ["security-best-practices", "security-threat-model"], requiresReview: true } },
+  { id: "v16-tool-chrome-zendesk-extension-qa", task: "开启子代理，完整测试 /Users/sjp1212/Documents/工具/谷歌浏览器插件 这个 Chrome MV3 Zendesk 插件：npm run lint、check、test、release:check，只做本地安全验证，不登录真实 Zendesk", expected: { taskKind: "chrome-extension-qa", agentIn: ["test-automator", "frontend-developer", "browser-debugger", "qa-expert"], executionMode: "staged", requiresTests: true, skillsInclude: ["build-web-apps:frontend-testing-debugging", "agyb-essentials:lint-and-validate"], skillsExclude: ["security-best-practices", "security-threat-model"] } },
+  { id: "v16-tool-github-sidepanel-extension-qa", task: "开启子代理，测试 /Users/sjp1212/Documents/工具/GitHub谷歌插件 这个 Chrome MV3 GitHub side panel 插件，做 manifest JSON 校验、JS 语法检查和 HTML/CSS 引用检查，不触发真实 GitHub 操作", expected: { taskKind: "chrome-extension-qa", agentIn: ["test-automator", "frontend-developer", "browser-debugger", "qa-expert"], executionMode: "staged", requiresTests: true, skillsInclude: ["agyb-essentials:lint-and-validate"], skillsExclude: ["security-threat-model"] } },
+  { id: "v16-tool-douyin-video-extension-qa", task: "开启子代理，测试 /Users/sjp1212/Documents/工具/抖音视频在线下载插件 这个 Chrome MV3 媒体提取插件，只做 manifest/JS/popup HTML 静态验证，不登录抖音、不下载真实视频", expected: { taskKind: "chrome-extension-qa", agentIn: ["test-automator", "frontend-developer", "browser-debugger", "qa-expert"], executionMode: "staged", requiresTests: true, skillsInclude: ["agyb-essentials:lint-and-validate"], skillsExclude: ["security-best-practices", "security-threat-model"] } },
+  { id: "v16-tool-python-rpa-local-qa", task: "开启子代理，完整测试 /Users/sjp1212/Documents/工具/抖音rpa 这个 Python PySide6 Playwright RPA：使用 .venv 运行 doctor、QT_QPA_PLATFORM=offscreen flow-smoke 和 pytest，不扫码登录、不做真实抖音业务动作", expected: { taskKind: "desktop-rpa-qa", agentIn: ["test-automator", "qa-expert", "debugger"], executionMode: "staged", requiresTests: true, skillsInclude: ["playwright", "agyb-essentials:lint-and-validate"], skillsExclude: ["security-best-practices", "security-threat-model"] } },
+  { id: "v16-tool-comfyui-validate-no-queue", task: "开启子代理，测试 /Users/sjp1212/Documents/工具/调用comfyui 这个 ComfyUI wrapper，只运行 ./comfy status、models、validate workflows/text_to_image_api_template.json，不 queue、不生成、不触发付费 API 成本", expected: { taskKind: "comfyui-workflow-qa", agentIn: ["test-automator", "qa-expert", "workflow-orchestrator"], executionMode: "staged", requiresTests: true, skillsInclude: ["agyb-essentials:lint-and-validate"], skillsExclude: ["security-threat-model"] } },
+  { id: "v16-tool-get-token-static-boundary", task: "开启子代理，只读审查 /Users/sjp1212/Documents/工具/get_token 这个 OAuth token 工具，做 python py_compile 和静态 no-secret-output 检查，不执行 OAuth、不输出 token", expected: { taskKind: "credential-tooling", agentIn: ["security-auditor", "security-engineer", "reviewer", "code-mapper"], executionMode: "staged", requiresTests: true, skillsInclude: ["security-best-practices", "agyb-essentials:lint-and-validate"], requiresReview: true } },
+  { id: "v16-tool-transcription-artifact-inspection", task: "开启子代理，检查 /Users/sjp1212/Documents/工具/语音转录工具 的资料与产出脚本，只做 outputs/build_task_minutes_docx.py 语法检查并抽查现有 txt/srt/json/md 产物结构，不跑转录", expected: { taskKind: "artifact-inspection", agentIn: ["docs-researcher", "documentation-engineer", "research-analyst", "code-mapper"], executionMode: "staged", requiresTests: true, noImplementStage: true, skillsInclude: ["agyb-essentials:lint-and-validate"], skillsExclude: ["security-best-practices", "security-threat-model"] } },
   { id: "v13-public-hygiene", task: "开启子代理，公开发布前检查 secrets、本机路径和第三方致谢", expected: { intentIncludes: ["security", "review"], judgeModel: "gpt-5.5", requiresReview: true } },
   { id: "v9-skill-budget-planning", task: "开启子代理，写好详细计划方案然后使用 goal 模式实现", expected: { intentIncludes: ["planning"], skillsInclude: ["superpowers:writing-plans"], judgeModel: "gpt-5.5" } },
   { id: "v9-high-risk-fallback-auth", task: "开启子代理，critical 模式修复生产 API 鉴权和权限漏洞", options: { budget: "critical" }, expected: { intentIncludes: ["backend", "security"], judgeModel: "gpt-5.5", selectedModel: "gpt-5.5", requiresTests: true, requiresReview: true } },
@@ -4556,12 +4847,27 @@ function runManagedDelegationTests() {
   assert(android.androidEnvironment.localChecks.includes("assembleDebugAndroidTest"), "android managed plan should list local Android checks");
   assert(["ready", "blocked-no-device", "adb-missing", "adb-error"].includes(android.androidEnvironment.deviceState), "android managed plan should expose adb/device readiness state");
 
+  const chrome = managedDelegationPlan(deterministicManagedResult("开启子代理，测试 /Users/sjp1212/Documents/工具/谷歌浏览器插件 这个 Chrome MV3 插件，运行本地 lint/check/test，不登录真实 Zendesk"));
+  assert(chrome.executionContract.taskKind === "chrome-extension-qa", `chrome managed plan should be chrome-extension-qa, got ${chrome.executionContract.taskKind}`);
+  assert(chrome.safetyDiagnostics?.blockedChecks?.some((item) => /authenticated|真实|Zendesk|download/i.test(item)), "chrome managed plan should expose real-site/download blockers");
+
+  const comfy = managedDelegationPlan(deterministicManagedResult("开启子代理，测试 /Users/sjp1212/Documents/工具/调用comfyui，只运行 ./comfy status、models、validate，不 queue、不生成、不触发成本"));
+  assert(comfy.executionContract.taskKind === "comfyui-workflow-qa", `comfy managed plan should be comfyui-workflow-qa, got ${comfy.executionContract.taskKind}`);
+  assert(comfy.safetyDiagnostics?.blockedChecks?.includes("queue"), "comfy managed plan should block queue");
+
+  const credential = managedDelegationPlan(deterministicManagedResult("开启子代理，只读审查 /Users/sjp1212/Documents/工具/get_token OAuth token 工具，不执行 OAuth、不输出 token"));
+  assert(credential.executionContract.taskKind === "credential-tooling", `credential managed plan should be credential-tooling, got ${credential.executionContract.taskKind}`);
+  assert(credential.safetyDiagnostics?.blockedChecks?.some((item) => /token|OAuth|auth cache/i.test(item)), "credential managed plan should block token/OAuth disclosure");
+
   console.log(JSON.stringify({
     pass: true,
     authorized: { mode: authorized.mode, stages: authorized.goalLoop.length, agent: authorized.agent },
     vague: { mode: vague.mode, hasQuestion: Boolean(vague.clarificationQuestion) },
     highRisk: { stages: stageIds },
     android: { taskKind: android.executionContract.taskKind, deviceState: android.androidEnvironment.deviceState, adbPath: android.androidEnvironment.adbPath },
+    chrome: { taskKind: chrome.executionContract.taskKind, blocked: chrome.safetyDiagnostics.blockedChecks },
+    comfy: { taskKind: comfy.executionContract.taskKind, blocked: comfy.safetyDiagnostics.blockedChecks },
+    credential: { taskKind: credential.executionContract.taskKind, blocked: credential.safetyDiagnostics.blockedChecks },
   }, null, 2));
 }
 
@@ -4663,7 +4969,7 @@ function runConfigTests() {
   const validation = validateStrategyConfig();
   assert(validation.ok, `strategy config should validate: ${validation.errors.join("; ")}`);
   const config = loadStrategyConfig();
-  for (const kind of ["android-qa", "release-publishing", "repo-maintenance", "research-only", "incident-response"]) {
+  for (const kind of ["chrome-extension-qa", "desktop-rpa-qa", "comfyui-workflow-qa", "credential-tooling", "artifact-inspection", "android-qa", "release-publishing", "repo-maintenance", "research-only", "incident-response"]) {
     assert(config.taskKindPolicy?.[kind], `missing v12 taskKind policy ${kind}`);
     assert(config.taskKindPolicy[kind].preferredAgents.length, `${kind} should have preferred agents`);
   }
