@@ -13,6 +13,21 @@
 - `scripts/subagents/agency-agents/`: bundled `msitarzewski/agency-agents` catalog, compact agent-card index, and prompt bodies.
 - `assets/sinan-codex-agent-orchestrator-hero.png`: plugin visual asset.
 
+## Codex App Planning Board
+
+普通用户在 Codex App 里不需要阅读完整 JSON。路由器现在会生成 `displayBoard`，父级 Codex 可以直接展示中文规划板：
+
+- `userNarrative`: 3-5 行中文摘要，说明为什么这样调度。
+- `goalBoard`: 阶段看板，展示阶段、agent、状态、验收点和下一触发条件。
+- `safetyPanel`: 可安全执行项、阻塞项和是否需要父级复核。
+- `mermaidFlow`: 可贴进聊天窗口的 Mermaid 流程图。
+
+直接预览 App 友好输出：
+
+```bash
+node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs managed --profile app "使用多智能体分批测试这个项目，输出规划看板"
+```
+
 ## Execution Adapter
 
 Native custom-name agent spawning depends on the current Codex host. When direct spawning by a provider identity is unavailable, the router uses `executionAdapter.mode = "generic-role-bridge"` and tells Codex to run the selected identity through the generic `explorer` or `worker` role with `delegationPrompt` injected. This keeps the chosen agent identity, skills, model, sandbox, stages, and quality gates intact while changing only the transport layer.
@@ -31,6 +46,7 @@ For direct local checks:
 
 ```bash
 node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs managed --json --profile compact "开启子代理，调用合适子代理，用 goal 模式持续实现"
+node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs managed --profile app "开启子代理，调用合适子代理，用 goal 模式持续实现"
 node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs inspect-context "开启子代理，帮我做 Reddit 社区增长策略"
 node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs prompt agency:reddit-community-builder "帮我做 Reddit 社区增长策略" --hydrate summary --budget 2000
 node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs test

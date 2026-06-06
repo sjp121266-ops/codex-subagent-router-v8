@@ -656,6 +656,14 @@
         "clarifyFirst": "clarify-first",
         "parentReviewRequired": "parent-review-required"
       }
+    },
+    "appBoard": {
+      "enabled": true,
+      "language": "zh-CN",
+      "defaultStyle": "stage-board",
+      "maxStages": 6,
+      "maxSafetyItems": 5,
+      "includeMermaid": true
     }
   },
   "executionProfiles": {

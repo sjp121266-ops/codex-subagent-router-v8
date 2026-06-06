@@ -1,6 +1,6 @@
 {
   "name": "codex-subagent-router",
-  "version": "0.1.0+codex.20260606071830",
+  "version": "0.1.0+codex.20260606112258",
   "description": "司南 Codex 多智能体调度器：质量优先的本地子代理路由、规划看板和安全交接插件。",
   "author": {
     "name": "sjp121266-ops",
@@ -31,9 +31,9 @@
       "Multi-agent planning"
     ],
     "defaultPrompt": [
-      "\u5f00\u542f\u5b50\u4ee3\u7406\uff0c\u8c03\u7528\u5408\u9002 agent \u5b8c\u6210\u4efb\u52a1",
-      "\u7528\u591a\u4ee3\u7406\u5ba1\u67e5\u5e76\u4f18\u5316\u5f53\u524d\u9879\u76ee",
-      "\u89e3\u91ca\u8fd9\u6b21\u5e94\u8be5\u4f7f\u7528\u54ea\u4e9b agents \u548c skills"
+      "开启子代理，调用合适 agent 完成任务",
+      "用多代理审查并优化当前项目",
+      "解释这次应该使用哪些 agents 和 skills"
     ],
     "brandColor": "#2563EB",
     "composerIcon": "./assets/sinan-codex-agent-orchestrator-hero.png",

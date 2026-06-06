@@ -24,12 +24,18 @@ fi
 "$SUBAGENT_ROUTER" managed --json --profile compact "<task>"
 ```
 
-Use this when the user says “调用合适子代理完成任务”, “开启子代理持续实现”, “多代理帮我优化”, or similar broad delegation language. v16 compact mode is the default path because it returns prompt references and compact role cards instead of pasting full provider prompts into context. The managed output is the user-facing plan and execution contract: selected agent, role, skills, stage/goal loop, one-question clarification state, write boundaries, parent responsibilities, stage inputs/outputs, agent roster, delegation readiness, next action, stage skill loading order, context ledger, and the three short explanations:
+Use this when the user says “调用合适子代理完成任务”, “开启子代理持续实现”, “多代理帮我优化”, or similar broad delegation language. v17 compact mode is the default machine-readable path because it returns prompt references, compact role cards, and an App-readable planning board instead of pasting full provider prompts into context. The managed output is the user-facing plan and execution contract: selected agent, role, skills, stage/goal loop, one-question clarification state, write boundaries, parent responsibilities, stage inputs/outputs, agent roster, delegation readiness, next action, stage skill loading order, context ledger, `displayBoard`, and the three short explanations:
 - why this agent;
 - why Codex is not asking now;
 - when Codex will ask.
 
-Do not expose internal fields such as `judgeMode`, `candidateBudget`, `failureClass`, cache keys, or raw candidate scoring in normal user updates. Use `managed --json --profile compact` as the default for real delegation; reserve `judge --verbose`, `judge --explain`, `inspect-context`, and full prompt hydration for auditing, debugging, or improving the router itself.
+For ordinary Codex App conversation, use `displayBoard` first:
+- show `displayBoard.userNarrative` as the short Chinese explanation;
+- show `displayBoard.goalBoard` as the stage board with current stage, agent, acceptance check, and next trigger;
+- show `displayBoard.safetyPanel` before any write, credential, production, download, publish, or external-side-effect action;
+- include `displayBoard.mermaidFlow` when a quick visual helps the user understand the stage order.
+
+Do not expose internal fields such as `judgeMode`, `candidateBudget`, `failureClass`, cache keys, or raw candidate scoring in normal user updates. Do not paste the full managed JSON into the chat unless the user explicitly asks for debugging output. Use `managed --json --profile compact` as the default for real delegation, and `managed --profile app` when the user mainly needs a readable planning board in the Codex App; reserve `judge --verbose`, `judge --explain`, `inspect-context`, and full prompt hydration for auditing, debugging, or improving the router itself.
 
 2. For debugging the router or medium/high-risk delegation, run the cost-aware router:
 
@@ -122,12 +128,14 @@ When `managed --json` returns v13 readiness fields:
 - inspect `executionAdapter` before spawning. Use native custom-agent spawn only when `executionAdapter.mode` is `native-custom-agent`; otherwise use the indicated generic `executionAdapter.bridgeRole` and inject a budgeted prompt generated from `dispatchPromptRef` / `promptHydrationPlan`.
 
 For continuous goal work, report each stage in this fixed structure:
-- goal;
+- current goal;
+- current stage;
 - agent;
 - skills;
-- stage;
 - acceptance check;
 - next goal trigger.
+
+When `displayBoard.goalBoard` is present, prefer that board over a hand-written list. For read-only tasks, explicitly say that no implementation stage is planned. For high-risk routes, explicitly say that parent Codex review is required before any write-capable or external action.
 
 8. Spawn the subagent:
 - Prefer native custom-agent spawning when the host supports it and `executionAdapter.mode` is `native-custom-agent`.
@@ -144,6 +152,12 @@ Default to compact managed routing:
 
 ```bash
 "$SUBAGENT_ROUTER" managed --json --profile compact "<task>"
+```
+
+Render an App-friendly Chinese board:
+
+```bash
+"$SUBAGENT_ROUTER" managed --profile app "<task>"
 ```
 
 Inspect context cost before a large handoff:

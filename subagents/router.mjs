@@ -36,6 +36,7 @@ const ROUTER_METADATA_VERSION = 1601;
 const DEFAULT_PROMPT_BUDGETS = {
   compact: 1800,
   balanced: 3200,
+  app: 2600,
   full: 12000,
 };
 
@@ -529,9 +530,9 @@ Usage:
   router.mjs list [query]
   router.mjs route [--json|--brief] <task>
   router.mjs judge [--json|--verbose|--explain|--offline] [--budget economy|balanced|premium|critical] [--no-cache] [--force-model] <task>
-  router.mjs managed [--json] [--profile compact|balanced|full] <task>
+  router.mjs managed [--json] [--profile compact|balanced|app|full] <task>
   router.mjs prompt <agent-name> <task> [--hydrate reference|summary|hybrid|full] [--budget N]
-  router.mjs inspect-context [--json] [--profile compact|balanced|full] <task>
+  router.mjs inspect-context [--json] [--profile compact|balanced|app|full] <task>
   router.mjs refresh-agent-index
   router.mjs install-all
   router.mjs test
@@ -548,6 +549,7 @@ Usage:
   router.mjs test-route-cache
   router.mjs test-managed-contract
   router.mjs test-planning-board
+  router.mjs test-app-board
   router.mjs test-agent-roster
   router.mjs test-managed-readiness
   router.mjs test-execution-adapter
@@ -3551,8 +3553,139 @@ function verificationBoardFor(stageDetails, readinessState, safetyDiagnostics, a
   };
 }
 
+function zhStatus(status) {
+  const labels = {
+    pending: "待明确",
+    "safe-to-run": "可安全执行",
+    blocked: "已阻塞",
+    "requires-parent-review": "需父级复核",
+  };
+  return labels[status] || status || "待确认";
+}
+
+function zhRole(role) {
+  const labels = {
+    explorer: "只读探索",
+    worker: "执行处理",
+    mapper: "范围梳理",
+    reviewer: "复核审查",
+    validator: "验证检查",
+  };
+  return labels[role] || role || "协作角色";
+}
+
+function zhCoordinationMode(mode) {
+  const labels = {
+    "single-agent": "单代理执行",
+    "sequential-team": "顺序团队",
+    "parallel-batches": "分批并行",
+    "supervisor-review": "监督复核",
+    "clarify-first": "先澄清",
+    "parent-review-required": "需父级复核",
+  };
+  return labels[mode] || mode || "阶段协作";
+}
+
+function mermaidLabel(text) {
+  return String(text || "")
+    .replace(/["\\]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 44) || "stage";
+}
+
+function zhAcceptanceForStage(stageId, role) {
+  const text = `${stageId || ""} ${role || ""}`;
+  if (/clarify/i.test(text)) return "补齐一个关键目标、范围或边界。";
+  if (/map|explore|inventory|scope/i.test(text)) return "完成只读范围梳理，并记录关键证据。";
+  if (/identify|diagnos|failure|risk/i.test(text)) return "列出问题、风险和优先级。";
+  if (/implement|primary|mitigate|maintain|worker/i.test(text)) return "完成限定范围内的处理，并保留改动证据。";
+  if (/valid|test|check|qa/i.test(text)) return "运行可安全验证，或明确记录阻塞原因。";
+  if (/review|supervisor/i.test(text)) return "完成父级复核，并列出剩余风险。";
+  return "记录本阶段结果、证据和剩余风险。";
+}
+
+function displayBoardFor(plan) {
+  const config = loadStrategyConfig().managedUX?.appBoard || {};
+  const maxStages = config.maxStages || 6;
+  const maxSafetyItems = config.maxSafetyItems || 5;
+  const stageChecksById = new Map((plan.verificationBoard?.stageChecks || []).map((check) => [check.stageId, check]));
+  const goalStages = (plan.goalLoop || []).slice(0, maxStages).map((stage, index) => {
+    const stageId = String(stage.goal || "").replace(/^Stage \d+:\s*/, "") || `stage-${index + 1}`;
+    const check = stageChecksById.get(stageId) || {};
+    return {
+      order: index + 1,
+      stageId,
+      title: `阶段 ${index + 1}: ${stageId}`,
+      agent: stage.agent,
+      role: zhRole(stage.role),
+      status: zhStatus(check.status || "pending"),
+      acceptance: [zhAcceptanceForStage(stageId, stage.role)],
+      nextTrigger: stage.nextTrigger || "完成本阶段验收后进入下一步",
+    };
+  });
+  const agentCards = (plan.agentWorkPlan || [])
+    .filter((card) => card.agent || card.rosterRole === "implementer")
+    .map((card) => ({
+      role: card.rosterRole,
+      agent: card.agent || "不启用",
+      responsibility: card.responsibility,
+      permission: card.permission,
+      canWrite: card.permission !== "read-only" && card.permission !== "not-used" && card.agent !== null,
+      handoffTo: (card.handoffTo || []).slice(0, 2),
+    }));
+  const safeChecks = (plan.verificationBoard?.safeChecks || []).slice(0, maxSafetyItems);
+  const blockedChecks = (plan.verificationBoard?.blockedChecks || []).slice(0, maxSafetyItems);
+  const requiresParentReview = Boolean(plan.verificationBoard?.summary?.requiresParentReview || plan.nextAction?.type === "parent-review");
+  const boardState = plan.nextAction?.type === "ask-clarification"
+    ? "需要先问一个问题"
+    : requiresParentReview
+      ? "需要父级复核"
+      : "可以按阶段推进";
+  const whyText = plan.planningBrief?.coordinationMode === "single-agent"
+    ? "范围较集中，一个合适的 agent 就能完成主要工作。"
+    : plan.planningBrief?.coordinationMode === "parallel-batches"
+      ? "多个目录或样本可以先分批盘点和验证，再由父级 Codex 汇总。"
+      : plan.planningBrief?.coordinationMode === "clarify-first"
+        ? "当前范围还不够明确，需要先补一个关键目标或边界。"
+        : plan.planningBrief?.coordinationMode === "parent-review-required" || plan.planningBrief?.coordinationMode === "supervisor-review"
+          ? "任务风险较高，需要父级 Codex 保留复核和验收责任。"
+          : "任务适合按发现、执行、验证和复核阶段交接推进。";
+  const headline = `司南已选择 ${plan.agentDisplayName || plan.agent}，采用${zhCoordinationMode(plan.planningBrief?.coordinationMode)}模式，当前状态：${boardState}。`;
+  const narrative = [
+    headline,
+    `本次目标：${plan.planningBrief?.objective || "完成用户请求的多智能体任务"}`,
+    `为什么这样分工：${whyText}`,
+    `下一步：${plan.nextAction?.type === "spawn" ? `启动 ${plan.nextAction.agentDisplayName || plan.nextAction.agent || "推荐 agent"} 处理 ${plan.nextAction.stageId || "首个阶段"}` : plan.nextAction?.type === "ask-clarification" ? plan.nextAction.question : "父级 Codex 先复核安全状态再继续。"}`,
+    `边界：不会自动执行凭证、生产、发布、下载或外部副作用动作。`,
+  ].filter(Boolean).slice(0, 5);
+  const flowStages = goalStages.length ? goalStages : [{ order: 1, stageId: "parent", title: "父级 Codex 处理", agent: "parent-codex", status: boardState }];
+  const mermaidLines = ["flowchart LR"];
+  flowStages.forEach((stage, index) => {
+    mermaidLines.push(`  S${index + 1}["${mermaidLabel(stage.title)}\\n${mermaidLabel(stage.agent)}"]`);
+    if (index > 0) mermaidLines.push(`  S${index} --> S${index + 1}`);
+  });
+  return {
+    headline,
+    language: config.language || "zh-CN",
+    boardStyle: config.defaultStyle || "stage-board",
+    coordinationModeLabel: zhCoordinationMode(plan.planningBrief?.coordinationMode),
+    userNarrative: narrative,
+    goalBoard: goalStages,
+    agentCards,
+    safetyPanel: {
+      state: boardState,
+      safeChecks,
+      blockedChecks,
+      requiresParentReview,
+      automaticLimits: plan.planningBrief?.automaticLimits || [],
+    },
+    mermaidFlow: config.includeMermaid === false ? "" : mermaidLines.join("\n"),
+  };
+}
+
 function compactManagedPlanForProfile(plan, profile = "compact") {
-  if (profile !== "compact") return plan;
+  if (!["compact", "app"].includes(profile)) return plan;
   const compactRosterAgent = (agent) => agent ? {
     name: agent.name,
     id: agent.id,
@@ -3620,6 +3753,39 @@ function compactManagedPlanForProfile(plan, profile = "compact") {
       safeExpectation: clampText(plan.planningBrief.safeExpectation, 180),
       automaticLimits: (plan.planningBrief.automaticLimits || []).slice(0, 4),
     } : plan.planningBrief,
+    displayBoard: plan.displayBoard ? {
+      headline: clampText(plan.displayBoard.headline, 180),
+      language: plan.displayBoard.language,
+      boardStyle: plan.displayBoard.boardStyle,
+      coordinationModeLabel: plan.displayBoard.coordinationModeLabel,
+      userNarrative: (plan.displayBoard.userNarrative || []).slice(0, 5).map((item) => clampText(item, 180)),
+      goalBoard: (plan.displayBoard.goalBoard || []).slice(0, profile === "app" ? 6 : 4).map((stage) => ({
+        order: stage.order,
+        stageId: stage.stageId,
+        title: stage.title,
+        agent: stage.agent,
+        role: stage.role,
+        status: stage.status,
+        acceptance: (stage.acceptance || []).slice(0, 2).map((item) => clampText(item, 100)),
+        nextTrigger: clampText(stage.nextTrigger, 120),
+      })),
+      agentCards: (plan.displayBoard.agentCards || []).slice(0, profile === "app" ? 5 : 3).map((card) => ({
+        role: card.role,
+        agent: card.agent,
+        responsibility: clampText(card.responsibility, 100),
+        permission: card.permission,
+        canWrite: card.canWrite,
+        handoffTo: (card.handoffTo || []).slice(0, 2),
+      })),
+      safetyPanel: plan.displayBoard.safetyPanel ? {
+        state: plan.displayBoard.safetyPanel.state,
+        safeChecks: (plan.displayBoard.safetyPanel.safeChecks || []).slice(0, 5).map((item) => clampText(item, 80)),
+        blockedChecks: (plan.displayBoard.safetyPanel.blockedChecks || []).slice(0, 5).map((item) => clampText(item, 80)),
+        requiresParentReview: plan.displayBoard.safetyPanel.requiresParentReview,
+        automaticLimits: (plan.displayBoard.safetyPanel.automaticLimits || []).slice(0, 4),
+      } : plan.displayBoard.safetyPanel,
+      mermaidFlow: profile === "app" ? plan.displayBoard.mermaidFlow : clampText(plan.displayBoard.mermaidFlow, 500),
+    } : plan.displayBoard,
     agentWorkPlan: (plan.agentWorkPlan || []).map((card) => ({
       rosterRole: card.rosterRole,
       agent: card.agent,
@@ -4328,6 +4494,7 @@ function managedDelegationPlan(result, options = {}) {
       nextTrigger: index === stageDetails.length - 1 ? "finish and summarize evidence" : `complete ${stage.id} acceptance criteria`,
     })),
   };
+  plan.displayBoard = displayBoardFor(plan);
   const profiledPlan = compactManagedPlanForProfile(plan, profileName);
   profiledPlan.contextLedger = buildContextLedger(result, profiledPlan, { profile: profileName, hydrate: promptHydrationPlan.mode, budget: promptHydrationPlan.budgetBytes });
   profiledPlan.contextRisk = profiledPlan.contextLedger.contextRisk;
@@ -4340,20 +4507,39 @@ function printManagedDelegation(result, mode = "text", options = {}) {
     console.log(JSON.stringify(plan, null, 2));
     return;
   }
-  console.log(`Managed delegation: ${plan.agent} (${plan.role}, ${plan.sandboxMode})`);
-  console.log(`Why: ${plan.userSummary.whyThisAgent}`);
-  console.log(`No question now: ${plan.userSummary.whyNoQuestionNow}`);
-  console.log(`Will ask when: ${plan.userSummary.whenCodexWillAsk}`);
-  if (plan.planningBrief) {
-    console.log(`Planning mode: ${plan.planningBrief.coordinationMode}; task kind=${plan.planningBrief.taskKind}; risk=${plan.planningBrief.risk}`);
-    console.log(`Planning reason: ${plan.planningBrief.whyMultiAgent}`);
+  const board = plan.displayBoard || displayBoardFor(plan);
+  console.log("# 司南规划结果");
+  console.log("");
+  console.log(board.headline);
+  console.log("");
+  for (const line of board.userNarrative || []) {
+    console.log(`- ${line}`);
   }
-  if (plan.clarificationQuestion) console.log(`Question: ${plan.clarificationQuestion}`);
-  console.log("Goal stages:");
-  for (const stage of plan.goalLoop) {
-    console.log(`- ${stage.goal}: ${stage.agent} as ${stage.role}; skills=${stage.skills.join(", ") || "none"}`);
+  console.log("");
+  console.log("## 阶段看板");
+  console.log("");
+  console.log("| 阶段 | Agent | 状态 | 验收点 | 下一触发 |");
+  console.log("| --- | --- | --- | --- | --- |");
+  for (const stage of board.goalBoard || []) {
+    const acceptance = (stage.acceptance || []).join("; ") || "记录阶段证据";
+    console.log(`| ${stage.title} | ${stage.agent || "parent-codex"} | ${stage.status} | ${acceptance} | ${stage.nextTrigger || "完成后继续"} |`);
   }
-  console.log(`Next action: ${plan.nextAction.type}${plan.nextAction.stageId ? ` (${plan.nextAction.stageId})` : ""}`);
+  console.log("");
+  console.log("## 安全边界");
+  console.log("");
+  console.log(`- 当前状态：${board.safetyPanel?.state || "待确认"}`);
+  if (board.safetyPanel?.safeChecks?.length) console.log(`- 可安全执行：${board.safetyPanel.safeChecks.join("；")}`);
+  if (board.safetyPanel?.blockedChecks?.length) console.log(`- 明确阻塞：${board.safetyPanel.blockedChecks.join("；")}`);
+  if (board.safetyPanel?.requiresParentReview) console.log("- 需要父级 Codex 复核后再派发写入或高风险阶段。");
+  if (plan.clarificationQuestion) console.log(`- 需要先问：${plan.clarificationQuestion}`);
+  console.log("");
+  console.log(`下一步：${plan.nextAction.type}${plan.nextAction.stageId ? ` (${plan.nextAction.stageId})` : ""}`);
+  if (board.mermaidFlow) {
+    console.log("");
+    console.log("```mermaid");
+    console.log(board.mermaidFlow);
+    console.log("```");
+  }
 }
 
 function printJudgement(result, mode) {
@@ -5439,6 +5625,54 @@ function runPlanningBoardTests() {
   }, null, 2));
 }
 
+function runAppBoardTests() {
+  const samples = [
+    "开启子代理，调用合适 agent 完成任务",
+    "使用多智能体分批测试项目和工具目录",
+    "只读审查 get_token，不执行 OAuth、不输出 token",
+    "生产鉴权事故，修复权限漏洞并补测试",
+    "多代理帮我优化一下这个",
+  ];
+  const plans = samples.map((task) => managedDelegationPlan(deterministicManagedResult(task), { profile: "app" }));
+  for (const plan of plans) {
+    assert(plan.displayBoard, `${plan.planningBrief?.objective}: missing displayBoard`);
+    assert(/司南/.test(plan.displayBoard.headline), "displayBoard headline should be Chinese and branded");
+    assert(plan.displayBoard.userNarrative?.length >= 3, "displayBoard should include a concise Chinese narrative");
+    assert(plan.displayBoard.goalBoard?.length >= 1, "displayBoard should include a goal board");
+    assert(plan.displayBoard.safetyPanel, "displayBoard should include a safety panel");
+    assert(typeof plan.displayBoard.safetyPanel.requiresParentReview === "boolean", "safety panel should expose review state");
+    assert(/flowchart/.test(plan.displayBoard.mermaidFlow || ""), "displayBoard should include Mermaid flow");
+    assert(!Object.prototype.hasOwnProperty.call(plan, "judgeMode"), "app managed plan must hide judgeMode");
+    assert(!Object.prototype.hasOwnProperty.call(plan, "candidateBudget"), "app managed plan must hide candidateBudget");
+    assert(!Object.prototype.hasOwnProperty.call(plan, "cache"), "app managed plan must hide cache internals");
+  }
+  const credential = plans[2];
+  assert(credential.displayBoard.safetyPanel.blockedChecks.some((item) => /OAuth|token|auth cache/i.test(item)), "credential app board should show OAuth/token blockers");
+  const highRisk = plans[3];
+  assert(highRisk.displayBoard.safetyPanel.requiresParentReview || highRisk.displayBoard.goalBoard.some((stage) => /复核|review/i.test(`${stage.title} ${stage.status}`)), "high-risk app board should keep review visible");
+  const vague = plans[4];
+  assert(vague.displayBoard.safetyPanel.state === "需要先问一个问题", "vague app board should show clarify-first state");
+
+  const text = execFileSync(process.execPath, [fileURLToPath(import.meta.url), "managed", "--profile", "app", "开启子代理，调用合适 agent 完成任务"], {
+    encoding: "utf8",
+    env: { ...process.env, CODEX_HOME },
+  });
+  assert(text.includes("# 司南规划结果"), "managed --profile app text should render a Chinese board");
+  assert(text.includes("| 阶段 | Agent | 状态 | 验收点 | 下一触发 |"), "managed --profile app text should render a stage table");
+  assert(text.includes("```mermaid"), "managed --profile app text should include Mermaid");
+  assert(!/judgeMode|candidateBudget|cache key|cacheKey/i.test(text), "managed app text should not expose internal routing fields");
+
+  console.log(JSON.stringify({
+    pass: true,
+    samples: plans.map((plan) => ({
+      headline: plan.displayBoard.headline,
+      stages: plan.displayBoard.goalBoard.length,
+      safetyState: plan.displayBoard.safetyPanel.state,
+    })),
+    textPreview: text.split("\n").slice(0, 8),
+  }, null, 2));
+}
+
 function runSkillsPhaseTests() {
   const cases = [
     "开启子代理，请显式使用 skills 来规划并执行当前项目的优化。",
@@ -5514,7 +5748,10 @@ function runConfigTests() {
   }
   assert(config.managedUX?.planningBoard?.enabled, "managedUX planningBoard should be enabled");
   assert(config.managedUX.planningBoard.modes.parallelBatches === "parallel-batches", "planningBoard should define parallel-batches mode");
-  console.log(JSON.stringify({ pass: true, taskKinds: Object.keys(config.taskKindPolicy || {}), highRiskRules: config.highRiskRules.map((rule) => rule.id), planningBoard: config.managedUX.planningBoard }, null, 2));
+  assert(config.managedUX?.appBoard?.enabled, "managedUX appBoard should be enabled");
+  assert(config.managedUX.appBoard.language === "zh-CN", "appBoard should default to Chinese");
+  assert(config.managedUX.appBoard.defaultStyle === "stage-board", "appBoard should default to stage-board");
+  console.log(JSON.stringify({ pass: true, taskKinds: Object.keys(config.taskKindPolicy || {}), highRiskRules: config.highRiskRules.map((rule) => rule.id), planningBoard: config.managedUX.planningBoard, appBoard: config.managedUX.appBoard }, null, 2));
 }
 
 function runConfigExplainTests() {
@@ -6403,7 +6640,7 @@ function main() {
       else if (arg === "--profile") {
         profile = rest[index + 1] || "";
         index += 1;
-        if (!["compact", "balanced", "full"].includes(profile)) throw new Error("--profile must be compact, balanced, or full");
+        if (!["compact", "balanced", "app", "full"].includes(profile)) throw new Error("--profile must be compact, balanced, app, or full");
       } else if (arg === "--hydrate") {
         hydrate = rest[index + 1] || "";
         index += 1;
@@ -6451,7 +6688,7 @@ function main() {
       else if (arg === "--profile") {
         profile = rest[index + 1] || "";
         index += 1;
-        if (!["compact", "balanced", "full"].includes(profile)) throw new Error("--profile must be compact, balanced, or full");
+        if (!["compact", "balanced", "app", "full"].includes(profile)) throw new Error("--profile must be compact, balanced, app, or full");
       } else if (arg === "--hydrate") {
         hydrate = rest[index + 1] || "";
         index += 1;
@@ -6491,6 +6728,10 @@ function main() {
   }
   if (command === "test-planning-board") {
     runPlanningBoardTests();
+    return;
+  }
+  if (command === "test-app-board") {
+    runAppBoardTests();
     return;
   }
   if (command === "test-skills-phase") {

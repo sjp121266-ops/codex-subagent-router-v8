@@ -12,6 +12,7 @@
 - Matches each task to relevant Codex skills, community skills, model tier, and reasoning effort.
 - Returns structured routing data for `finalAgent`, `selectedSkills`, `selectedModel`, `executionPlan`, `handoffPlan`, `qualityGates`, and fallback state.
 - Produces managed delegation output for the parent Codex, including a planning brief, agent work cards, batch plan, handoff contracts, verification board, write boundaries, stage inputs/outputs, parent responsibilities, and next safe action.
+- Renders an App-friendly Chinese `displayBoard` so Codex can show a readable stage board, safety panel, and Mermaid flow instead of raw JSON.
 - Keeps provider prompts compact by default, with explicit hydration modes when a self-contained prompt is needed.
 - Fails safely when a route is ambiguous, high-risk, blocked, or requires parent review.
 
@@ -39,6 +40,24 @@ Ask for a human-readable explanation:
 
 ```bash
 node subagents/router.mjs judge --explain "开启子代理，审查当前 diff"
+```
+
+Render the Codex App planning board:
+
+```bash
+node subagents/router.mjs managed --profile app "使用多智能体分批测试这个项目，输出规划看板"
+```
+
+The App board shows the user-facing result as Chinese Markdown:
+
+```text
+# 司南规划结果
+
+| 阶段 | Agent | 状态 | 验收点 | 下一触发 |
+| --- | --- | --- | --- | --- |
+| 阶段 1: map | code-mapper | 可安全执行 | 记录范围和证据 | 完成后进入验证 |
+
+安全边界会单独列出可安全执行项、阻塞项和是否需要父级 Codex 复核。
 ```
 
 ## How It Works
@@ -154,6 +173,7 @@ After installing, start a new Codex thread and try:
 node subagents/router.mjs route --json "开启子代理，帮我修前端 bug"
 node subagents/router.mjs judge --json "开启子代理，修复 API 鉴权问题"
 node subagents/router.mjs managed --json --profile compact "开启子代理，调用合适子代理，用 goal 模式持续实现"
+node subagents/router.mjs managed --profile app "开启子代理，调用合适子代理，用 goal 模式持续实现"
 node subagents/router.mjs config-explain "开启子代理，根据生产日志处理线上事故并准备回滚"
 node subagents/router.mjs cache-status
 node subagents/router.mjs cache-prune --all --older-than-hours 168
