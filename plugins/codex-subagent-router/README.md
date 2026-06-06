@@ -1,11 +1,11 @@
 # Codex Subagent Router Plugin
 
-This personal Codex plugin packages the v16 Subagent Router for local use. It provides the `subagent-router` skill plus the router CLI and metadata needed to choose VoltAgent and Agency agent identities, Codex skills, model tiers, sandbox modes, execution adapters, staged handoff plans, and budgeted prompt hydration.
+This personal Codex plugin packages the Subagent Router for local use. It provides the `subagent-router` skill plus the router CLI and metadata needed to choose VoltAgent and Agency agent identities, Codex skills, model tiers, sandbox modes, execution adapters, staged handoff plans, and budgeted prompt hydration.
 
 ## What Is Included
 
 - `skills/subagent-router/SKILL.md`: plugin skill instructions.
-- `scripts/subagents/router.mjs`: v16 router CLI.
+- `scripts/subagents/router.mjs`: router CLI.
 - `scripts/subagents/strategy-config.json`: taskKind, risk, skill, model, cache, and managed UX policy.
 - `scripts/subagents/judgement.schema.json`: structured judgement schema.
 - `scripts/subagents/community-skills-manifest.json`: community skill manifest.
@@ -17,7 +17,7 @@ This personal Codex plugin packages the v16 Subagent Router for local use. It pr
 
 Native custom-name agent spawning depends on the current Codex host. When direct spawning by a provider identity is unavailable, the router uses `executionAdapter.mode = "generic-role-bridge"` and tells Codex to run the selected identity through the generic `explorer` or `worker` role with `delegationPrompt` injected. This keeps the chosen agent identity, skills, model, sandbox, stages, and quality gates intact while changing only the transport layer.
 
-Agency agents are prompt-pack specialists. Their prompts are role/methodology guidance only; Codex system instructions, AGENTS.md, sandbox rules, approval rules, and parent verification remain authoritative. v16 does not paste full Agency prompts into normal managed output. It returns `dispatchPromptRef`, `compactRoleCard`, `promptHydrationPlan`, and `contextLedger`; full hydration is explicit.
+Agency agents are prompt-pack specialists. Their prompts are role/methodology guidance only; Codex system instructions, AGENTS.md, sandbox rules, approval rules, and parent verification remain authoritative. Normal managed output uses compact provider references by default and returns `dispatchPromptRef`, `compactRoleCard`, `promptHydrationPlan`, and `contextLedger`; full hydration is explicit.
 
 ## Usage
 

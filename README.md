@@ -1,94 +1,98 @@
-# Codex Subagent Router v16
+# Codex Subagent Router
 
 ![Codex Subagent Router hero](assets/codex-subagent-router-v8-hero.png)
 
-Quality-first routing for Codex subagents. This repository packages a local router that selects VoltAgent and Agency agent identities, Codex skills, community skills, model tiers, recovery behavior, and multi-agent handoff plans for Codex workflows.
+Quality-first routing for Codex subagents. This repository packages a local router that helps a parent Codex choose the right agent identity, Codex skills, model strength, sandbox posture, fallback behavior, and staged handoff plan for explicit subagent requests.
 
-The goal is simple: when you explicitly ask Codex to use subagents, the parent Codex can automatically choose the right specialist, the right skills, the right sandbox, and the right model strength without blindly spending GPT-5.5 tokens on every task.
+It is built for people who want multi-agent Codex workflows without blindly sending every task through the most expensive path. Routine, low-risk work can stay fast; security, authentication, production, architecture, migration, review, ambiguity, and current-diff work stay conservative.
 
-## Highlights
+## What It Does
 
-- 351 total agent identities in the tested environment: 167 VoltAgent agents plus 184 bundled Agency agents.
-- 279 available skills detected in the tested environment.
-- 74 imported community skills from curated GitHub skill sources.
-- Quality-first model policy: GPT-5.5 for high-risk work, cheaper routing only for safe and obvious tasks.
-- Structured routing output with `finalAgent`, `selectedSkills`, `selectedModel`, `reasoningEffort`, `executionPlan`, and `handoffPlan`.
-- Explainable decisions through `decisionTrace`, `qualityGates`, `rejectedCandidates`, and `skillRationale`.
-- Conservative fallback behavior through `failureClass`, `fallbackSafety`, `requiresParentReview`, `delegationBlocked`, and `approvalState`.
-- v9 skill repair: configured local skills omitted by the initial candidate budget can be repaired without discarding an otherwise valid GPT-5.5 judgement.
-- v10 orchestration routing: explicit broad multi-agent project work becomes staged, while vague broad work still clarifies first.
-- v11 managed delegation: one-line requests such as "调用合适子代理完成任务" produce a concise user-facing stage/goal plan without exposing internal routing fields.
-- v12 task kinds: `release-publishing`, `repo-maintenance`, `research-only`, and `incident-response` improve README/release, maintenance, no-write research, and production incident routing.
-- v12 managed contracts: `managed --json` now includes `executionContract`, `writeBoundaries`, `parentResponsibilities`, `stageInputs`, and `stageOutputs`.
-- v12 config governance: taskKind, risk, cache, model, and managed UX policy are validated by `config-check` and explainable through `config-explain`.
-- v12 speed work: persistent route cache, route-cache statistics, `refresh-skills`, snapshot staleness checks, and cold/warm performance benchmarks reduce repeated local prep.
-- v13 agent roster: every route can expose primary, mapper, implementer, validator, reviewer, fallback candidates, and preferred-agent fallback warnings.
-- v13 managed readiness: `managed --json` adds `delegationReadiness`, `nextAction`, and `stageSkillLoadingOrder` so the parent Codex can move directly into the next safe stage.
-- v13 eval governance: deterministic eval expanded to 112 cases with taskKind bucket pass-rate reporting.
-- v13 cache maintenance: `cache-status` and `cache-prune` make judgement/route cache health visible and cleanable.
-- v15 Agency provider: bundled `msitarzewski/agency-agents` prompt-pack specialists participate in the same candidate pool as VoltAgent agents.
-- v15 provider metadata: `finalAgentProvider`, `finalAgentId`, `agentProviderRationale`, `providerPromptPath`, `providerPromptPreview`, and `dispatchPromptSource` explain whether the selected identity came from VoltAgent or Agency.
-- v15 provider tests: `test-agency-provider`, `test-provider-routing`, and `test-provider-dispatch` verify catalog loading, provider selection, and managed dispatch behavior.
-- v16 context efficiency: Agency prompts are indexed as compact agent cards and are not pasted into managed output by default.
-- v16 prompt hydration: `reference`, `summary`, `hybrid`, and `full` modes let Codex trade context size against self-contained dispatch needs.
-- v16 context ledger: `managed --json --profile compact` and `inspect-context` report managed JSON bytes, delegation prompt bytes, provider prompt bytes, estimated tokens, hydration mode, and context risk.
-- v16 quality-preserving cascade: low-risk product/marketing routes stay fast while security, auth, production, incident, current diff, and other high-risk work still use GPT-5.5 gates.
-- Built-in eval, performance, managed UX, managed-contract, config, route-cache, skills-phase, judge-matrix, recovery, handoff, skill-repair, doctor, and report commands.
+- Selects from VoltAgent-style agent identities and bundled Agency prompt-pack specialists.
+- Matches each task to relevant Codex skills, community skills, model tier, and reasoning effort.
+- Returns structured routing data for `finalAgent`, `selectedSkills`, `selectedModel`, `executionPlan`, `handoffPlan`, `qualityGates`, and fallback state.
+- Produces managed delegation output for the parent Codex, including write boundaries, stage inputs/outputs, parent responsibilities, and next safe action.
+- Keeps provider prompts compact by default, with explicit hydration modes when a self-contained prompt is needed.
+- Fails safely when a route is ambiguous, high-risk, blocked, or requires parent review.
+
+## Quick Start
+
+Run a managed route for an ordinary user request:
+
+```bash
+node subagents/router.mjs managed --json --profile compact "开启子代理，调用合适子代理完成这个任务"
+```
+
+Inspect context cost before dispatch:
+
+```bash
+node subagents/router.mjs inspect-context "开启子代理，帮我做 Reddit 社区增长策略"
+```
+
+Hydrate a provider prompt only when needed:
+
+```bash
+node subagents/router.mjs prompt agency:reddit-community-builder "帮我做 Reddit 社区增长策略" --hydrate summary --budget 2000
+```
+
+Ask for a human-readable explanation:
+
+```bash
+node subagents/router.mjs judge --explain "开启子代理，审查当前 diff"
+```
 
 ## How It Works
 
 ```mermaid
 flowchart TD
-  A["User asks to enable subagents"] --> B["subagent-router skill"]
+  A["User explicitly asks for subagents"] --> B["subagent-router skill"]
   B --> C["router.mjs managed / judge"]
-  C --> D["Deterministic local route"]
+  C --> D["Local route preparation"]
   D --> E{"Quality gates"}
-  E -->|"Low risk + high confidence"| F["deterministic / no model judge"]
-  E -->|"Routine task"| G["GPT-5.4 or GPT-5.4-mini judge"]
-  E -->|"Security, auth, production, architecture, review, ambiguity"| H["GPT-5.5 premium judge"]
-  F --> I["Agent + skills + model + handoffPlan"]
+  E -->|"Low risk + high confidence"| F["deterministic route"]
+  E -->|"Routine safe task"| G["economy or standard judge"]
+  E -->|"High risk or ambiguous"| H["premium judge"]
+  F --> I["Agent + skills + model + handoff plan"]
   G --> I
   H --> I
   I --> J{"Fallback safety"}
-  J -->|"safe"| K["Parent Codex delegates explorer / worker stages"]
-  J -->|"requires review"| L["parent-review-required / no worker stage"]
+  J -->|"safe"| K["Parent Codex delegates staged work"]
+  J -->|"requires review"| L["Parent review / clarify first"]
 ```
 
-The router combines five sources of truth:
+The router combines these sources:
 
-- `subagents/registry.json`: VoltAgent agent metadata.
-- `subagents/agency-agents/catalog.json`, `subagents/agency-agents/agency-agent-index.json`, and `subagents/agency-agents/prompts/`: bundled Agency provider metadata, compact agent cards, and prompt bodies.
-- `subagents/strategy-config.json`: intent, taskKind, skill, cost, cache, model-risk, managed UX, agent roster, and candidate-budget policy.
-- `subagents/community-skills-manifest.json`: imported community skills.
+- `subagents/registry.json`: VoltAgent agent registry snapshot.
+- `subagents/agency-agents/`: bundled Agency provider catalog, compact agent-card index, and prompt bodies.
+- `subagents/strategy-config.json`: task kind, risk, skill, cache, model, managed UX, roster, and candidate-budget policy.
+- `subagents/community-skills-manifest.json`: imported community skill manifest.
 - Local Codex skill discovery from `~/.codex/skills`, `~/.agents/skills`, and plugin caches.
 
 ## Parent Codex Boundary
 
-The router does not execute work by itself. It returns a routing decision for the parent Codex: which agent identity to use, which skills to load, which model and reasoning effort to request, and which handoff stages are safe. The parent Codex remains responsible for loading the relevant skill instructions, spawning any subagent, integrating the result, protecting unrelated user changes, and running final verification before reporting completion.
+The router does not execute the work. It returns a route for the parent Codex to apply: which identity to use, which skills to load, which model and reasoning effort to request, and which stages are safe to delegate.
 
-Native custom-name spawning is host-dependent. When the current Codex surface cannot directly spawn a provider-prefixed identity such as `agency:reddit-community-builder` or a VoltAgent name such as `react-specialist`, `managed --json` exposes an `executionAdapter` and falls back to a generic `explorer` or `worker` bridge. The selected provider identity is still preserved by injecting the generated `delegationPrompt` into that generic role, so routing quality and skill choice remain intact; only the transport layer changes.
+The parent Codex remains responsible for loading skill instructions, spawning or bridging any subagent, protecting unrelated user changes, integrating results, and running final verification before reporting completion.
 
-Agency agents are used as a prompt/provider layer, not as higher-priority instructions. Their prompt bodies provide role and methodology guidance only. Codex system/developer/user instructions, AGENTS.md, sandbox rules, approval rules, and parent verification always win.
+Native custom-name spawning depends on the current Codex host. When direct spawning by a provider identity is unavailable, `managed --json` exposes an `executionAdapter` and can fall back to a generic explorer or worker bridge. The selected provider identity is preserved through the generated `delegationPrompt`; only the transport layer changes.
 
-v16 does not paste full Agency prompt bodies into normal managed output. The router first uses `agency-agent-index.json` agent cards, then returns a `dispatchPromptRef`, `compactRoleCard`, `promptHydrationPlan`, and `contextLedger`. Use full prompt hydration only for debugging, external isolated execution, or when a self-contained prompt is explicitly required.
-
-Selected skills are execution guidance, not automatic actions. They do not override system, developer, user, AGENTS.md, sandbox, approval, or final-review requirements.
+Agency agents are used as role and methodology guidance. They do not override Codex system, developer, user, AGENTS.md, sandbox, approval, or verification rules. Full provider prompt hydration is explicit and should be reserved for debugging, isolated execution, or self-contained handoff needs.
 
 ## Clarify-First Behavior
 
-Explicitly asking for subagents enables routing, but it does not remove ambiguity checks. If the route has low confidence, needs parent choice, requires user clarification, is delegation-blocked, or returns `parent-review-required`, the parent Codex should ask one concise clarification question or manually review the fallback before spawning a worker.
+Explicitly asking for subagents enables routing, but it does not remove ambiguity checks. If the route has low confidence, needs parent choice, requires user clarification, is delegation-blocked, or returns `parent-review-required`, the parent Codex should ask one concise clarification question or review the fallback before spawning a worker.
 
-Broad requests are split into two cases:
+Broad requests are handled conservatively:
 
-- Authorized broad work, such as "use multiple agents and skills to fully optimize this project", becomes a `staged` plan with explore, analyze or implement, validate, and review stages.
-- Vague broad work, such as "use multiple agents to optimize this", remains `clarify-first` until the goal, files, risk boundary, or acceptance criteria are clear.
+- Authorized broad work, such as "use multiple agents and skills to fully optimize this project", becomes a staged plan with discovery, implementation or analysis, validation, and review.
+- Vague broad work, such as "use multiple agents to optimize this", remains clarify-first until the goal, files, risk boundary, or acceptance criteria are clear.
 
 ## Routing Modes
 
 | Mode | Judge model | Intended use |
 | --- | --- | --- |
 | `deterministic` | none | Low-risk, high-confidence, stable tasks. |
-| `mini-judge` | GPT-5.4-mini | Economy budget for routine safe tasks. |
+| `mini-judge` | GPT-5.4-mini | Economy path for routine safe tasks. |
 | `standard-judge` | GPT-5.4 | Balanced default for normal tasks. |
 | `premium-judge` | GPT-5.5 | Security, auth, privacy, production, architecture, migration, review, ambiguity, and high-risk work. |
 
@@ -103,9 +107,8 @@ The delegated subagent model is selected separately from the routing judge. A ch
 - `subagents/registry.json`: VoltAgent agent registry snapshot.
 - `subagents/agency-agents/`: bundled Agency provider catalog and prompt bodies.
 - `subagents/import-community-skills.mjs`: community skill importer.
-- `plugins/codex-subagent-router/`: personal Codex plugin package for this router.
-- `~/.codex/subagents/skill-registry-snapshot.json`: local runtime snapshot used to avoid repeated plugin-cache scans.
-- `skills/subagent-router/SKILL.md`: Codex global skill instructions.
+- `plugins/codex-subagent-router/`: personal Codex plugin package.
+- `skills/subagent-router/SKILL.md`: Codex skill instructions.
 - `outputs/`: implementation plans and verification reports.
 - `assets/`: README visual assets.
 
@@ -130,8 +133,6 @@ chmod +x ~/.codex/subagents/router.mjs
 
 This repository also includes a local personal plugin package at `plugins/codex-subagent-router/`.
 
-For the default personal marketplace flow:
-
 ```bash
 mkdir -p ~/plugins
 rm -rf ~/plugins/codex-subagent-router
@@ -147,61 +148,15 @@ After installing, start a new Codex thread and try:
 开启子代理，调用合适 agent 完成任务
 ```
 
-## Basic Usage
-
-Run a deterministic route:
+## Common Commands
 
 ```bash
 node subagents/router.mjs route --json "开启子代理，帮我修前端 bug"
-```
-
-Run the cost-aware judge:
-
-```bash
 node subagents/router.mjs judge --json "开启子代理，修复 API 鉴权问题"
-```
-
-Run managed delegation for a normal user request:
-
-```bash
 node subagents/router.mjs managed --json --profile compact "开启子代理，调用合适子代理，用 goal 模式持续实现"
-```
-
-Inspect context cost before dispatch:
-
-```bash
-node subagents/router.mjs inspect-context "开启子代理，帮我做 Reddit 社区增长策略"
-```
-
-Hydrate a provider prompt only when needed:
-
-```bash
-node subagents/router.mjs prompt agency:reddit-community-builder "帮我做 Reddit 社区增长策略" --hydrate summary --budget 2000
-node subagents/router.mjs prompt agency:reddit-community-builder "帮我做 Reddit 社区增长策略" --hydrate full --budget 40000
-```
-
-Show a human-readable explanation:
-
-```bash
-node subagents/router.mjs judge --explain "开启子代理，审查当前 diff"
-```
-
-Explain which v12 config policies match a task:
-
-```bash
 node subagents/router.mjs config-explain "开启子代理，根据生产日志处理线上事故并准备回滚"
-```
-
-Inspect cache health and prune stale local cache entries:
-
-```bash
 node subagents/router.mjs cache-status
 node subagents/router.mjs cache-prune --all --older-than-hours 168
-```
-
-Use budget controls:
-
-```bash
 node subagents/router.mjs judge --json --budget economy "开启子代理，补齐 pytest 覆盖率"
 node subagents/router.mjs judge --json --budget premium "开启子代理，审查生产鉴权风险"
 ```
@@ -210,138 +165,35 @@ node subagents/router.mjs judge --json --budget premium "开启子代理，审�
 
 ```bash
 node --check subagents/router.mjs
+node --check subagents/import-community-skills.mjs
 node subagents/router.mjs test
 node subagents/router.mjs eval
-node subagents/router.mjs test-performance
-node subagents/router.mjs test-managed
-node subagents/router.mjs test-managed-contract
-node subagents/router.mjs test-skills-phase
-node subagents/router.mjs test-judge-matrix
-node subagents/router.mjs test-recovery
-node subagents/router.mjs test-handoff
-node subagents/router.mjs test-skill-repair
-node subagents/router.mjs test-config
-node subagents/router.mjs test-config-explain
-node subagents/router.mjs test-route-cache
-node subagents/router.mjs test-agent-roster
-node subagents/router.mjs test-managed-readiness
-node subagents/router.mjs test-cache-maintenance
-node subagents/router.mjs test-agency-provider
-node subagents/router.mjs test-provider-routing
-node subagents/router.mjs test-provider-dispatch
-node subagents/router.mjs test-agent-index
-node subagents/router.mjs test-prompt-hydration
-node subagents/router.mjs test-context-budget
 node subagents/router.mjs doctor
 node subagents/router.mjs report
 ```
 
-For the live GPT-5.5 smoke test, use the installed path so local Codex CLI paths match the environment:
+Additional targeted checks are available for managed delegation, execution adapters, provider routing, prompt hydration, context budgets, cache behavior, recovery, handoff, skill repair, and config governance.
+
+For a live judge smoke test, use the installed path so local Codex CLI paths match the target environment:
 
 ```bash
 ~/.codex/subagents/router.mjs test-judge
 ```
 
-## Current v15 Result
+## Reports
 
-The final v15 verification passed:
+Detailed implementation notes, plans, and verification runs live in [`outputs/`](outputs/). The README intentionally stays focused on what the project is, how to use it, and where the safety boundaries are.
 
-- 16/16 regression tests.
-- 136/136 eval cases across 8 taskKind buckets, including 24 Agency provider cases.
-- Agency provider tests passed: 184 bundled Agency agents load from the offline catalog and prompts.
-- Provider routing tests passed: Reddit/community, product adoption, sales pipeline, React engineering, and security/auth cases select the expected provider and quality gate.
-- Provider dispatch tests passed: Agency selections expose provider metadata and embed the Agency prompt body into `delegationPrompt`.
-- Performance test passed: compact prompt is about 49% smaller than the v10-style estimate; default JSON is about 88% smaller than verbose JSON.
-- Managed delegation and managed-contract tests passed: authorized goal requests produce staged plans; high-risk write tasks include validation/review; managed JSON includes stage inputs/outputs and write boundaries without exposing internal budgets.
-- Managed readiness tests passed: ready requests return `nextAction.type = "spawn"`, vague requests return one clarification, and blocked high-risk fallbacks return parent review.
-- Agent roster tests passed: routes expose primary/mapper/implementer/validator/reviewer and explain missing preferred-agent fallbacks.
-- Config tests passed: taskKind policy, high-risk GPT-5.5 rules, configured skills, `config-check`, and `config-explain` are valid.
-- Route-cache and cache-maintenance tests passed: stable low/medium-risk tasks can hit persistent cache; volatile current diff/log/incident/security tasks bypass cache; stale local cache can be pruned.
-- Skills-phase and judge-matrix tests passed.
-- Recovery tests passed.
-- Handoff tests passed.
-- Skill-repair tests passed.
-- Doctor/report passed.
-- `refresh-skills` rebuilt the local skill snapshot with 279 skills in the tested environment.
-- Explicit multi-agent project optimization now routes to `staged` instead of over-clarifying.
-- Vague multi-agent project optimization still routes to `clarify-first`.
-- Generic "agent/智能体" wording no longer pulls OpenAI/LangGraph skills unless those technologies are explicitly named.
-- GPT-5.5 critical routing smoke test passed for high-risk current diff auth review.
+Useful reports:
 
-See [`outputs/subagent-router-v15-agency-agents-final-report.md`](outputs/subagent-router-v15-agency-agents-final-report.md) for the full report.
-
-## v14 Execution Adapter Changes
-
-- `managed --json` now includes `executionAdapter`, which tells the parent Codex whether to use native custom-agent spawn, the generic explorer/worker bridge, or `codex exec` isolation.
-- `nextAction.spawn.executionAdapter` mirrors the immediate stage transport so parent Codex can act without inspecting verbose internals.
-- `doctor`, `report`, and `test-execution-adapter` now cover the custom-agent spawn boundary.
-
-## v15 Agency Provider Examples
-
-```bash
-node subagents/router.mjs managed --json "开启子代理，帮我做 Reddit 社区增长策略"
-node subagents/router.mjs managed --json "开启子代理，只读分析产品 adoption 下降原因，不要改代码"
-node subagents/router.mjs managed --json "开启子代理，审查 API 鉴权漏洞"
-```
-
-Expected shape:
-
-- Reddit/community and product adoption tasks can select `agency-agents` specialists such as `agency:reddit-community-builder` or `agency:product-manager`.
-- React implementation remains on VoltAgent engineering specialists when they are a better fit.
-- Security/auth/current diff/production tasks still use GPT-5.5 quality gates and conservative review behavior.
-
-## Acknowledgements
-
-- [VoltAgent/awesome-codex-subagents](https://github.com/VoltAgent/awesome-codex-subagents): source inspiration for the VoltAgent Codex agent registry.
-- [msitarzewski/agency-agents](https://github.com/msitarzewski/agency-agents): MIT-licensed Markdown specialist prompt collection bundled as the v15 Agency provider.
-- See [`outputs/subagent-router-v14-execution-adapter-report.md`](outputs/subagent-router-v14-execution-adapter-report.md) for the focused report.
-
-## v13 Reliability and UX Changes
-
-- `agentRoster` explains the usable agent lineup for the task: primary, mapper, implementer, validator, reviewer, fallbacks, and missing preferred-agent fallbacks.
-- `managed --json` now includes `delegationReadiness`, `nextAction`, and `stageSkillLoadingOrder`.
-- Route cache keys include an internal router metadata version so code-level routing changes do not accidentally reuse stale cache entries.
-- Release-publishing tasks preserve GitHub repository skills when README, release, public repo, or publishing language appears.
-- Orchestration-design tasks preserve planning skills and treat managed-contract/stage-skill-loading work as strong orchestration signals.
-- Public hygiene/security review tasks that do not ask for edits stay read-only.
-- `eval` now records taskKind bucket stats in `last-eval-results.json`.
-- Added `cache-status`, `cache-prune`, `test-agent-roster`, `test-managed-readiness`, and `test-cache-maintenance`.
-
-## v12 Reliability and UX Changes
-
-- Added `release-publishing`, `repo-maintenance`, `research-only`, and `incident-response` taskKinds.
-- README/release/documentation publishing is no longer treated as DevOps just because GitHub or changelog terms appear.
-- `research-only` and explicit no-write tasks are forced into read-only agent/sandbox behavior and do not generate implementation stages.
-- Production incidents, production logs, rollback, outage, security, auth, and current diff stay on GPT-5.5 and bypass stale caches when volatile.
-- `managed --json` includes an execution contract with write boundaries, parent responsibilities, and stage input/output expectations.
-- Strategy config v12 validates taskKind policy, allowed phases, high-risk coverage, and configured skill existence.
-- `config-check`, `config-explain`, `test-config`, `test-config-explain`, `test-route-cache`, and `test-managed-contract` were added.
-- Persistent route cache records hit rate, bypass reasons, oldest/newest entries, and quarantine count.
-- `refresh-skills` rebuilds the local skill registry snapshot.
-
-## v11 Reliability and UX Changes
-
-- Added `taskKind` semantic routing for engineering execution, engineering analysis, product analysis, and orchestration design.
-- Product-analysis tasks do not generate implementation stages or debugging skills by default.
-- Orchestration-design tasks prefer architecture/coordinator agents and staged map, failure-analysis, implementation, validation, and review handoffs.
-- Low-risk read-only product/docs/planning routes avoid unnecessary GPT-5.5 judges; high-risk security, auth, production, current diff, and complex orchestration keep GPT-5.5.
-- Default `judge --json` is compact; use `judge --verbose` or `judge --explain` for full internals.
-- `managed --json` is the preferred user-facing delegation output for ordinary "call suitable subagents" requests.
-- Skill registry snapshot and route cache reduce repeated local discovery work.
-
-## v9-v10 Reliability Changes
-
-- Candidate skills from strong strategy rules are protected from truncation by the initial skill budget.
-- If GPT-5.5 selects a configured, locally available skill that was outside the initial candidate list, the router repairs it, emits `routingWarnings`, and keeps the rest of the judgement.
-- Unknown skills and non-candidate agents still fail safely.
-- `selectedSkillsByPhase` is rebuilt from final `selectedSkills`, so handoff stages cannot receive unselected skills.
-- High-risk fallback results use `parent-review-required` mode and do not include executable `primary` or `implement` stages.
-- Workflow skills are phase-aware: plan writing stays in planning, plan execution is available to implementation, and test/review guidance stays in the matching stage.
-- Repository-local config, schema, registry, and manifest files are used when running from a clone; runtime cache still lives under `~/.codex/subagents`.
+- [`outputs/subagent-router-v16-context-efficiency-final-report.md`](outputs/subagent-router-v16-context-efficiency-final-report.md)
+- [`outputs/subagent-router-v15-agency-agents-final-report.md`](outputs/subagent-router-v15-agency-agents-final-report.md)
+- [`outputs/subagent-router-v14-execution-adapter-report.md`](outputs/subagent-router-v14-execution-adapter-report.md)
+- [`outputs/subagent-router-plugin-report.md`](outputs/subagent-router-plugin-report.md)
 
 ## Cache and Local Data
 
-The judgement cache is stored at `~/.codex/subagents/judgement-cache.json`. It stores model judgement results keyed by a hash of the task and candidate packet. The route cache is stored at `~/.codex/subagents/route-cache.json`. It stores stable deterministic route preparation for non-volatile low/medium-risk tasks. Volatile tasks such as current diffs, logs, stack traces, incidents, file/line-specific failures, and test output bypass cache automatically.
+The judgement cache is stored at `~/.codex/subagents/judgement-cache.json`. The route cache is stored at `~/.codex/subagents/route-cache.json`. Stable low- and medium-risk tasks can use cache; volatile tasks such as current diffs, logs, stack traces, incidents, file-specific failures, and test output bypass cache automatically.
 
 To clear local router state:
 
@@ -361,26 +213,27 @@ node subagents/router.mjs refresh-skills
 
 ## Upstream Projects and Acknowledgements
 
-This repository is an integration and routing layer. It exists because several excellent open-source projects made agent identities and skill instructions reusable:
+This repository is an integration and routing layer. It exists because several open-source projects made agent identities and skill instructions reusable:
 
-| Project | Used for | Notes |
-| --- | --- | --- |
-| [VoltAgent/awesome-codex-subagents](https://github.com/VoltAgent/awesome-codex-subagents) | Agent identity source | The generated `subagents/registry.json` is built from VoltAgent-style Codex subagent identities. These identities provide the specialist roles and working methods that this router selects from. |
-| [openai/skills](https://github.com/openai/skills) | Community skill source | Imported skills for official-style workflows such as Figma, Notion, Linear, ASP.NET Core, speech, transcription, and security ownership mapping. |
-| [kid-sid/codex-spellbook](https://github.com/kid-sid/codex-spellbook) | Community skill source | Imported broad engineering skills for API design, React, backend frameworks, databases, Docker, CI/CD, cloud, security, observability, and testing. |
-| [mattpocock/skills](https://github.com/mattpocock/skills) | Community skill source | Imported high-signal engineering workflow skills such as TDD, diagnosis, PRD/issues conversion, architecture improvement, and prototyping. |
-| [jMerta/codex-skills](https://github.com/jMerta/codex-skills) | Community skill source | Imported workflow-oriented skills for AGENTS.md, CI fixes, coding guidelines, docs sync, dependency upgrades, release notes, planning, and triage. |
+| Project | Used for |
+| --- | --- |
+| [VoltAgent/awesome-codex-subagents](https://github.com/VoltAgent/awesome-codex-subagents) | VoltAgent-style Codex agent identities. |
+| [msitarzewski/agency-agents](https://github.com/msitarzewski/agency-agents) | Bundled Agency prompt-pack specialists. |
+| [openai/skills](https://github.com/openai/skills) | Imported community skill source. |
+| [kid-sid/codex-spellbook](https://github.com/kid-sid/codex-spellbook) | Imported engineering skill source. |
+| [mattpocock/skills](https://github.com/mattpocock/skills) | Imported engineering workflow skill source. |
+| [jMerta/codex-skills](https://github.com/jMerta/codex-skills) | Imported workflow skill source. |
 
-Thank you to the maintainers and contributors of these projects. This router adds selection, cost policy, quality gates, recovery behavior, evals, and handoff planning on top of their work; it does not claim authorship of the upstream agent or skill content.
+Thank you to the maintainers and contributors of these projects. This router adds selection, cost policy, quality gates, recovery behavior, evals, and handoff planning on top of their work; it does not claim authorship of upstream agent or skill content.
 
-The imported sources are tracked in [`subagents/community-skills-manifest.json`](subagents/community-skills-manifest.json), including source labels and repository URLs where available. See [`NOTICE.md`](NOTICE.md) for the third-party attribution summary.
+Imported sources are tracked in [`subagents/community-skills-manifest.json`](subagents/community-skills-manifest.json). See [`NOTICE.md`](NOTICE.md) for third-party attribution.
 
-## Attribution and License Notes
+## License Notes
 
-Before redistributing, republishing, or using this repository in a product, review the licenses and attribution requirements of each upstream project listed above. This repository is a snapshot and integration layer, so upstream licenses may apply to the agent and skill content copied or indexed here.
+Before redistributing, republishing, or using this repository in a product, review the licenses and attribution requirements of each upstream project listed above. This repository is a snapshot and integration layer, so upstream licenses may apply to agent and skill content copied or indexed here.
 
 ## Notes
 
 This repository is a portable snapshot of a local Codex setup. Some commands, especially live judgement and skill discovery, depend on the target machine's Codex installation, available models, plugin cache, and local skills.
 
-High-risk work is intentionally conservative. If a model judge fails for high-risk tasks, the router marks the result as requiring parent review instead of silently treating a fallback as safe. If native custom-agent spawning is unavailable, the bridge path remains safe but the parent Codex must keep final integration and verification responsibility.
+High-risk work is intentionally conservative. If a model judge fails for a high-risk task, the router marks the result as requiring parent review instead of silently treating a fallback as safe.
