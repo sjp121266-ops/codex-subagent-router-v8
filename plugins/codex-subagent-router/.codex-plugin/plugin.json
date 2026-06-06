@@ -1,7 +1,7 @@
 {
   "name": "codex-subagent-router",
   "version": "0.1.0+codex.20260606071830",
-  "description": "Quality-first Codex subagent routing for selecting VoltAgent and Agency identities, skills, models, and staged delegation plans.",
+  "description": "司南 Codex 多智能体调度器：质量优先的本地子代理路由、规划看板和安全交接插件。",
   "author": {
     "name": "sjp121266-ops",
     "url": "https://github.com/sjp121266-ops"
@@ -20,9 +20,9 @@
   ],
   "skills": "./skills/",
   "interface": {
-    "displayName": "Codex Subagent Router",
-    "shortDescription": "\u81ea\u52a8\u9009\u62e9 Codex \u5b50\u4ee3\u7406\u3001skills\u3001\u6a21\u578b\u548c\u6267\u884c\u9636\u6bb5\u3002",
-    "longDescription": "Codex Subagent Router packages a local quality-first routing system as a personal Codex plugin. It helps the parent Codex choose the right VoltAgent or Agency agent identity, runtime role, sandbox, skills, model strength, execution adapter, execution stages, fallback behavior, and managed next action for explicit subagent requests. Agency prompt-pack specialists from msitarzewski/agency-agents are bundled as a provider layer with compact agent-card indexing, context ledger reporting, and budgeted prompt hydration so normal delegation stays lightweight.",
+    "displayName": "司南 Codex 多智能体调度器",
+    "shortDescription": "为 Codex 自动选择子代理、技能、模型、规划看板和安全交接路径。",
+    "longDescription": "司南 Codex 多智能体调度器把质量优先的本地路由系统打包为个人 Codex 插件。它帮助父级 Codex 为明确的子代理请求选择合适的 VoltAgent 或 Agency 代理身份、运行角色、沙箱边界、技能、模型强度、执行适配器、执行阶段、回退行为、规划看板和下一步安全动作。插件内置 msitarzewski/agency-agents 提示包专家作为提供商层，并通过紧凑代理卡索引、上下文账本和预算化提示词填充，让日常委托保持轻量。",
     "developerName": "sjp121266-ops",
     "category": "Productivity",
     "capabilities": [
@@ -36,7 +36,7 @@
       "\u89e3\u91ca\u8fd9\u6b21\u5e94\u8be5\u4f7f\u7528\u54ea\u4e9b agents \u548c skills"
     ],
     "brandColor": "#2563EB",
-    "composerIcon": "./assets/codex-subagent-router-hero.png",
-    "logo": "./assets/codex-subagent-router-hero.png"
+    "composerIcon": "./assets/sinan-codex-agent-orchestrator-hero.png",
+    "logo": "./assets/sinan-codex-agent-orchestrator-hero.png"
   }
 }

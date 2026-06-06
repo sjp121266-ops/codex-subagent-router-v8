@@ -1,6 +1,6 @@
-# Codex Subagent Router Plugin
+# 司南 Codex 多智能体调度器插件
 
-This personal Codex plugin packages the Subagent Router for local use. It provides the `subagent-router` skill plus the router CLI and metadata needed to choose VoltAgent and Agency agent identities, Codex skills, model tiers, sandbox modes, execution adapters, staged handoff plans, multi-agent planning boards, and budgeted prompt hydration.
+这个个人 Codex 插件把“司南 Codex 多智能体调度器”打包为本地可用的 `subagent-router` 技能、路由 CLI 和插件元数据，用于选择 VoltAgent 与 Agency 代理身份、Codex 技能、模型层级、沙箱模式、执行适配器、分阶段交接计划、多智能体规划看板和预算化提示词填充。
 
 ## What Is Included
 
@@ -11,7 +11,7 @@ This personal Codex plugin packages the Subagent Router for local use. It provid
 - `scripts/subagents/community-skills-manifest.json`: community skill manifest.
 - `scripts/subagents/registry.json`: VoltAgent agent registry snapshot.
 - `scripts/subagents/agency-agents/`: bundled `msitarzewski/agency-agents` catalog, compact agent-card index, and prompt bodies.
-- `assets/codex-subagent-router-hero.png`: plugin visual asset.
+- `assets/sinan-codex-agent-orchestrator-hero.png`: plugin visual asset.
 
 ## Execution Adapter
 

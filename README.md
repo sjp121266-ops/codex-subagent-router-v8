@@ -1,10 +1,10 @@
-# Codex Subagent Router
+# 司南 Codex 多智能体调度器
 
-![Codex Subagent Router hero](assets/codex-subagent-router-v8-hero.png)
+![司南 Codex 多智能体调度器主视觉](assets/sinan-codex-agent-orchestrator-hero.png)
 
-Quality-first routing for Codex subagents. This repository packages a local router that helps a parent Codex choose the right agent identity, Codex skills, model strength, sandbox posture, fallback behavior, and staged handoff plan for explicit subagent requests.
+司南 Codex 多智能体调度器是一个质量优先的本地 Codex 子代理路由器，帮助父级 Codex 为明确的多智能体任务选择合适的代理身份、技能、模型强度、沙箱边界、规划看板和安全交接路径。
 
-It is built for people who want multi-agent Codex workflows without blindly sending every task through the most expensive path. Routine, low-risk work can stay fast; security, authentication, production, architecture, migration, review, ambiguity, and current-diff work stay conservative.
+它适合需要在复杂代码库中进行分工、验证和持续迭代的用户：普通低风险任务保持轻量快速；安全、鉴权、生产、架构、迁移、审查、模糊范围和当前 diff 相关任务保持保守。
 
 ## What It Does
 
