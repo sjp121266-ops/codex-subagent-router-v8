@@ -59,6 +59,13 @@ const DEFAULT_COST_POLICY = {
 };
 
 const DEFAULT_TASK_KIND_POLICY = {
+  "android-qa": {
+    keywords: [
+      "android|安卓|gradle|apk|adb|emulator|模拟器|真机|connectedDebugAndroidTest|instrumentation|仪器测试|androidTest|CameraX|logcat|安装\\s*APK|截图",
+    ],
+    preferredAgents: ["test-automator", "qa-expert", "mobile-developer", "code-mapper"],
+    allowedPhases: ["planning", "research", "design", "implementation", "debugging", "testing", "review", "matched"],
+  },
   "release-publishing": {
     keywords: [
       "readme|changelog|release notes?|release\\b|publish|publishing|public repo|github readme|installation steps|发布说明|发布|公开仓库|仓库说明|安装步骤|版本说明|致谢",
@@ -148,6 +155,12 @@ const EFFORT_ORDER = new Map([
 ]);
 
 const DEFAULT_SKILL_RULES = [
+  {
+    reason: "Android, Gradle, APK, adb, emulator, or device-side QA workflow",
+    confidence: "high",
+    skills: ["android-emulator-qa", "android-performance", "agyb-essentials:lint-and-validate", "superpowers:systematic-debugging"],
+    patterns: [/android|安卓|gradle|apk|adb|emulator|模拟器|真机|connectedDebugAndroidTest|instrumentation|仪器测试|androidTest|CameraX|logcat|安装\s*APK|截图/i],
+  },
   {
     reason: "frontend implementation, UI behavior, or browser-facing debugging",
     confidence: "high",
@@ -1094,10 +1107,14 @@ function isVagueTask(task, ranked) {
 
 function isNoWriteTask(task) {
   const cleaned = cleanTask(task);
-  if (/read[- ]?only|do not edit|don't edit|do not write|no write|no code changes|不要改|不要修改|不要写|不写代码|不改代码|只读|仅读/i.test(cleaned)) return true;
+  if (hasExplicitNoWriteDirective(cleaned)) return true;
   const reviewOnly = /审计|审查|检查|review|audit|inspect/i.test(cleaned);
   const writeVerb = /fix|implement|build|create|edit|update|refactor|optimi[sz]e|improve|iterate|execute|maintain|refresh|修复|修|实现|创建|修改|改|写|补齐|重构|优化|完善|迭代|执行|维护|刷新|发布|生成/i.test(cleaned);
   return reviewOnly && !writeVerb;
+}
+
+function hasExplicitNoWriteDirective(task) {
+  return /read[- ]?only|do not edit|don't edit|do not write|no write|no code changes|不要改|不要修改|不要写|不写代码|不改代码|只读|仅读/i.test(cleanTask(task));
 }
 
 function isProjectScopeTask(task) {
@@ -1120,6 +1137,14 @@ function patternListMatches(patterns = [], text = "") {
   return patterns.some((pattern) => new RegExp(pattern, "i").test(text));
 }
 
+function hasAndroidQaSignal(text = "") {
+  return /android|安卓|gradle|apk|adb|emulator|模拟器|真机|connectedDebugAndroidTest|instrumentation|仪器测试|androidTest|CameraX|logcat|安装\s*APK|截图/i.test(cleanTask(text));
+}
+
+function hasExplicitSecurityRiskSignal(text = "") {
+  return /security|vulnerability|auth|oauth|token|credential|permission|secret|privacy|compliance|xss|csrf|sql injection|安全|漏洞|鉴权|认证|凭证|令牌|权限|隐私|合规|威胁/i.test(cleanTask(text));
+}
+
 function classifyTaskKind(task, routeLike = {}) {
   const cleaned = cleanTask(task);
   const intentIds = (routeLike.matchedIntents || []).map((intent) => intent.id);
@@ -1132,6 +1157,8 @@ function classifyTaskKind(task, routeLike = {}) {
   const analysisSignals = /review|audit|analy[sz]e|inspect|diagnose|map|评审|审查|审计|分析|调研|检查|诊断|只读|不要改|不改代码/i.test(cleaned);
 
   if (patternListMatches(policy["incident-response"]?.keywords, cleaned)) return "incident-response";
+  if (hasAndroidQaSignal(cleaned) && !hasExplicitSecurityRiskSignal(cleaned)) return "android-qa";
+  if (hasExplicitSecurityRiskSignal(cleaned) && analysisSignals) return "engineering-analysis";
   if (debugSignals) return hasWriteVerb ? "engineering-execution" : "engineering-analysis";
   if (productSignals && (noWrite || analysisSignals || !hasWriteVerb)) return "product-analysis";
   if (noWrite && /调研|官方文档|查资料|资料|检查|审查|分析|research|official docs|source verification|read[- ]?only research|only research|只读调研|只调研|仅调研/i.test(cleaned)) return "research-only";
@@ -1151,6 +1178,10 @@ function preferredAgentsForTaskKind(taskKind) {
 function shouldKeepSkillForTaskKind(entry, taskKind, task) {
   const allowedPhases = configuredTaskKindPolicy()[taskKind]?.allowedPhases;
   const phase = entry.phase || "implementation";
+  if (taskKind === "android-qa") {
+    if (/security|threat-model|ce-code-review|code-review/i.test(entry.name) && !hasExplicitSecurityRiskSignal(task)) return false;
+    return ["planning", "research", "design", "implementation", "debugging", "testing", "review", "matched"].includes(phase);
+  }
   if (taskKind === "research-only") {
     return ["planning", "research", "review", "matched"].includes(phase);
   }
@@ -1210,8 +1241,11 @@ function computeModelPolicy(task, agent, routeLike = {}) {
     reasons.push("low confidence or ambiguous route");
   }
 
-  if (intentIds.some((id) => ["security", "review", "devops", "data-ai"].includes(id))) {
-    reasons.push(`important intent: ${intentIds.find((id) => ["security", "review", "devops", "data-ai"].includes(id))}`);
+  const importantIntentIds = taskKind === "android-qa" && !hasExplicitSecurityRiskSignal(cleaned)
+    ? intentIds.filter((id) => !["security", "review"].includes(id))
+    : intentIds;
+  if (importantIntentIds.some((id) => ["security", "review", "devops", "data-ai"].includes(id))) {
+    reasons.push(`important intent: ${importantIntentIds.find((id) => ["security", "review", "devops", "data-ai"].includes(id))}`);
   }
 
   if (intentIds.includes("planning") && taskKind !== "product-analysis" && /multi-agent|多代理|多智能体|当前项目|跨模块|架构|迁移|执行计划|完整优化|持续迭代/i.test(cleaned)) {
@@ -1266,9 +1300,9 @@ function computeTaskProfile(task, routeLike = {}) {
   const cleaned = cleanTask(task);
   const intentIds = (routeLike.matchedIntents || []).map((intent) => intent.id);
   const signals = [];
-  const noWrite = isNoWriteTask(cleaned);
   const broadAuthorized = isExplicitBroadAuthorization(cleaned);
   const taskKind = routeLike.taskKind || classifyTaskKind(task, routeLike);
+  const noWrite = taskKind === "android-qa" ? hasExplicitNoWriteDirective(cleaned) : isNoWriteTask(cleaned);
   const writeIntent = !noWrite && /fix|implement|build|create|edit|update|refactor|optimi[sz]e|improve|iterate|execute|maintain|refresh|enhance|修复|修|实现|创建|修改|改|写|补齐|重构|优化|完善|增强|迭代|执行|维护|刷新/i.test(cleaned)
     ? "expected"
     : /review|audit|analy[sz]e|审查|审计|分析|调研|检查/i.test(cleaned)
@@ -1279,8 +1313,11 @@ function computeTaskProfile(task, routeLike = {}) {
   let complexity = "low";
   let scope = "local";
 
-  const highRisk = /security|auth|permission|secret|privacy|production|incident|migration|data loss|安全|鉴权|权限|隐私|生产|事故|迁移|数据丢失/i.test(cleaned)
-    || (loadStrategyConfig().highRiskRules || DEFAULT_HIGH_RISK_RULES).some((rule) => rule.pattern && new RegExp(rule.pattern, "i").test(cleaned));
+  const androidQa = taskKind === "android-qa";
+  const highRisk = androidQa && !hasExplicitSecurityRiskSignal(cleaned)
+    ? /production|incident|migration|data loss|生产|事故|迁移|数据丢失/i.test(cleaned)
+    : /security|auth|permission|secret|privacy|production|incident|migration|data loss|安全|鉴权|权限|隐私|生产|事故|迁移|数据丢失/i.test(cleaned)
+      || (loadStrategyConfig().highRiskRules || DEFAULT_HIGH_RISK_RULES).some((rule) => rule.pattern && new RegExp(rule.pattern, "i").test(cleaned));
   const crossSystem = /microservice|distributed|integration|cross[- ]?module|multiple|全局|跨模块|多服务|分布式|集成/i.test(cleaned);
   const broadPlan = /plan|architecture|roadmap|multi-agent|multiple subagents|orchestrat|执行计划|架构|规划|多代理|多智能体|多个子代理|完整优化|持续迭代/i.test(cleaned);
 
@@ -1338,9 +1375,19 @@ function computeTaskProfile(task, routeLike = {}) {
     scope = /系统|全局|多服务|跨服务|分布式/i.test(cleaned) ? "cross-system" : "subsystem";
     signals.push("incident response task");
   }
-  if (intentIds.some((id) => ["security", "review", "devops", "data-ai"].includes(id))) {
+  if (taskKind === "android-qa") {
+    risk = highRisk ? risk : (/完整|全面|持续|full|complete|端到端|e2e/i.test(cleaned) ? "medium" : "low");
+    complexity = /完整|全面|持续|full|complete|端到端|e2e|真机|模拟器|connectedDebugAndroidTest|logcat|截图/i.test(cleaned) ? "high" : "medium";
+    scope = isProjectScopeTask(task) ? "subsystem" : "local";
+    signals.push("android qa task");
+    if (/adb|emulator|模拟器|真机|connectedDebugAndroidTest|logcat|截图/i.test(cleaned)) signals.push("android device-side validation signal");
+  }
+  const importantIntentIds = taskKind === "android-qa" && !hasExplicitSecurityRiskSignal(cleaned)
+    ? intentIds.filter((id) => !["security", "review"].includes(id))
+    : intentIds;
+  if (importantIntentIds.some((id) => ["security", "review", "devops", "data-ai"].includes(id))) {
     risk = risk === "critical" ? "critical" : "high";
-    signals.push(`important intent: ${intentIds.find((id) => ["security", "review", "devops", "data-ai"].includes(id))}`);
+    signals.push(`important intent: ${importantIntentIds.find((id) => ["security", "review", "devops", "data-ai"].includes(id))}`);
   }
 
   if (crossSystem || broadPlan || broadAuthorized) {
@@ -1359,7 +1406,9 @@ function computeTaskProfile(task, routeLike = {}) {
     signals.push("low-risk docs or formatting signal");
   }
 
-  const finalWriteIntent = ["product-analysis", "research-only"].includes(taskKind) || noWrite ? "none" : writeIntent;
+  const finalWriteIntent = taskKind === "android-qa" && !hasExplicitNoWriteDirective(cleaned)
+    ? (writeIntent === "none" ? "possible" : writeIntent)
+    : ["product-analysis", "research-only"].includes(taskKind) || noWrite ? "none" : writeIntent;
   return { taskKind, complexity, risk, scope, writeIntent: finalWriteIntent, signals: unique(signals) };
 }
 
@@ -1676,15 +1725,19 @@ function buildExecutionPlan(task, routeLike, taskProfile, selectedSkillsByPhase)
   const stages = [];
   let mode = "single-agent";
   const broadAuthorized = isExplicitBroadAuthorization(task);
-  const noWrite = isNoWriteTask(task);
   const taskKind = taskProfile.taskKind || classifyTaskKind(task, routeLike);
+  const noWrite = taskKind === "android-qa" ? hasExplicitNoWriteDirective(task) : isNoWriteTask(task);
+  const matchedIntentIds = routeLike.matchedIntents?.map((intent) => intent.id) || [];
+  const securityReviewIntent = matchedIntentIds.includes("security") && !(taskKind === "android-qa" && !hasExplicitSecurityRiskSignal(task));
+  const reviewIntent = matchedIntentIds.includes("review") && !(taskKind === "android-qa" && !/review|审查|审计|代码审查|风险/i.test(cleanTask(task)));
   let requiresReview = ["high", "critical"].includes(taskProfile.risk)
     || (taskProfile.complexity === "high" && taskProfile.writeIntent === "expected")
     || broadAuthorized
-    || routeLike.matchedIntents?.some((intent) => intent.id === "review" || intent.id === "security");
+    || reviewIntent
+    || securityReviewIntent;
   if (["product-analysis", "engineering-analysis", "orchestration-design", "research-only"].includes(taskKind) && noWrite) requiresReview = requiresReview || !["product-analysis", "research-only"].includes(taskKind);
   if (taskKind === "incident-response") requiresReview = true;
-  const requiresTests = !["product-analysis", "research-only"].includes(taskKind)
+  const requiresTests = taskKind === "android-qa" ? true : !["product-analysis", "research-only"].includes(taskKind)
     && (
       (!noWrite && (taskProfile.writeIntent === "expected" || broadAuthorized))
       || (!noWrite && routeLike.matchedIntents?.some((intent) => intent.id === "testing" || intent.id === "debug"))
@@ -1720,6 +1773,13 @@ function buildExecutionPlan(task, routeLike, taskProfile, selectedSkillsByPhase)
     stages.push("Maintenance agent checks config, cache, registry, and repository health.");
     if (taskProfile.writeIntent === "expected") stages.push("Worker applies scoped maintenance changes.");
     if (requiresTests) stages.push("Run focused validation for changed maintenance behavior.");
+  } else if (taskKind === "android-qa") {
+    mode = "staged";
+    stages.push("Map Android project test surfaces, Gradle tasks, APK outputs, and local SDK configuration.");
+    stages.push("Run unit tests, debug build, and androidTest APK build before any device-side claim.");
+    stages.push("Check adb availability from PATH, local.properties, ANDROID_HOME/ANDROID_SDK_ROOT, and the default Android SDK path.");
+    stages.push("If a device or emulator is connected, run connected tests, install or launch the app, capture screenshots, and collect logcat evidence.");
+    stages.push("If no device is connected, mark connectedDebugAndroidTest, install/launch, screenshots, and logcat as blocked by device readiness.");
   } else if (taskKind === "incident-response") {
     mode = "staged";
     stages.push("Incident mapper captures logs, blast radius, and rollback constraints without writing.");
@@ -1799,8 +1859,8 @@ function buildParentReviewHandoffPlan(task, reason = "routing fallback requires 
 function buildHandoffPlan(task, routeLike, taskProfile, executionPlan, skillsByPhase) {
   const agentName = routeLike.recommended?.name || "selected-agent";
   const modelPolicy = routeLike.modelPolicy || computeModelPolicy(task, routeLike.recommended, routeLike);
-  const noWrite = isNoWriteTask(task) || taskProfile.writeIntent === "none";
   const taskKind = taskProfile.taskKind || classifyTaskKind(task, routeLike);
+  const noWrite = (taskKind === "android-qa" ? hasExplicitNoWriteDirective(task) : isNoWriteTask(task)) || taskProfile.writeIntent === "none";
   const baseStage = (id, agent, role, sandbox, phases, objective, acceptance) => {
     const stageAgent = findAgentByName(agent);
     return {
@@ -1843,6 +1903,11 @@ function buildHandoffPlan(task, routeLike, taskProfile, executionPlan, skillsByP
     } else if (taskKind === "repo-maintenance") {
       stages.push(baseStage("inspect-maintenance-surface", "code-mapper", "explorer", "read-only", ["planning", "research"], "Inspect config, cache, snapshots, registry, and report surfaces.", ["Maintenance surface is bounded.", "Risky generated files are named."]));
       if (!noWrite && taskProfile.writeIntent === "expected") stages.push(baseStage("maintain", agentName, "worker", "workspace-write", ["implementation", "testing"], "Apply scoped repository maintenance changes.", ["Changes stay inside maintenance scope.", "Recovery path remains available."]));
+    } else if (taskKind === "android-qa") {
+      stages.push(baseStage("map-android-surface", "code-mapper", "explorer", "read-only", ["planning", "research"], "Map Gradle modules, unit tests, androidTest sources, APK outputs, SDK config, and device-test prerequisites.", ["Gradle tasks and Android test surfaces are named.", "No device-side result is claimed before adb readiness is known."]));
+      stages.push(baseStage("local-android-baseline", agentName, "worker", "workspace-write", ["testing", "debugging"], "Run local Android validation: unit tests, debug APK build, and androidTest APK build.", ["testDebugUnitTest result is reported.", "assembleDebug result is reported.", "assembleDebugAndroidTest result is reported."]));
+      stages.push(baseStage("device-readiness", "test-automator", "worker", "workspace-write", ["testing"], "Resolve adb path and check connected device or emulator readiness.", ["adb path source is reported.", "Connected devices are listed, or device-side checks are explicitly blocked."]));
+      stages.push(baseStage("device-qa-if-ready", "test-automator", "worker", "workspace-write", ["testing"], "When adb reports a connected target, run connected tests, install or launch the app, capture screenshots, and collect logcat evidence.", ["connectedDebugAndroidTest/install/launch evidence is reported when a device exists.", "Without a device, blocked checks are named instead of being marked as merely untested."]));
     } else if (taskKind === "incident-response") {
       stages.push(baseStage("map-incident", "sre-engineer", "explorer", "read-only", ["planning", "research", "debugging"], "Map observed production incident signals, blast radius, and rollback constraints.", ["Incident signal and affected subsystem are named.", "No write occurs before scope is known."]));
       if (!noWrite && taskProfile.writeIntent === "expected") stages.push(baseStage("mitigate", agentName, "worker", "workspace-write", ["implementation", "debugging"], "Implement the smallest scoped mitigation or rollback-support change.", ["Write scope is bounded to the affected subsystem.", "Rollback or mitigation rationale is documented."]));
@@ -1975,6 +2040,25 @@ function fallbackSafetyFor(route, errorMessage, judgePolicy) {
 }
 
 function attachRoutingMetadata(result, route, skillCandidates = [], judgePolicy = {}, fallbackMeta = {}) {
+  const taskKind = result.taskProfile?.taskKind || route.taskProfile?.taskKind || route.taskKind || "";
+  if (taskKind === "android-qa" && !hasExplicitSecurityRiskSignal(result.task || route.task)) {
+    const preferredNames = preferredAgentsForTaskKind("android-qa");
+    const selectedPreferred = preferredNames.some((name) => result.finalAgent === name);
+    const preferredCandidate = (route.candidates || []).find((candidate) => preferredNames.includes(candidate.name))
+      || preferredNames.map((name) => findAgentByName(name)).find(Boolean);
+    if (!selectedPreferred && preferredCandidate) {
+      result = {
+        ...result,
+        finalAgent: preferredCandidate.name,
+        runtimeRole: preferredCandidate.runtimeRole,
+        sandboxMode: preferredCandidate.sandboxMode,
+        routingWarnings: unique([
+          ...(result.routingWarnings || []),
+          `android-qa route normalized finalAgent from ${result.finalAgent} to ${preferredCandidate.name}`,
+        ]),
+      };
+    }
+  }
   const skillsByPhase = completeSkillPhases(result.selectedSkillsByPhase || route.selectedSkillsByPhase || {});
   const selectedAgent = findAgentByName(result.finalAgent || route.recommended?.name) || route.recommended;
   let executionPlan = {
@@ -2093,6 +2177,7 @@ function skillRegistryByName() {
 function phaseForSkill(entry) {
   const name = entry.name || "";
   if (name === "superpowers:executing-plans") return "implementation";
+  if (/android-emulator-qa|android-performance/.test(name)) return "testing";
   if (/debugger|debugging|ios-debugger-agent|frontend-testing-debugging/.test(name)) return "debugging";
   if (name === "superpowers:test-driven-development" || /testing|lint-and-validate|test/i.test(name)) return "testing";
   if (/code-review|security|threat-model|review/i.test(name)) return "review";
@@ -2162,7 +2247,7 @@ function routeTask(task, options = {}) {
     recordRouteCacheBypass(routeCacheEligibilityResult.reason);
   }
   const allAgents = loadAllAgents();
-  const ranked = allAgents.agents
+  let ranked = allAgents.agents
     .map((agent) => scoreAgent(agent, task, intents))
     .sort((a, b) => b.score - a.score || a.agent.name.localeCompare(b.agent.name))
     .slice(0, Math.max(5, candidateLimit));
@@ -2172,8 +2257,17 @@ function routeTask(task, options = {}) {
   const taskKindPreferred = preferredAgentsForTaskKind(taskKind)
     .map((name) => allAgents.agents.find((agent) => agentMatches(agent, name)))
     .filter(Boolean);
+  if (taskKind === "android-qa") {
+    const rankedByName = new Set(ranked.map((entry) => entry.agent.name));
+    const preferredEntries = taskKindPreferred
+      .filter((agent) => !rankedByName.has(agent.name))
+      .map((agent, index) => ({ ...scoreAgent(agent, task, intents), score: (ranked[0]?.score || 200) + 40 - index }));
+    ranked = [...preferredEntries, ...ranked]
+      .sort((a, b) => b.score - a.score || a.agent.name.localeCompare(b.agent.name))
+      .slice(0, Math.max(5, candidateLimit));
+  }
   const preferredRanked = ranked.find((entry) => taskKindPreferred.some((agent) => agent.name === entry.agent.name));
-  const kindPrefersOverride = ["orchestration-design", "product-analysis", "research-only", "release-publishing", "repo-maintenance", "incident-response"].includes(taskKind);
+  const kindPrefersOverride = ["orchestration-design", "product-analysis", "research-only", "release-publishing", "repo-maintenance", "incident-response", "android-qa"].includes(taskKind);
   const topRanked = ranked[0];
   const exactAgencySpecialist =
     /小红书|xiaohongshu|抖音|douyin|tiktok|ux researcher|用户访谈|ui design|ui designer|accessibility|可访问|api tester|接口测试|customer service|客服|市场趋势|竞品/i.test(cleanTask(task));
@@ -2193,7 +2287,9 @@ function routeTask(task, options = {}) {
     const topAgency = ranked.find((entry) => entry.agent.provider === "agency-agents");
     if (topAgency && topRanked && topAgency.score >= topRanked.score - 20) best = topAgency.agent;
   }
-  const effectiveNoWrite = isNoWriteTask(task) || (/review|audit|inspect|check|审查|审计|检查/.test(cleanTask(task)) && !/fix|implement|edit|update|refactor|修复|实现|修改|更新|重构/.test(cleanTask(task)));
+  const effectiveNoWrite = taskKind === "android-qa"
+    ? hasExplicitNoWriteDirective(task)
+    : isNoWriteTask(task) || (/review|audit|inspect|check|审查|审计|检查/.test(cleanTask(task)) && !/fix|implement|edit|update|refactor|修复|实现|修改|更新|重构/.test(cleanTask(task)));
   if (effectiveNoWrite && best.sandboxMode !== "read-only") {
     best = ranked.find((entry) => entry.agent.sandboxMode === "read-only")?.agent
       || taskKindPreferred.find((agent) => agent.sandboxMode === "read-only")
@@ -2204,7 +2300,7 @@ function routeTask(task, options = {}) {
   let confidence = confidenceFor(ranked, intents);
   if (vagueTask) confidence = "low";
   const broadAuthorized = isExplicitBroadAuthorization(task);
-  const semanticStrongKind = ["incident-response", "repo-maintenance", "research-only", "release-publishing", "orchestration-design"].includes(taskKind) && !vagueTask;
+  const semanticStrongKind = ["incident-response", "repo-maintenance", "research-only", "release-publishing", "orchestration-design", "android-qa"].includes(taskKind) && !vagueTask;
   if (semanticStrongKind && confidence === "low") confidence = "medium";
   const needsParentChoice = confidence === "low" && !broadAuthorized;
   if (broadAuthorized && confidence === "low") confidence = "medium";
@@ -2226,6 +2322,11 @@ function routeTask(task, options = {}) {
       addConfiguredSkill("superpowers:executing-plans", "implementation", "orchestration-design request includes execution intent");
       addConfiguredSkill("superpowers:subagent-driven-development", "planning", "orchestration-design request uses multi-agent delegation");
     }
+  }
+  if (taskKind === "android-qa") {
+    addConfiguredSkill("android-emulator-qa", "testing", "android-qa tasks need adb, emulator, UI tree, screenshot, and logcat workflow guidance");
+    addConfiguredSkill("android-performance", "testing", "android-qa tasks may need Android runtime/performance evidence when device-side checks are available");
+    addConfiguredSkill("agyb-essentials:lint-and-validate", "testing", "android-qa tasks must preserve Gradle build and test validation");
   }
   if (vagueTask) {
     skillEntries = skillEntries.filter((entry) => !/debugging|failure|regression/i.test(entry.reason));
@@ -2662,6 +2763,100 @@ function dispatchPromptRefFor(agent, hydrationPlan) {
     promptPath: hydrationPlan.providerPromptPath || agent?.sourcePath || "",
     promptHash: hydrationPlan.providerPromptHash || hashText(agent?.instructions || agent?.description || ""),
     hydrateCommand: `prompt ${agent?.id || agent?.name || ""} <task> --hydrate ${hydrationPlan.mode} --budget ${hydrationPlan.budgetBytes}`,
+  };
+}
+
+function extractLikelyProjectPaths(task = "") {
+  const cleaned = String(task || "");
+  const matches = cleaned.match(/\/Users\/[^\s"'`，。；]+/g) || [];
+  return unique([process.cwd(), ...matches.map((value) => value.replace(/[),.;，。；]+$/g, ""))]);
+}
+
+function parseLocalProperties(filePath) {
+  try {
+    return Object.fromEntries(readText(filePath)
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line && !line.startsWith("#") && line.includes("="))
+      .map((line) => {
+        const [key, ...rest] = line.split("=");
+        return [key.trim(), rest.join("=").trim().replace(/\\:/g, ":")];
+      }));
+  } catch {
+    return {};
+  }
+}
+
+function findAndroidAdbPath(task = "") {
+  const candidates = [];
+  try {
+    const whichAdb = execFileSync("which", ["adb"], { encoding: "utf8", timeout: 2000, stdio: ["ignore", "pipe", "ignore"] }).trim();
+    if (whichAdb) candidates.push({ path: whichAdb, source: "PATH" });
+  } catch {
+    // PATH lookup is optional; SDK paths below may still resolve adb.
+  }
+  for (const projectPath of extractLikelyProjectPaths(task)) {
+    const localProperties = path.join(projectPath, "local.properties");
+    const sdkDir = parseLocalProperties(localProperties)["sdk.dir"];
+    if (sdkDir) candidates.push({ path: path.join(sdkDir, "platform-tools", "adb"), source: `${localProperties}:sdk.dir` });
+  }
+  for (const [envName, envValue] of [["ANDROID_HOME", process.env.ANDROID_HOME], ["ANDROID_SDK_ROOT", process.env.ANDROID_SDK_ROOT]]) {
+    if (envValue) candidates.push({ path: path.join(envValue, "platform-tools", "adb"), source: envName });
+  }
+  candidates.push({ path: path.join(HOME, "Library", "Android", "sdk", "platform-tools", "adb"), source: "default-macos-sdk" });
+  return candidates.find((candidate) => fs.existsSync(candidate.path)) || null;
+}
+
+function parseAdbDevices(output = "") {
+  return String(output || "")
+    .split(/\r?\n/)
+    .slice(1)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const [serial, state = "unknown"] = line.split(/\s+/);
+      return { serial, state };
+    });
+}
+
+function androidEnvironmentDiagnostics(task = "") {
+  if (!hasAndroidQaSignal(task)) return null;
+  const adb = findAndroidAdbPath(task);
+  const localChecks = ["testDebugUnitTest", "assembleDebug", "assembleDebugAndroidTest"];
+  const deviceChecks = ["connectedDebugAndroidTest", "install/launch", "screenshots", "logcat"];
+  if (!adb) {
+    return {
+      relevant: true,
+      adbInPath: false,
+      adbPath: "",
+      adbSource: "",
+      deviceState: "adb-missing",
+      devices: [],
+      localChecks,
+      blockedChecks: deviceChecks,
+      note: "adb was not found in PATH, local.properties, ANDROID_HOME/ANDROID_SDK_ROOT, or the default macOS Android SDK path.",
+    };
+  }
+  let devices = [];
+  let deviceState = "blocked-no-device";
+  let note = "";
+  try {
+    devices = parseAdbDevices(execFileSync(adb.path, ["devices"], { encoding: "utf8", timeout: 5000, stdio: ["ignore", "pipe", "pipe"] }));
+    deviceState = devices.some((device) => device.state === "device") ? "ready" : "blocked-no-device";
+  } catch (error) {
+    deviceState = "adb-error";
+    note = clampText(error.message, 180);
+  }
+  return {
+    relevant: true,
+    adbInPath: adb.source === "PATH",
+    adbPath: adb.path,
+    adbSource: adb.source,
+    deviceState,
+    devices,
+    localChecks,
+    blockedChecks: deviceState === "ready" ? [] : deviceChecks,
+    note: note || (deviceState === "ready" ? "adb reports at least one connected device." : "adb is available, but no connected Android device or emulator is ready."),
   };
 }
 
@@ -3278,6 +3473,18 @@ function managedDelegationPlan(result, options = {}) {
   const selectedAgent = findAgentByName(result.finalAgent) || result.deterministic?.recommended || {};
   const promptHydrationPlan = buildPromptHydrationPlan(selectedAgent, result.task, { profile: profileName, hydrate: options.hydrate, budget: options.budget });
   const compactCard = compactRoleCard(selectedAgent);
+  const androidEnvironment = androidEnvironmentDiagnostics(result.task);
+  const androidParentResponsibilities = androidEnvironment ? [
+    `For Android local validation, run or report ${androidEnvironment.localChecks.join(", ")} before device-side claims.`,
+    androidEnvironment.adbInPath
+      ? "Use adb from PATH for device readiness checks."
+      : androidEnvironment.adbPath
+        ? `adb is available at ${androidEnvironment.adbPath}; use that full path if PATH does not include adb.`
+        : "Install or configure Android SDK platform-tools before adb/device validation.",
+    androidEnvironment.deviceState === "ready"
+      ? "A connected Android target is available; connected tests, install/launch, screenshots, and logcat can proceed when in scope."
+      : `Mark device-side checks as blocked by ${androidEnvironment.deviceState}: ${androidEnvironment.blockedChecks.join(", ")}.`,
+  ] : [];
   const plan = {
     mode: result.executionPlan?.mode || "single-agent",
     agent: result.finalAgent,
@@ -3335,6 +3542,7 @@ function managedDelegationPlan(result, options = {}) {
       fallbackBehavior: result.delegationBlocked ? "parent-review-required before any spawn" : "proceed stage-by-stage while preserving boundaries",
       executionAdapterMode: executionAdapter.mode,
     },
+    androidEnvironment,
     writeBoundaries,
     parentResponsibilities: [
       "Load only the selected skills needed for the current stage.",
@@ -3342,6 +3550,7 @@ function managedDelegationPlan(result, options = {}) {
       "Keep final integration, user-facing summary, and verification evidence in the parent Codex.",
       "Stop or switch to parent review for destructive, credential-gated, production, or unclear write actions.",
       "Check repository status before writing and do not overwrite unrelated user changes.",
+      ...androidParentResponsibilities,
     ],
     stageInputs,
     stageOutputs,
@@ -4006,6 +4215,9 @@ const EVAL_CASES = [
   { id: "v13-orchestration-skill-phase", task: "开启子代理，优化 selectedSkillsByPhase 和 handoff stage 的技能加载顺序", expected: { taskKind: "orchestration-design", executionMode: "staged", skillsInclude: ["superpowers:writing-plans"], requiresTests: true } },
   { id: "v13-managed-contract-boundaries", task: "开启子代理，完善 managed executionContract、writeBoundaries 和 parentResponsibilities", expected: { taskKind: "orchestration-design", executionMode: "staged", judgeModel: "gpt-5.5" } },
   { id: "v13-report-bucket-stats", task: "开启子代理，增强 eval 分桶质量报告和 report 健康摘要", expected: { taskKind: "repo-maintenance", requiresTests: true } },
+  { id: "v14-android-face-project-qa", task: "开启子代理，使用 /Users/sjp1212/Documents/项目/期末作业：人脸识别 这个 Android Kotlin 项目完整测试插件效果，运行 Gradle 单元测试、debug APK、androidTest APK，并检查 adb 真机/模拟器状态", expected: { taskKind: "android-qa", agentIn: ["test-automator", "qa-expert", "mobile-developer"], executionMode: "staged", requiresTests: true, skillsInclude: ["android-emulator-qa", "agyb-essentials:lint-and-validate"], skillsExclude: ["security-best-practices", "security-threat-model"] } },
+  { id: "v14-android-adb-emulator-qa", task: "开启子代理，对 Android APK 做 adb emulator QA：connectedDebugAndroidTest、安装启动、截图和 logcat 验证", expected: { taskKind: "android-qa", agentIn: ["test-automator", "qa-expert", "mobile-developer"], executionMode: "staged", requiresTests: true, skillsInclude: ["android-emulator-qa"], skillsExclude: ["security-threat-model"] } },
+  { id: "v14-android-security-stays-high-risk", task: "开启子代理，审查 Android 人脸识别 App 的隐私、权限和鉴权安全风险", expected: { taskKind: "engineering-analysis", judgeModel: "gpt-5.5", skillsInclude: ["security-best-practices", "security-threat-model"], requiresReview: true } },
   { id: "v13-public-hygiene", task: "开启子代理，公开发布前检查 secrets、本机路径和第三方致谢", expected: { intentIncludes: ["security", "review"], judgeModel: "gpt-5.5", requiresReview: true } },
   { id: "v9-skill-budget-planning", task: "开启子代理，写好详细计划方案然后使用 goal 模式实现", expected: { intentIncludes: ["planning"], skillsInclude: ["superpowers:writing-plans"], judgeModel: "gpt-5.5" } },
   { id: "v9-high-risk-fallback-auth", task: "开启子代理，critical 模式修复生产 API 鉴权和权限漏洞", options: { budget: "critical" }, expected: { intentIncludes: ["backend", "security"], judgeModel: "gpt-5.5", selectedModel: "gpt-5.5", requiresTests: true, requiresReview: true } },
@@ -4077,7 +4289,9 @@ function evaluateCase(testCase) {
   }
   const highRisk = ["high", "critical"].includes(route.taskProfile.risk) || ["high", "critical"].includes(route.modelPolicy.importanceLevel);
   if (highRisk) check(policy.judgeModel === "gpt-5.5", `high-risk policy must use gpt-5.5, got ${policy.judgeModel}`);
-  const noWriteInvariant = isNoWriteTask(testCase.task) || route.taskProfile.writeIntent === "none" || route.taskProfile.taskKind === "research-only";
+  const noWriteInvariant = (route.taskProfile.taskKind === "android-qa" ? hasExplicitNoWriteDirective(testCase.task) : isNoWriteTask(testCase.task))
+    || route.taskProfile.writeIntent === "none"
+    || route.taskProfile.taskKind === "research-only";
   if (noWriteInvariant) {
     const stageText = JSON.stringify([...(route.executionPlan.stages || []), ...(route.executionPlan.stageDetails || [])]);
     check(!/implement|worker implements|mitigate|maintain/i.test(stageText), `no-write/read-only task must not include write stage, got ${stageText}`);
@@ -4336,11 +4550,18 @@ function runManagedDelegationTests() {
   assert(stageIds.some((stage) => stage.includes("validate")), "high-risk write managed plan should include validation stage");
   assert(stageIds.some((stage) => stage.includes("review")), "high-risk write managed plan should include review stage");
 
+  const android = managedDelegationPlan(deterministicManagedResult("开启子代理，使用 /Users/sjp1212/Documents/项目/期末作业：人脸识别 这个 Android 项目完整测试：Gradle 单元测试、debug APK、androidTest APK、adb 真机/模拟器检查"));
+  assert(android.executionContract.taskKind === "android-qa", `android managed plan should be android-qa, got ${android.executionContract.taskKind}`);
+  assert(android.androidEnvironment?.relevant, "android managed plan should expose Android environment diagnostics");
+  assert(android.androidEnvironment.localChecks.includes("assembleDebugAndroidTest"), "android managed plan should list local Android checks");
+  assert(["ready", "blocked-no-device", "adb-missing", "adb-error"].includes(android.androidEnvironment.deviceState), "android managed plan should expose adb/device readiness state");
+
   console.log(JSON.stringify({
     pass: true,
     authorized: { mode: authorized.mode, stages: authorized.goalLoop.length, agent: authorized.agent },
     vague: { mode: vague.mode, hasQuestion: Boolean(vague.clarificationQuestion) },
     highRisk: { stages: stageIds },
+    android: { taskKind: android.executionContract.taskKind, deviceState: android.androidEnvironment.deviceState, adbPath: android.androidEnvironment.adbPath },
   }, null, 2));
 }
 
@@ -4442,7 +4663,7 @@ function runConfigTests() {
   const validation = validateStrategyConfig();
   assert(validation.ok, `strategy config should validate: ${validation.errors.join("; ")}`);
   const config = loadStrategyConfig();
-  for (const kind of ["release-publishing", "repo-maintenance", "research-only", "incident-response"]) {
+  for (const kind of ["android-qa", "release-publishing", "repo-maintenance", "research-only", "incident-response"]) {
     assert(config.taskKindPolicy?.[kind], `missing v12 taskKind policy ${kind}`);
     assert(config.taskKindPolicy[kind].preferredAgents.length, `${kind} should have preferred agents`);
   }

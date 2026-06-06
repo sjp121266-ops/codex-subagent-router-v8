@@ -1,6 +1,22 @@
 {
-  "version": 13,
+  "version": 15,
   "skillRules": [
+    {
+      "id": "android-qa",
+      "phase": "testing",
+      "priority": 99,
+      "confidence": "high",
+      "reason": "Android, Gradle, APK, adb, emulator, or device-side QA workflow",
+      "skills": [
+        "android-emulator-qa",
+        "android-performance",
+        "agyb-essentials:lint-and-validate",
+        "superpowers:systematic-debugging"
+      ],
+      "patterns": [
+        "android|安卓|gradle|apk|adb|emulator|模拟器|真机|connectedDebugAndroidTest|instrumentation|仪器测试|androidTest|CameraX|logcat|安装\\s*APK|截图"
+      ]
+    },
     {
       "id": "frontend",
       "phase": "implementation",
@@ -390,6 +406,11 @@
     }
   },
   "taskKindPolicy": {
+    "android-qa": {
+      "keywords": ["android|安卓|gradle|apk|adb|emulator|模拟器|真机|connectedDebugAndroidTest|instrumentation|仪器测试|androidTest|CameraX|logcat|安装\\s*APK|截图"],
+      "preferredAgents": ["test-automator", "qa-expert", "mobile-developer", "code-mapper"],
+      "allowedPhases": ["planning", "research", "design", "implementation", "debugging", "testing", "review", "matched"]
+    },
     "release-publishing": {
       "keywords": ["readme|changelog|release notes?|release\\b|publish|publishing|public repo|github readme|installation steps|发布说明|发布|公开仓库|仓库说明|安装步骤|版本说明|致谢"],
       "preferredAgents": ["documentation-engineer", "technical-writer", "github-expert", "release-manager", "docs-researcher"],
