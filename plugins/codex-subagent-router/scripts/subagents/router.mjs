@@ -1377,8 +1377,13 @@ function hasStaticArtifactInspectionSignal(text = "") {
 
 function hasDesktopRpaQaSignal(text = "") {
   const cleaned = cleanTask(text);
-  return /rpa|pyside6|qt_qpa_platform|offscreen|flow-smoke|flow smoke|桌面\s*RPA|自动化控制台|扫码登录|浏览器隔离|抖音rpa/i.test(cleaned)
+  return /rpa|pyside6|qt_qpa_platform|offscreen|flow-smoke|flow smoke|live test|task_actions|automationengine|动作审计|动作账本|失败继续|硬上限|DM多会话|桌面\s*RPA|自动化控制台|扫码登录|浏览器隔离|抖音rpa/i.test(cleaned)
     || (/playwright/i.test(cleaned) && /pyside|qt|rpa|offscreen|flow|扫码|桌面|抖音/i.test(cleaned));
+}
+
+function hasLocalRpaValidationBoundary(text = "") {
+  const cleaned = cleanTask(text);
+  return /\/Users\/sjp1212\/Documents\/工具\/抖音rpa|抖音rpa|本地|只读|不要改|不改文件|不要运行真实|不要真实|不扫码|不做真实|不要.*真实.*互动|接口缺口|测试缺口|flow-smoke|flow smoke|live test|task_actions|automationengine|动作审计|动作账本|失败继续|硬上限|DM多会话/i.test(cleaned);
 }
 
 function hasComfyUiWorkflowQaSignal(text = "") {
@@ -1423,7 +1428,7 @@ function classifyTaskKind(task, routeLike = {}) {
   if (hasMonorepoWasmQaSignal(task) && !hasSecurityReviewSignal(cleaned)) return "monorepo-wasm-qa";
   if (hasIntegrationBotQaSignal(task)) return "integration-bot-qa";
   if (hasDesktopAutomationQaSignal(task) && !hasSecurityReviewSignal(cleaned)) return "desktop-automation-qa";
-  if (hasDesktopRpaQaSignal(cleaned) && !hasSecurityReviewSignal(cleaned)) return "desktop-rpa-qa";
+  if (hasDesktopRpaQaSignal(task) && (!hasSecurityReviewSignal(cleaned) || hasLocalRpaValidationBoundary(cleaned))) return "desktop-rpa-qa";
   if (hasComfyUiWorkflowQaSignal(cleaned)) return "comfyui-workflow-qa";
   if (hasCredentialToolingSignal(cleaned)) return "credential-tooling";
   if (hasStaticArtifactInspectionSignal(cleaned) && !hasSecurityReviewSignal(cleaned)) return "static-artifact-inspection";
@@ -5173,6 +5178,7 @@ const EVAL_CASES = [
   { id: "v16-tool-github-sidepanel-extension-qa", task: "开启子代理，测试 /Users/sjp1212/Documents/工具/GitHub谷歌插件 这个 Chrome MV3 GitHub side panel 插件，做 manifest JSON 校验、JS 语法检查和 HTML/CSS 引用检查，不触发真实 GitHub 操作", expected: { taskKind: "chrome-extension-qa", agentIn: ["test-automator", "frontend-developer", "browser-debugger", "qa-expert"], executionMode: "staged", requiresTests: true, skillsInclude: ["agyb-essentials:lint-and-validate"], skillsExclude: ["security-threat-model"] } },
   { id: "v16-tool-douyin-video-extension-qa", task: "开启子代理，测试 /Users/sjp1212/Documents/工具/抖音视频在线下载插件 这个 Chrome MV3 媒体提取插件，只做 manifest/JS/popup HTML 静态验证，不登录抖音、不下载真实视频", expected: { taskKind: "chrome-extension-qa", agentIn: ["test-automator", "frontend-developer", "browser-debugger", "qa-expert"], executionMode: "staged", requiresTests: true, skillsInclude: ["agyb-essentials:lint-and-validate"], skillsExclude: ["security-best-practices", "security-threat-model"] } },
   { id: "v16-tool-python-rpa-local-qa", task: "开启子代理，完整测试 /Users/sjp1212/Documents/工具/抖音rpa 这个 Python PySide6 Playwright RPA：使用 .venv 运行 doctor、QT_QPA_PLATFORM=offscreen flow-smoke 和 pytest，不扫码登录、不做真实抖音业务动作", expected: { taskKind: "desktop-rpa-qa", agentIn: ["test-automator", "qa-expert", "debugger"], executionMode: "staged", requiresTests: true, skillsInclude: ["playwright", "agyb-essentials:lint-and-validate"], skillsExclude: ["security-best-practices", "security-threat-model"] } },
+  { id: "v17-douyin-rpa-readonly-gap-audit", task: "开启子代理，只读验证 /Users/sjp1212/Documents/工具/抖音rpa 当前 RPA真实业务流程强化 是否还有接口缺口、测试缺口或安全风险；不要改文件；重点检查 task_actions 数据层和 UI/history 调用是否一致、AutomationEngine 动作审计/上限/DM多会话是否完整、main.py 是否有 live test/flow smoke 入口且不会默认触发真实互动；不要运行真实抖音互动", expected: { taskKind: "desktop-rpa-qa", agentIn: ["test-automator", "qa-expert", "debugger"], executionMode: "staged", requiresTests: true, skillsInclude: ["playwright", "agyb-essentials:lint-and-validate"], requiresReview: true } },
   { id: "v16-tool-comfyui-validate-no-queue", task: "开启子代理，测试 /Users/sjp1212/Documents/工具/调用comfyui 这个 ComfyUI wrapper，只运行 ./comfy status、models、validate workflows/text_to_image_api_template.json，不 queue、不生成、不触发付费 API 成本", expected: { taskKind: "comfyui-workflow-qa", agentIn: ["test-automator", "qa-expert", "workflow-orchestrator"], executionMode: "staged", requiresTests: true, skillsInclude: ["agyb-essentials:lint-and-validate"], skillsExclude: ["security-threat-model"] } },
   { id: "v16-tool-get-token-static-boundary", task: "开启子代理，只读审查 /Users/sjp1212/Documents/工具/get_token 这个 OAuth token 工具，做 python py_compile 和静态 no-secret-output 检查，不执行 OAuth、不输出 token", expected: { taskKind: "credential-tooling", agentIn: ["security-auditor", "security-engineer", "reviewer", "code-mapper"], executionMode: "staged", requiresTests: true, skillsInclude: ["security-best-practices", "agyb-essentials:lint-and-validate"], requiresReview: true } },
   { id: "v16-tool-transcription-artifact-inspection", task: "开启子代理，检查 /Users/sjp1212/Documents/工具/语音转录工具 的资料与产出脚本，只做 outputs/build_task_minutes_docx.py 语法检查并抽查现有 txt/srt/json/md 产物结构，不跑转录", expected: { taskKind: "artifact-inspection", agentIn: ["docs-researcher", "documentation-engineer", "research-analyst", "code-mapper"], executionMode: "staged", requiresTests: true, noImplementStage: true, skillsInclude: ["agyb-essentials:lint-and-validate"], skillsExclude: ["security-best-practices", "security-threat-model"] } },
