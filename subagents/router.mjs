@@ -5254,11 +5254,7 @@ function resolveProjectRootForMirror() {
   const fromPluginMirror = path.resolve(ROUTER_DIR, "../../../..");
   if (fs.existsSync(path.join(fromPluginMirror, "subagents", "router.mjs"))) return fromPluginMirror;
   const fromMain = path.resolve(ROUTER_DIR, "..");
-  const mainRouter = path.join(fromMain, "subagents", "router.mjs");
-  if (fs.existsSync(mainRouter) && path.resolve(mainRouter) !== path.resolve(fileURLToPath(import.meta.url))) return fromMain;
-  const sourceCheckoutRoot = path.resolve(ROUTER_DIR, "..");
-  const pluginMirrorRouter = path.join(sourceCheckoutRoot, "plugins/codex-subagent-router/scripts/subagents/router.mjs");
-  if (path.basename(ROUTER_DIR) === "subagents" && fs.existsSync(pluginMirrorRouter)) return sourceCheckoutRoot;
+  if (fs.existsSync(path.join(fromMain, "plugins/codex-subagent-router/scripts/subagents/router.mjs"))) return fromMain;
   return null;
 }
 
