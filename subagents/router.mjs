@@ -6199,16 +6199,7 @@ function runAppBoardTests() {
     assert(!Object.prototype.hasOwnProperty.call(plan, "judgeMode"), "app managed plan must hide judgeMode");
     assert(!Object.prototype.hasOwnProperty.call(plan, "candidateBudget"), "app managed plan must hide candidateBudget");
     assert(!Object.prototype.hasOwnProperty.call(plan, "cache"), "app managed plan must hide cache internals");
-    const contract = validateManagedPlanContract(plan);
-    assert(contract.ok, `app managed plan contract failed: ${contract.errors.join("; ")}`);
-    assertNoManagedLeak(plan.displayBoard, "app displayBoard");
-    assert(plan.displayBoard.headline.length <= 180, "app headline should stay readable");
-    for (const item of plan.displayBoard.userNarrative || []) assert(item.length <= 180, "app narrative item should stay readable");
-    for (const stage of plan.displayBoard.goalBoard || []) {
-      assert(stage.title && stage.agent && stage.status && stage.acceptance?.[0] && stage.nextTrigger, "app goal board should not render empty cells");
-      assert(stage.acceptance[0].length <= 100, "app acceptance should stay concise");
-      assert(stage.nextTrigger.length <= 120, "app next trigger should stay concise");
-    }
+    assertNoManagedInternalLeaks(plan, "app managed plan");
   }
   const credential = plans[2];
   assert(credential.displayBoard.safetyPanel.blockedChecks.some((item) => /OAuth|credential|auth cache/i.test(item)), "credential app board should show OAuth/credential blockers");
@@ -6226,12 +6217,7 @@ function runAppBoardTests() {
   assert(text.includes("| 阶段 | Agent | 状态 | 验收点 | 下一触发 |"), "managed --profile app text should render a stage table");
   assert(text.includes("```mermaid"), "managed --profile app text should include Mermaid");
   assert(!/judgeMode|candidateBudget|cache key|cacheKey/i.test(text), "managed app text should not expose internal routing fields");
-  assertNoManagedLeak(text, "managed app text");
-  assert(!/undefined|null/.test(text), "managed app text should not render undefined/null cells");
-  for (const line of text.split("\n").filter((item) => /^\|/.test(item) && !/^\|\s*-/.test(item))) {
-    const cells = line.split("|").slice(1, -1).map((cell) => cell.trim());
-    assert(cells.every(Boolean), `managed app text should not render empty table cells: ${line}`);
-  }
+  assertNoManagedInternalLeaks(text, "managed app text");
 
   const sensitiveTask = "开启子代理，审查 credential 工具，样例 access_token=abc123SECRET456、api_key=key_live_789 和 Bearer ghp_exampleSECRET000，不要输出 token";
   const sensitiveApp = managedDelegationPlan(deterministicManagedResult(sensitiveTask), { profile: "app" });
@@ -6239,6 +6225,7 @@ function runAppBoardTests() {
   const sensitiveJson = JSON.stringify({ sensitiveApp, sensitiveCompact });
   assert(sensitiveJson.includes("[REDACTED]"), "compact/app managed plans should show redaction markers for secret-shaped values");
   assert(!/abc123SECRET456|key_live_789|ghp_exampleSECRET000/.test(sensitiveJson), "compact/app managed plans must redact secret-shaped values recursively");
+  assertNoManagedInternalLeaks(sensitiveJson, "sensitive compact/app managed plans");
 
   console.log(JSON.stringify({
     pass: true,
