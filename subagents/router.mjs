@@ -6219,6 +6219,8 @@ function runAppBoardTests() {
   assert(highRisk.displayBoard.safetyPanel.requiresParentReview || highRisk.displayBoard.goalBoard.some((stage) => /复核|review/i.test(`${stage.title} ${stage.status}`)), "high-risk app board should keep review visible");
   const vague = plans[4];
   assert(vague.displayBoard.safetyPanel.state === "需要先问一个问题", "vague app board should show clarify-first state");
+  assert(/父级 Codex/.test(vague.displayBoard.headline), "vague app board should not headline a random specialist before clarification");
+  assert(!/Accounts Payable|accessibility|tester|auditor/i.test(vague.displayBoard.headline), "vague app board should suppress domain specialist names before clarification");
 
   const appAgency = managedDelegationPlan(deterministicManagedResult("开启子代理，做小红书社区种草和内容策略"), { profile: "app" });
   assert(appAgency.agentProvider === "agency-agents", `app board should preserve agency provider, got ${appAgency.agentProvider}`);
