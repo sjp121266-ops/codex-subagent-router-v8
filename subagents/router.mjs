@@ -5169,7 +5169,6 @@ function detectExecutionAdapter(stage = {}) {
 }
 
 const MANAGED_APP_REDACTION_PATTERN = /\b(judgeMode|judgeModel|candidateBudget|decisionTrace|rejectedCandidates|cacheKey|cache key|raw candidate scoring|providerPromptPreview|providerPromptPath|access_token|refresh_token|api[_-]?key|secret)\b/i;
-
 function collectDisplayBoardRedactionLeaks(value, trail = "displayBoard", leaks = []) {
   if (value == null) return leaks;
   if (typeof value === "string") {
@@ -5619,7 +5618,7 @@ function assert(condition, message) {
 const DISPLAY_BOARD_SCHEMA_VERSION = "display-board-v2";
 const MANAGED_INTERNAL_KEYS = ["judgeMode", "judgeModel", "candidateBudget", "cache", "cacheKey", "decisionTrace", "rejectedCandidates"];
 const MANAGED_INTERNAL_LEAK_PATTERN = /\b(judgeMode|judgeModel|candidateBudget|decisionTrace|rejectedCandidates|cacheKey|cache key|raw candidate scoring)\b/i;
-const MANAGED_SECRET_LEAK_PATTERN = /\b(sk-[A-Za-z0-9_-]{8,}|refresh_token\s*=|access_token\s*=|Authorization:\s*Bearer\s+|api[_-]?key\s*=|secret\s*=)\b/i;
+const MANAGED_SECRET_LEAK_PATTERN = /\b(sk-[A-Za-z0-9_-]{8,}|refresh_token\s*=|access_token\s*=|Authorization:\s*Bearer\s+|api[_-]?key\s*=|secret\s*=|[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})\b/i;
 
 function assertNoManagedLeak(value, label) {
   const text = typeof value === "string" ? value : JSON.stringify(value || "");
@@ -6148,6 +6147,7 @@ function runManagedContractTests() {
   const secretValidation = validateManagedPlanContract(secretBoard);
   assert(secretValidation.ok, `secret app board contract should remain valid: ${secretValidation.errors.join("; ")}`);
   assertNoManagedLeak(secretBoard.displayBoard, "secret app displayBoard");
+  assert((() => { const rawEmailBoard = JSON.parse(JSON.stringify(secretBoard)); rawEmailBoard.displayBoard.userNarrative.push("联系 user@example.com 继续处理。"); const rawEmailValidation = validateManagedPlanContract(rawEmailBoard); return !rawEmailValidation.ok && rawEmailValidation.errors.some((error) => /secret-like content/.test(error)); })(), "managed contract should reject raw emails in displayBoard");
 
   console.log(JSON.stringify({
     pass: true,
