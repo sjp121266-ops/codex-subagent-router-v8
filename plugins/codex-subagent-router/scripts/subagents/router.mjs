@@ -5,7 +5,6 @@ import process from "node:process";
 import crypto from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-
 const ROUTER_DIR = path.dirname(fileURLToPath(import.meta.url));
 const HOME = process.env.HOME;
 if (!HOME) throw new Error("HOME is required; set CODEX_HOME explicitly when running in a minimal environment.");
@@ -32,14 +31,13 @@ const SKILL_REGISTRY_SNAPSHOT_PATH = runtimePath("skill-registry-snapshot.json")
 const EVAL_RESULTS_PATH = runtimePath("last-eval-results.json");
 const SKILL_REPAIR_RESULTS_PATH = runtimePath("last-skill-repair-results.json");
 const CODEX_CLI = process.env.CODEX_CLI || "codex";
-const ROUTER_METADATA_VERSION = 1601;
+const ROUTER_METADATA_VERSION = 1602;
 const DEFAULT_PROMPT_BUDGETS = {
   compact: 1800,
   balanced: 3200,
   app: 2600,
   full: 12000,
 };
-
 const DEFAULT_COST_POLICY = {
   budgets: ["economy", "balanced", "premium", "critical"],
   highRiskIntents: ["security", "review", "planning", "devops", "data-ai"],
@@ -54,11 +52,10 @@ const DEFAULT_COST_POLICY = {
   cache: {
     maxEntries: 200,
     routeMaxEntries: 300,
-    stableRouteKinds: ["release-publishing", "repo-maintenance", "research-only", "product-analysis", "engineering-analysis"],
+    stableRouteKinds: ["release-publishing", "repo-maintenance", "research-only", "product-analysis", "content-marketing", "engineering-analysis"],
     snapshotMaxAgeHours: 168,
   },
 };
-
 const DEFAULT_TASK_KIND_POLICY = {
   "web-app-qa": {
     keywords: [
@@ -172,6 +169,7 @@ const DEFAULT_TASK_KIND_POLICY = {
     preferredAgents: ["sre-engineer", "incident-responder", "debugger", "security-engineer", "devops-engineer"],
     allowedPhases: ["planning", "research", "debugging", "testing", "review", "implementation", "matched"],
   },
+  "content-marketing": { keywords: ["小红书|xiaohongshu|rednote|red note|抖音|douyin|tiktok|bilibili|b\\s*站|哔哩|微信公号|公众号|wechat official|微博|weibo|知乎|zhihu|内容营销|内容策略|社媒|种草|爆款笔记|笔记结构|视频脚本|短视频|直播话术|带货脚本|选题策略"], preferredAgents: ["xiaohongshu-specialist", "douyin-strategist", "bilibili-content-strategist", "wechat-official-account-manager", "weibo-strategist", "zhihu-strategist", "content-creator", "social-media-strategist"], allowedPhases: ["planning", "research", "design", "review", "matched"] },
   "orchestration-design": {
     keywords: [
       "subagent-router|router|routing|dispatch|scheduler|scheduling|handoff|fallback|quality gate|judge matrix|goal mode|agent routing|multi-agent|multiple subagents|调度|调度器|路由器|路由|调用速度|调用的速度|算法调度|质量门|回退|委派|编排|多代理|多智能体|多个子代理|goal 模式",
@@ -209,7 +207,6 @@ const DEFAULT_HIGH_RISK_RULES = [
   { id: "current-diff", pattern: "current diff|当前\\s*diff|git diff|uncommitted|working tree|当前分支" },
   { id: "incident", pattern: "incident|outage|rollback|downtime|线上事故|生产事故|故障|回滚|宕机" },
 ];
-
 const MODEL_MAP = new Map([
   ["gpt-5.3-codex-spark", "gpt-5.3-codex"],
   ["gpt-5.3-codex", "gpt-5.3-codex"],
@@ -224,14 +221,12 @@ const MODEL_ORDER = new Map([
   ["gpt-5.4", 3],
   ["gpt-5.5", 4],
 ]);
-
 const EFFORT_ORDER = new Map([
   ["low", 1],
   ["medium", 2],
   ["high", 3],
   ["xhigh", 4],
 ]);
-
 const DEFAULT_SKILL_RULES = [
   {
     reason: "Web, Vite, Next, React, static HTML, or browser-facing local app QA",
@@ -499,8 +494,8 @@ const INTENT_RULES = [
   {
     id: "marketing",
     label: "marketing, growth, social, community, or content strategy",
-    patterns: [[/marketing|growth|seo|content strategy|content marketing|social|reddit|tiktok|douyin|campaign|community|营销|增长|内容策略|内容营销|社媒|社区|小红书|抖音/i, 46]],
-    preferredAgents: ["growth-hacker", "seo-specialist", "content-creator", "reddit-community-builder", "social-media-strategist"],
+    patterns: [[/marketing|growth|seo|content strategy|content marketing|social|reddit|tiktok|douyin|bilibili|b\s*站|campaign|community|营销|增长|内容策略|内容营销|社媒|社区|小红书|抖音|哔哩/i, 46]],
+    preferredAgents: ["xiaohongshu-specialist", "douyin-strategist", "bilibili-content-strategist", "content-creator", "growth-hacker", "seo-specialist", "reddit-community-builder", "social-media-strategist"],
     categories: ["marketing", "paid-media"],
     preferredSandbox: "read-only",
   },
@@ -577,23 +572,18 @@ Environment:
   CODEX_HOME   Defaults to ~/.codex
 `);
 }
-
 function readText(file) {
   return fs.readFileSync(file, "utf8");
 }
-
 function hashText(text) {
   return crypto.createHash("sha256").update(String(text || "")).digest("hex");
 }
-
 function byteLength(text) {
   return Buffer.byteLength(String(text || ""), "utf8");
 }
-
 function fileHash(file) {
   return fs.existsSync(file) ? hashText(readText(file)) : "";
 }
-
 function estimatedTokensForBytes(bytes) {
   return Math.ceil(Number(bytes || 0) / 4);
 }
@@ -1181,9 +1171,12 @@ function agencyProviderBoost(agent, task, intents) {
   let boost = 0;
   if (intentIds.some((id) => ["marketing", "sales", "design", "product"].includes(id))) boost += 44;
   if (/reddit|community|社区/i.test(cleaned) && /reddit|community/.test(text)) boost += 80;
-  if (/小红书|xiaohongshu/i.test(cleaned) && /xiaohongshu/.test(text)) boost += 220;
-  if (/抖音|douyin|tiktok/i.test(cleaned) && /douyin|tiktok/.test(text)) boost += 220;
-  if (/bilibili|哔哩|b站/i.test(cleaned) && /bilibili/.test(text)) boost += 80;
+  if (/小红书|xiaohongshu|rednote|red note/i.test(cleaned) && /xiaohongshu/.test(text)) boost += 320;
+  if (/抖音|douyin|tiktok/i.test(cleaned) && /douyin|tiktok/.test(text)) boost += 320;
+  if (/bilibili|哔哩|b\s*站/i.test(cleaned) && /bilibili/.test(text)) boost += 320;
+  if (/微信公号|公众号|wechat official/i.test(cleaned) && /wechat-official-account/.test(text)) boost += 260;
+  if (/微博|weibo/i.test(cleaned) && /weibo/.test(text)) boost += 260;
+  if (/知乎|zhihu/i.test(cleaned) && /zhihu/.test(text)) boost += 260;
   if (/seo|growth|增长|营销/i.test(cleaned) && /seo|growth|marketing/.test(text)) boost += 44;
   if (/adoption|churn|用户|产品|需求|feedback|反馈/i.test(cleaned) && /product|research|feedback|analyst/.test(text)) boost += 38;
   if (/trend|market trend|市场趋势|竞品|机会/i.test(cleaned) && /trend-researcher/.test(text)) boost += 160;
@@ -1262,6 +1255,8 @@ function confidenceFor(ranked, intents) {
   const top = ranked[0]?.score || 0;
   const second = ranked[1]?.score || 0;
   const margin = top - second;
+  const topAgent = ranked[0]?.agent;
+  if (topAgent?.provider === "agency-agents" && top >= 120 && intents.some((intent) => ["marketing", "design", "product", "sales", "support"].includes(intent.id))) return "high";
   if (intents.length === 0 || top < 55) return "low";
   if (top >= 135 && margin >= 24) return "high";
   if (top >= 78 && margin >= 8) return "medium";
@@ -1459,6 +1454,7 @@ function classifyTaskKind(task, routeLike = {}) {
   if (hasStaticArtifactInspectionSignal(cleaned) && !hasSecurityReviewSignal(cleaned)) return "static-artifact-inspection";
   if (hasArtifactInspectionSignal(cleaned) && !hasSecurityReviewSignal(cleaned)) return "artifact-inspection";
   if (hasWebAppQaSignal(task) && !hasSecurityReviewSignal(cleaned)) return "web-app-qa";
+  if (patternListMatches(policy["content-marketing"]?.keywords, cleaned)) return "content-marketing";
   if (hasExplicitSecurityRiskSignal(cleaned) && analysisSignals) return "engineering-analysis";
   if (debugSignals) return hasWriteVerb ? "engineering-execution" : "engineering-analysis";
   if (productSignals && (noWrite || analysisSignals || !hasWriteVerb)) return "product-analysis";
@@ -1761,7 +1757,7 @@ function computeTaskProfile(task, routeLike = {}) {
     ? (hasWriteVerb && !noWrite && taskKind !== "artifact-inspection" ? "possible" : "none")
     : taskKind === "android-qa" && !hasExplicitNoWriteDirective(cleaned)
     ? (writeIntent === "none" ? "possible" : writeIntent)
-    : ["product-analysis", "research-only"].includes(taskKind) || noWrite ? "none" : writeIntent;
+    : ["product-analysis", "content-marketing", "research-only"].includes(taskKind) || noWrite ? "none" : writeIntent;
   return { taskKind, complexity, risk, scope, writeIntent: finalWriteIntent, signals: unique(signals) };
 }
 
@@ -2729,10 +2725,10 @@ function routeTask(task, options = {}) {
       .slice(0, Math.max(5, candidateLimit));
   }
   const preferredRanked = ranked.find((entry) => taskKindPreferred.some((agent) => agent.name === entry.agent.name));
-  const kindPrefersOverride = ["orchestration-design", "product-analysis", "research-only", "release-publishing", "repo-maintenance", "incident-response", ...strongToolQaKinds].includes(taskKind);
+  const kindPrefersOverride = ["orchestration-design", "product-analysis", "content-marketing", "research-only", "release-publishing", "repo-maintenance", "incident-response", ...strongToolQaKinds].includes(taskKind);
   const topRanked = ranked[0];
   const exactAgencySpecialist =
-    /小红书|xiaohongshu|抖音|douyin|tiktok|ux researcher|用户访谈|ui design|ui designer|accessibility|可访问|api tester|接口测试|customer service|客服|市场趋势|竞品/i.test(cleanTask(task));
+    /小红书|xiaohongshu|rednote|red note|抖音|douyin|tiktok|bilibili|哔哩|b\s*站|微信公号|公众号|微博|知乎|ux researcher|用户访谈|ui design|ui designer|accessibility|可访问|api tester|接口测试|customer service|客服|市场趋势|竞品/i.test(cleanTask(task));
   const agencySpecialistWon =
     topRanked?.agent.provider === "agency-agents"
     && (!preferredRanked || topRanked.score >= preferredRanked.score + 24)
@@ -5766,8 +5762,9 @@ const EVAL_CASES = [
   { id: "v15-agency-reddit-growth", task: "开启子代理，帮我做 Reddit 社区增长策略", expected: { provider: "agency-agents", agentIn: ["agency:reddit-community-builder"], taskKind: "product-analysis", role: "explorer", sandbox: "read-only" } },
   { id: "v15-agency-social-media", task: "开启子代理，制定 social media 社媒内容增长策略", expected: { provider: "agency-agents", agentIn: ["agency:social-media-strategist", "agency:growth-hacker", "agency:content-creator"], role: "explorer", sandbox: "read-only" } },
   { id: "v15-agency-seo", task: "开启子代理，规划 SEO 内容增长和关键词策略", expected: { provider: "agency-agents", agentIn: ["agency:seo-specialist", "agency:growth-hacker", "agency:content-creator"], role: "explorer", sandbox: "read-only" } },
-  { id: "v15-agency-xiaohongshu", task: "开启子代理，做小红书社区种草和内容策略", expected: { provider: "agency-agents", agentIn: ["agency:xiaohongshu-specialist"], role: "explorer", sandbox: "read-only" } },
-  { id: "v15-agency-douyin", task: "开启子代理，规划抖音短视频增长策略", expected: { provider: "agency-agents", agentIn: ["agency:douyin-strategist", "agency:tiktok-strategist"], role: "explorer", sandbox: "read-only" } },
+  { id: "v15-agency-xiaohongshu", task: "开启子代理，做小红书社区种草和内容策略", expected: { provider: "agency-agents", recommended: "agency:xiaohongshu-specialist", taskKind: "content-marketing", role: "explorer", sandbox: "read-only" } },
+  { id: "v15-agency-douyin", task: "开启子代理，规划抖音短视频增长策略", expected: { provider: "agency-agents", recommended: "agency:douyin-strategist", taskKind: "content-marketing", role: "explorer", sandbox: "read-only" } },
+  { id: "v18-agency-bilibili-script", task: "开启子代理，写 B 站视频脚本并优化标题封面方向", expected: { provider: "agency-agents", recommended: "agency:bilibili-content-strategist", taskKind: "content-marketing", role: "explorer", sandbox: "read-only" } },
   { id: "v15-agency-content-creator", task: "开启子代理，设计内容营销日历和选题策略", expected: { provider: "agency-agents", agentIn: ["agency:content-creator", "agency:social-media-strategist"], role: "explorer", sandbox: "read-only" } },
   { id: "v15-agency-growth-hacker", task: "开启子代理，制定低成本 growth hacking 增长实验", expected: { provider: "agency-agents", agentIn: ["agency:growth-hacker", "agency:carousel-growth-engine"], role: "explorer", sandbox: "read-only" } },
   { id: "v15-agency-product-adoption", task: "开启子代理，只读分析产品 adoption 下降原因，不要改代码", expected: { provider: "agency-agents", agentIn: ["agency:product-manager", "agency:feedback-synthesizer", "agency:trend-researcher"], taskKind: "product-analysis", role: "explorer", sandbox: "read-only", noImplementStage: true, requiresTests: false } },
@@ -5800,6 +5797,7 @@ function evaluateCase(testCase) {
   const suggested = unique([...(route.suggestedSkills || []), ...skills]);
   const check = (condition, message) => { if (!condition) failures.push(message); };
   if (expected.agentIn) check(expected.agentIn.includes(route.recommended.name) || expected.agentIn.some((name) => agentNames.includes(name)), `expected agent in ${expected.agentIn.join(", ")}, got ${route.recommended.name}`);
+  if (expected.recommended) check(route.recommended.name === expected.recommended, `expected recommended ${expected.recommended}, got ${route.recommended.name}`);
   if (expected.provider) check(route.recommended.provider === expected.provider, `expected provider ${expected.provider}, got ${route.recommended.provider}`);
   if (expected.intentIncludes) for (const intent of expected.intentIncludes) check(intentIds.includes(intent), `missing intent ${intent}`);
   if (expected.role) check(route.recommended.runtimeRole === expected.role, `expected role ${expected.role}, got ${route.recommended.runtimeRole}`);

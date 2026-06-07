@@ -1,5 +1,5 @@
 {
-  "version": 17,
+  "version": 18,
   "skillRules": [
     {
       "id": "web-app-qa",
@@ -529,7 +529,7 @@
     "cache": {
       "maxEntries": 200,
       "routeMaxEntries": 300,
-      "stableRouteKinds": ["release-publishing", "repo-maintenance", "research-only", "product-analysis", "engineering-analysis"],
+      "stableRouteKinds": ["release-publishing", "repo-maintenance", "research-only", "product-analysis", "content-marketing", "engineering-analysis"],
       "snapshotMaxAgeHours": 168
     }
   },
@@ -613,6 +613,11 @@
       "keywords": ["incident|outage|production log|prod log|rollback|hotfix|sev[0-9]?|downtime|sre|线上事故|生产事故|线上故障|生产故障|线上日志|生产日志|回滚|紧急修复|宕机|告警"],
       "preferredAgents": ["sre-engineer", "incident-responder", "debugger", "security-engineer", "devops-engineer"],
       "allowedPhases": ["planning", "research", "debugging", "testing", "review", "implementation", "matched"]
+    },
+    "content-marketing": {
+      "keywords": ["小红书|xiaohongshu|rednote|red note|抖音|douyin|tiktok|bilibili|b\\s*站|哔哩|微信公号|公众号|wechat official|微博|weibo|知乎|zhihu|内容营销|内容策略|社媒|种草|爆款笔记|笔记结构|视频脚本|短视频|直播话术|带货脚本|选题策略"],
+      "preferredAgents": ["xiaohongshu-specialist", "douyin-strategist", "bilibili-content-strategist", "wechat-official-account-manager", "weibo-strategist", "zhihu-strategist", "content-creator", "social-media-strategist"],
+      "allowedPhases": ["planning", "research", "design", "review", "matched"]
     },
     "orchestration-design": {
       "keywords": ["subagent-router|router|routing|dispatch|scheduler|scheduling|handoff|fallback|quality gate|judge matrix|goal mode|agent routing|multi-agent|multiple subagents|调度|调度器|路由器|路由|调用速度|调用的速度|算法调度|质量门|回退|委派|编排|多代理|多智能体|多个子代理|goal 模式"],
