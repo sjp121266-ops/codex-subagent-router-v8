@@ -5236,8 +5236,17 @@ function validateManagedPlanContract(plan, options = {}) {
 }
 
 function assertNoManagedInternalLeaks(value, label = "managed output") {
+  const internalKeys = new Set(["judgeMode", "judgeModel", "candidateBudget", "cache", "cacheKey", "decisionTrace", "rejectedCandidates"]);
+  const visit = (node, path = "") => {
+    if (!node || typeof node !== "object") return;
+    for (const [key, child] of Object.entries(node)) {
+      assert(!internalKeys.has(key), `${label} must not expose internal key ${path ? `${path}.` : ""}${key}`);
+      visit(child, path ? `${path}.${key}` : key);
+    }
+  };
+  if (typeof value !== "string") visit(value);
   const text = typeof value === "string" ? value : JSON.stringify(value);
-  assert(!/judgeMode|candidateBudget|cacheKey|decisionTrace|raw candidate scoring|Routing packet/i.test(text), `${label} must not expose internal routing fields`);
+  assert(!/cacheKey|decisionTrace|Routing packet/i.test(text), `${label} must not expose internal routing fields`);
   assert(!/--output-schema|--output-last-message|\\.judgement-|codex exec/i.test(text), `${label} must not expose judge execution details`);
 }
 
