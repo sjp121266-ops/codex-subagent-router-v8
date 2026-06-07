@@ -6025,10 +6025,23 @@ function runManagedContractTests() {
   assert(highRisk.executionContract.mustReview, "high-risk write task must review");
   assert(!Object.prototype.hasOwnProperty.call(highRisk, "candidateBudget"), "managed contract must hide candidateBudget");
   assert(!Object.prototype.hasOwnProperty.call(highRisk, "cache"), "managed contract must hide raw cache");
+  assertManagedPlanRedaction(highRisk, "high-risk managed plan");
+
+  const compactHighRisk = managedDelegationPlan(deterministicManagedResult("开启子代理，修复线上生产 API 鉴权事故并补测试"), { profile: "compact" });
+  assertManagedPlanRedaction(compactHighRisk, "compact high-risk managed plan");
+  assert(compactHighRisk.displayBoard.goalBoard.length <= 4, "compact displayBoard should stay concise");
+  assert(compactHighRisk.displayBoard.goalBoard.every((stage) => stage.acceptance?.length >= 1 && stage.nextTrigger), "compact displayBoard stages need acceptance and next trigger text");
 
   const research = managedDelegationPlan(deterministicManagedResult("开启子代理，只调研官方文档确认 API 用法，不要改代码"));
   assert(research.executionContract.writeIntent === "none", "research-only managed plan must be no-write");
   assert(!research.goalLoop.some((stage) => /implement|mitigate|maintain/i.test(stage.goal)), "research-only managed plan must not implement");
+  assertManagedPlanRedaction(research, "research managed plan");
+
+  const agency = managedDelegationPlan(deterministicManagedResult("开启子代理，帮我做 Reddit 社区增长策略"), { profile: "compact" });
+  assert(agency.agentProvider === "agency-agents", `agency sample should preserve provider selection, got ${agency.agentProvider}`);
+  assert(agency.promptHydrationPlan?.providerPromptPath, "agency compact plan should keep provider prompt as a reference");
+  assert(agency.promptHydrationPlan.providerPromptBytes > agency.providerPromptPreview.length, "agency compact plan should not inline full provider prompt");
+  assertManagedPlanRedaction(agency, "agency compact managed plan");
 
   console.log(JSON.stringify({
     pass: true,
@@ -6042,6 +6055,14 @@ function runManagedContractTests() {
       mode: research.mode,
       taskKind: research.executionContract.taskKind,
       writeIntent: research.executionContract.writeIntent,
+    },
+    compact: {
+      stages: compactHighRisk.displayBoard.goalBoard.length,
+      firstAcceptance: compactHighRisk.displayBoard.goalBoard[0]?.acceptance?.[0],
+    },
+    agency: {
+      provider: agency.agentProvider,
+      promptReference: agency.promptHydrationPlan.providerPromptPath,
     },
   }, null, 2));
 }
