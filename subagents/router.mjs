@@ -3920,8 +3920,11 @@ function compactManagedPlanForProfile(plan, profile = "compact") {
     } : plan.executionAdapter,
     nextAction: plan.nextAction ? {
       ...plan.nextAction,
-      question: plan.nextAction.question ? redactForDisplay(plan.nextAction.question) : plan.nextAction.question,
-      reason: plan.nextAction.reason ? redactForDisplay(plan.nextAction.reason) : plan.nextAction.reason,
+      question: displayText(plan.nextAction.question, 180),
+      reason: displayText(plan.nextAction.reason, 180),
+      stageId: displayText(plan.nextAction.stageId, 80),
+      agent: displayText(plan.nextAction.agent, 80),
+      agentDisplayName: displayText(plan.nextAction.agentDisplayName, 80),
       executionAdapter: plan.nextAction.executionAdapter,
     } : plan.nextAction,
     userSummary: plan.userSummary ? {
@@ -4743,9 +4746,10 @@ function printManagedDelegation(result, mode = "text", options = {}) {
   console.log("");
   console.log("| 阶段 | Agent | 状态 | 验收点 | 下一触发 |");
   console.log("| --- | --- | --- | --- | --- |");
+  const tableCell = (value) => displayText(value, 140).replace(/\|/g, "\\|").replace(/`/g, "'");
   for (const stage of board.goalBoard || []) {
     const acceptance = (stage.acceptance || []).join("; ") || "记录阶段证据";
-    console.log(`| ${stage.title} | ${stage.agent || "parent-codex"} | ${stage.status} | ${acceptance} | ${stage.nextTrigger || "完成后继续"} |`);
+    console.log(`| ${tableCell(stage.title)} | ${tableCell(stage.agent || "parent-codex")} | ${tableCell(stage.status)} | ${tableCell(acceptance)} | ${tableCell(stage.nextTrigger || "完成后继续")} |`);
   }
   console.log("");
   console.log("## 安全边界");
@@ -4754,7 +4758,7 @@ function printManagedDelegation(result, mode = "text", options = {}) {
   if (board.safetyPanel?.safeChecks?.length) console.log(`- 可安全执行：${board.safetyPanel.safeChecks.join("；")}`);
   if (board.safetyPanel?.blockedChecks?.length) console.log(`- 明确阻塞：${board.safetyPanel.blockedChecks.join("；")}`);
   if (board.safetyPanel?.requiresParentReview) console.log("- 需要父级 Codex 复核后再派发写入或高风险阶段。");
-  if (plan.clarificationQuestion) console.log(`- 需要先问：${plan.clarificationQuestion}`);
+  if (plan.clarificationQuestion) console.log(`- 需要先问：${displayText(plan.clarificationQuestion, 180)}`);
   if (board.patternPanel?.selected?.length) {
     console.log("");
     console.log("## 协作模式");
@@ -4763,7 +4767,7 @@ function printManagedDelegation(result, mode = "text", options = {}) {
     if (board.patternPanel.contextPolicy) console.log(`- 上下文策略：${board.patternPanel.contextPolicy}`);
   }
   console.log("");
-  console.log(`下一步：${plan.nextAction.type}${plan.nextAction.stageId ? ` (${plan.nextAction.stageId})` : ""}`);
+  console.log(`下一步：${displayText(plan.nextAction.type, 60)}${plan.nextAction.stageId ? ` (${displayText(plan.nextAction.stageId, 80)})` : ""}`);
   if (board.mermaidFlow) {
     console.log("");
     console.log("```mermaid");
