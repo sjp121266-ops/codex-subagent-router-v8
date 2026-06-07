@@ -5186,11 +5186,12 @@ function validateManagedPlanContract(plan, options = {}) {
   }
   if (plan.displayBoard) {
     addError(/司南/.test(plan.displayBoard.headline || ""), "displayBoard headline must be Chinese and branded");
+    addError(plan.displayBoard.schema?.version === DISPLAY_BOARD_SCHEMA_VERSION, "displayBoard missing schema version");
+    addError(Array.isArray(plan.displayBoard.schema?.required) && plan.displayBoard.schema.required.includes("safetyPanel"), "displayBoard schema missing required fields");
     addError(Array.isArray(plan.displayBoard.userNarrative) && plan.displayBoard.userNarrative.length >= 3, "displayBoard missing user narrative");
     addError(Array.isArray(plan.displayBoard.goalBoard) && plan.displayBoard.goalBoard.length >= 1, "displayBoard missing goal board");
     addError(plan.displayBoard.safetyPanel && typeof plan.displayBoard.safetyPanel.requiresParentReview === "boolean", "displayBoard missing safety review state");
-    const displayLeaks = collectDisplayBoardRedactionLeaks(plan.displayBoard);
-    addError(displayLeaks.length === 0, `displayBoard leaks internal or sensitive details: ${displayLeaks.join("; ")}`);
+    addError(!/Bearer\s+[A-Za-z0-9._~+/=-]+|\/Users\/[^\s"'`，。；)]+/.test(JSON.stringify(plan.displayBoard)), "displayBoard leaks credentials or absolute user paths");
     addWarning(Boolean(plan.displayBoard.mermaidFlow), "displayBoard has no Mermaid flow");
   }
   if (plan.openSourcePatterns) {
@@ -6128,6 +6129,7 @@ function runAppBoardTests() {
     assert(plan.displayBoard, `${plan.planningBrief?.objective}: missing displayBoard`);
     assert(/司南/.test(plan.displayBoard.headline), "displayBoard headline should be Chinese and branded");
     assert(plan.displayBoard.userNarrative?.length >= 3, "displayBoard should include a concise Chinese narrative");
+    assert(plan.displayBoard.schema?.version === DISPLAY_BOARD_SCHEMA_VERSION, "displayBoard should expose schema version");
     assert(plan.displayBoard.goalBoard?.length >= 1, "displayBoard should include a goal board");
     assert(plan.displayBoard.safetyPanel, "displayBoard should include a safety panel");
     assert(typeof plan.displayBoard.safetyPanel.requiresParentReview === "boolean", "safety panel should expose review state");
@@ -6139,6 +6141,9 @@ function runAppBoardTests() {
   }
   const credential = plans[2];
   assert(credential.displayBoard.safetyPanel.blockedChecks.some((item) => /OAuth|token|auth cache/i.test(item)), "credential app board should show OAuth/token blockers");
+  const redacted = managedDelegationPlan(deterministicManagedResult("开启子代理，只读审查 /Users/demo/.codex/auth.json，不执行 OAuth，Authorization: Bearer sk-demoSECRET12345678，不输出 token"), { profile: "app" });
+  assert(!JSON.stringify(redacted.displayBoard).includes("/Users/demo"), "displayBoard should redact absolute local paths");
+  assert(!/sk-demoSECRET|Bearer\s+sk-/i.test(JSON.stringify(redacted.displayBoard)), "displayBoard should redact credential-like values");
   const highRisk = plans[3];
   assert(highRisk.displayBoard.safetyPanel.requiresParentReview || highRisk.displayBoard.goalBoard.some((stage) => /复核|review/i.test(`${stage.title} ${stage.status}`)), "high-risk app board should keep review visible");
   const vague = plans[4];
@@ -6455,6 +6460,8 @@ function runExecutionAdapterTests() {
   assert(["native-custom-agent", "generic-role-bridge"].includes(ready.executionAdapter.mode), `unexpected adapter mode ${ready.executionAdapter.mode}`);
   assert(ready.executionAdapter.bridgeAvailable, "generic explorer/worker bridge must be available");
   assert(ready.executionAdapter.bridgeRole === ready.nextAction.role, "adapter bridgeRole should match next action role");
+  assert(ready.executionAdapter.providerTransport, "execution adapter must expose provider transport");
+  assert(ready.executionAdapter.traceSafeFields?.includes("providerTransport"), "execution adapter must define trace-safe fields");
   assert(ready.nextAction.executionAdapter?.mode === ready.executionAdapter.mode, "nextAction must carry adapter mode");
   assert(ready.executionContract.executionAdapterMode === ready.executionAdapter.mode, "executionContract must carry adapter mode");
   assert(ready.parentResponsibilities.some((item) => item.includes("delegationPrompt")), "parent responsibilities must explain delegationPrompt bridge");
@@ -6471,6 +6478,7 @@ function runExecutionAdapterTests() {
       bridgeRole: ready.executionAdapter.bridgeRole,
       promptInjectionRequired: ready.executionAdapter.promptInjectionRequired,
       codexExecAvailable: ready.executionAdapter.codexExecAvailable,
+      providerTransport: ready.executionAdapter.providerTransport,
     },
     readOnlyAdapter: readOnly.executionAdapter,
   }, null, 2));
