@@ -530,7 +530,7 @@ Usage:
   router.mjs list [query]
   router.mjs route [--json|--brief] <task>
   router.mjs judge [--json|--verbose|--explain|--offline] [--budget economy|balanced|premium|critical] [--no-cache] [--force-model] <task>
-  router.mjs managed [--json] [--profile compact|balanced|app|full] <task>
+  router.mjs managed [--json] [--offline] [--profile compact|balanced|app|full] <task>
   router.mjs prompt <agent-name> <task> [--hydrate reference|summary|hybrid|full] [--budget N]
   router.mjs inspect-context [--json] [--profile compact|balanced|app|full] <task>
   router.mjs refresh-agent-index
@@ -5242,7 +5242,11 @@ function resolveProjectRootForMirror() {
   const fromPluginMirror = path.resolve(ROUTER_DIR, "../../../..");
   if (fs.existsSync(path.join(fromPluginMirror, "subagents", "router.mjs"))) return fromPluginMirror;
   const fromMain = path.resolve(ROUTER_DIR, "..");
-  if (fs.existsSync(path.join(fromMain, "plugins/codex-subagent-router/scripts/subagents/router.mjs"))) return fromMain;
+  const mainRouter = path.join(fromMain, "subagents", "router.mjs");
+  if (fs.existsSync(mainRouter) && path.resolve(mainRouter) !== path.resolve(fileURLToPath(import.meta.url))) return fromMain;
+  const sourceCheckoutRoot = path.resolve(ROUTER_DIR, "..");
+  const pluginMirrorRouter = path.join(sourceCheckoutRoot, "plugins/codex-subagent-router/scripts/subagents/router.mjs");
+  if (path.basename(ROUTER_DIR) === "subagents" && fs.existsSync(pluginMirrorRouter)) return sourceCheckoutRoot;
   return null;
 }
 
