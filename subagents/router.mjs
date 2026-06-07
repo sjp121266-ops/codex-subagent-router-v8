@@ -6241,7 +6241,11 @@ function runAppBoardTests() {
   assert(text.includes("```mermaid"), "managed --profile app text should include Mermaid");
   assert(!/judgeMode|candidateBudget|cache key|cacheKey/i.test(text), "managed app text should not expose internal routing fields");
   assertNoManagedLeak(text, "managed app text");
-  assert(!/\|\s*(undefined|null)?\s*\|/.test(text), "managed app text should not render empty table cells");
+  assert(!/undefined|null/.test(text), "managed app text should not render undefined/null cells");
+  for (const line of text.split("\n").filter((item) => /^\|/.test(item) && !/^\|\s*-/.test(item))) {
+    const cells = line.split("|").slice(1, -1).map((cell) => cell.trim());
+    assert(cells.every(Boolean), `managed app text should not render empty table cells: ${line}`);
+  }
 
   const sensitiveTask = "开启子代理，审查 credential 工具，样例 access_token=abc123SECRET456、api_key=key_live_789 和 Bearer ghp_exampleSECRET000，不要输出 token";
   const sensitiveApp = managedDelegationPlan(deterministicManagedResult(sensitiveTask), { profile: "app" });
