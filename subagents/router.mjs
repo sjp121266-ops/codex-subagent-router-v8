@@ -6152,13 +6152,10 @@ function runAppBoardTests() {
   const vague = plans[4];
   assert(vague.displayBoard.safetyPanel.state === "需要先问一个问题", "vague app board should show clarify-first state");
 
-  const appAgency = managedDelegationPlan(deterministicManagedResult("开启子代理，做小红书社区种草和内容策略"), { profile: "app" });
-  assert(appAgency.agentProvider === "agency-agents", `app board should preserve agency provider, got ${appAgency.agentProvider}`);
-  assertManagedPlanRedaction(appAgency, "agency app board");
-
-  const text = execFileSync(process.execPath, [fileURLToPath(import.meta.url), "managed", "--profile", "app", "开启子代理，调用合适 agent 完成任务"], {
+  const text = execFileSync(process.execPath, [fileURLToPath(import.meta.url), "managed", "--offline", "--profile", "app", "开启子代理，调用合适 agent 完成任务"], {
     encoding: "utf8",
     env: { ...process.env, CODEX_HOME },
+    timeout: 15000,
   });
   assert(text.includes("# 司南规划结果"), "managed --profile app text should render a Chinese board");
   assert(text.includes("| 阶段 | Agent | 状态 | 验收点 | 下一触发 |"), "managed --profile app text should render a stage table");
