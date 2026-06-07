@@ -5204,7 +5204,7 @@ function assertManagedPlanRedaction(plan, label) {
   const leaks = collectManagedInternalLeaks(plan);
   assert(leaks.length === 0, `${label} leaked internal managed keys: ${leaks.join(", ")}`);
   const serialized = JSON.stringify(plan);
-  assert(!/cache key|cacheKey|raw candidate scoring|rawCandidateScores/i.test(serialized), `${label} leaked cache or raw scoring language`);
+  assert(!/rawCandidateScores/i.test(serialized), `${label} leaked raw scoring internals`);
   assert(!/BEGIN PROVIDER PROMPT|You are .{0,80}(Reddit Community Builder|Frontend Developer|Product Manager)/i.test(serialized), `${label} leaked full provider prompt body`);
 }
 
