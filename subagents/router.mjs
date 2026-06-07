@@ -562,6 +562,7 @@ Usage:
   router.mjs test-context-budget
   router.mjs test-prompt-hydration
   router.mjs test-agent-index
+  router.mjs test-mirror-parity
   router.mjs cache-status [--json]
   router.mjs cache-prune [--json] [--all|--route|--judgement] [--older-than-hours N]
   router.mjs config-check [--json]
@@ -5229,8 +5230,7 @@ function resolveProjectRootForMirror() {
   const fromPluginMirror = path.resolve(ROUTER_DIR, "../../../..");
   if (fs.existsSync(path.join(fromPluginMirror, "subagents", "router.mjs"))) return fromPluginMirror;
   const fromMain = path.resolve(ROUTER_DIR, "..");
-  const mainRouter = path.join(fromMain, "subagents", "router.mjs");
-  if (fs.existsSync(mainRouter) && path.resolve(mainRouter) !== path.resolve(fileURLToPath(import.meta.url))) return fromMain;
+  if (fs.existsSync(path.join(fromMain, "plugins/codex-subagent-router/scripts/subagents/router.mjs"))) return fromMain;
   return null;
 }
 
@@ -5250,6 +5250,7 @@ function pluginMirrorSyncHealth() {
     ["router", path.join(projectRoot, "subagents", "router.mjs"), path.join(projectRoot, "plugins/codex-subagent-router/scripts/subagents/router.mjs")],
     ["strategy-config", path.join(projectRoot, "subagents", "strategy-config.json"), path.join(projectRoot, "plugins/codex-subagent-router/scripts/subagents/strategy-config.json")],
     ["judgement-schema", path.join(projectRoot, "subagents", "judgement.schema.json"), path.join(projectRoot, "plugins/codex-subagent-router/scripts/subagents/judgement.schema.json")],
+    ["registry", path.join(projectRoot, "subagents", "registry.json"), path.join(projectRoot, "plugins/codex-subagent-router/scripts/subagents/registry.json")],
     ["community-skills-manifest", path.join(projectRoot, "subagents", "community-skills-manifest.json"), path.join(projectRoot, "plugins/codex-subagent-router/scripts/subagents/community-skills-manifest.json")],
     ["import-community-skills", path.join(projectRoot, "subagents", "import-community-skills.mjs"), path.join(projectRoot, "plugins/codex-subagent-router/scripts/subagents/import-community-skills.mjs")],
     ["skill", path.join(projectRoot, "skills/subagent-router/SKILL.md"), path.join(projectRoot, "plugins/codex-subagent-router/skills/subagent-router/SKILL.md")],
@@ -5274,6 +5275,20 @@ function pluginMirrorSyncHealth() {
     files,
     drift: files.filter((file) => !file.inSync).map((file) => file.id),
   };
+}
+
+function runMirrorParityTests(mode = "text") {
+  const health = pluginMirrorSyncHealth();
+  if (mode === "json") {
+    console.log(JSON.stringify(health, null, 2));
+  } else if (health.skipped) {
+    console.log(`SKIP mirror parity: ${health.reason}`);
+  } else {
+    for (const file of health.files) {
+      console.log(`${file.inSync ? "PASS" : "FAIL"} ${file.id}: ${file.sourceHash || "missing"} ${file.mirrorHash || "missing"}`);
+    }
+  }
+  if (!health.ok) throw new Error(`mirror parity failed: ${health.drift.join(", ")}`);
 }
 
 function routerArchitectureHealth() {
@@ -7465,6 +7480,11 @@ function main() {
   }
   if (command === "test-agent-index") {
     runAgentIndexTests();
+    return;
+  }
+  if (command === "test-mirror-parity") {
+    const mode = rest.includes("--json") ? "json" : "text";
+    runMirrorParityTests(mode);
     return;
   }
   if (command === "cache-status") {

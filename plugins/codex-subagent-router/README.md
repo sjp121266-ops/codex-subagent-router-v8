@@ -89,10 +89,11 @@ Release validation includes the managed contract and App board gates:
 node scripts/subagents/router.mjs test-managed-contract
 node scripts/subagents/router.mjs test-app-board
 node scripts/subagents/router.mjs test-architecture
+node scripts/subagents/router.mjs test-mirror-parity
 node scripts/subagents/router.mjs architecture-health --json
 ```
 
-`test-app-board` now verifies that the user-facing `displayBoard` does not leak internal routing fields, cache details, provider prompt paths/full prompt wording, or credential-shaped secrets. Keep source and plugin mirror files byte-for-byte aligned before publishing.
+`test-app-board` now verifies that the user-facing `displayBoard` does not leak internal routing fields, cache details, provider prompt paths/full prompt wording, or credential-shaped secrets. Keep source and plugin mirror files byte-for-byte aligned before publishing; `test-mirror-parity` checks the router, config, schema, registry, community manifest, importer, and skill mirror pairs.
 
 ## Global Sync
 

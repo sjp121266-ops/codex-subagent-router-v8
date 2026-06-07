@@ -33,7 +33,7 @@ Run from the repository root after the source and mirror update:
 - `node subagents/router.mjs test-app-board`
 - `node subagents/router.mjs test-architecture`
 - `node subagents/router.mjs architecture-health --json`
-- source/plugin mirror SHA-256 comparison for router, strategy config, schema, registry, community manifest, importer, and skill.
+- `node subagents/router.mjs test-mirror-parity` for router, strategy config, schema, registry, community manifest, importer, and skill.
 
 ## Review Notes
 
