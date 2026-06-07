@@ -1774,6 +1774,7 @@ function redactSensitiveValues(text) {
   return String(text || "")
     .replace(/\b((?:access|refresh|id)?_?token|api[_-]?key|secret|password|passwd|credential)\s*[:=]\s*["']?[^"'\s,;)}\]]+/gi, "$1=[REDACTED]")
     .replace(/\b(Bearer|Basic)\s+[A-Za-z0-9._~+/-]+=*/gi, "$1 [REDACTED]")
+    .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, "[REDACTED_EMAIL]")
     .replace(/\/Users\/[^\s"'`，。；)]+/g, "[LOCAL_PATH]")
     .replace(/\b(sk-[A-Za-z0-9_-]{12,}|gh[pousr]_[A-Za-z0-9_]{12,}|xox[baprs]-[A-Za-z0-9-]{12,})\b/g, "[REDACTED_SECRET]");
 }
@@ -3789,6 +3790,7 @@ function displayBoardFor(plan) {
   const config = loadStrategyConfig().managedUX?.appBoard || {};
   const maxStages = config.maxStages || 6;
   const maxSafetyItems = config.maxSafetyItems || 5;
+  const offlinePreview = /offline/i.test(`${plan.nextAction?.reason || ""} ${plan.delegationReadiness?.reason || ""} ${plan.clarificationQuestion || ""}`);
   const stageChecksById = new Map((plan.verificationBoard?.stageChecks || []).map((check) => [check.stageId, check]));
   const goalStages = (plan.goalLoop || []).slice(0, maxStages).map((stage, index) => {
     const stageId = String(stage.goal || "").replace(/^Stage \d+:\s*/, "") || `stage-${index + 1}`;
@@ -3821,7 +3823,9 @@ function displayBoardFor(plan) {
   const safeChecks = (plan.verificationBoard?.safeChecks || []).slice(0, maxSafetyItems).map(sanitizeDisplaySafetyItem);
   const blockedChecks = (plan.verificationBoard?.blockedChecks || []).slice(0, maxSafetyItems).map(sanitizeDisplaySafetyItem);
   const requiresParentReview = Boolean(plan.verificationBoard?.summary?.requiresParentReview || plan.nextAction?.type === "parent-review");
-  const boardState = plan.nextAction?.type === "ask-clarification"
+  const boardState = offlinePreview
+    ? "离线预览，需父级复核"
+    : plan.nextAction?.type === "ask-clarification"
     ? "需要先问一个问题"
     : requiresParentReview
       ? "需要父级复核"
@@ -3838,9 +3842,11 @@ function displayBoardFor(plan) {
   const visibleAgentName = plan.nextAction?.type === "spawn"
     ? (plan.agentDisplayName || plan.agent || "推荐 agent")
     : "父级 Codex";
-  const headline = `司南已选择 ${visibleAgentName}，采用${zhCoordinationMode(plan.planningBrief?.coordinationMode)}模式，当前状态：${boardState}。`;
+  const headlinePrefix = offlinePreview ? "司南离线预览" : "司南";
+  const headline = `${headlinePrefix}已选择 ${visibleAgentName}，采用${zhCoordinationMode(plan.planningBrief?.coordinationMode)}模式，当前状态：${boardState}。`;
   const narrative = [
     displayText(headline, 220),
+    offlinePreview ? "说明：这是未调用模型裁决的离线预览，只用于本地 smoke test 或展示合同检查；真实派发前需要父级 Codex 复核或重新路由。" : "",
     `本次目标：${displayText(plan.planningBrief?.objective || "完成用户请求的多智能体任务", 220)}`,
     `为什么这样分工：${displayText(whyText, 180)}`,
     `下一步：${plan.nextAction?.type === "spawn" ? `启动 ${displayText(plan.nextAction.agentDisplayName || plan.nextAction.agent || "推荐 agent", 80)} 处理 ${displayText(plan.nextAction.stageId || "首个阶段", 80)}` : plan.nextAction?.type === "ask-clarification" ? displayText(plan.nextAction.question, 180) : "父级 Codex 先复核安全状态再继续。"}`,
@@ -3867,7 +3873,10 @@ function displayBoardFor(plan) {
     safetyPanel: {
       state: boardState,
       safeChecks: safeChecks.map((item) => displayText(item, 120)),
-      blockedChecks: blockedChecks.map((item) => displayText(item, 120)),
+      blockedChecks: [
+        ...(offlinePreview ? ["离线预览不能作为自动派发依据"] : []),
+        ...blockedChecks,
+      ].slice(0, maxSafetyItems).map((item) => displayText(item, 120)),
       requiresParentReview,
       automaticLimits: plan.planningBrief?.automaticLimits || [],
     },
@@ -6252,17 +6261,18 @@ function runAppBoardTests() {
     timeout: 15000,
   });
   assert(text.includes("# 司南规划结果"), "managed --profile app text should render a Chinese board");
+  assert(text.includes("离线预览"), "managed --offline --profile app text should clearly label offline preview mode");
   assert(text.includes("| 阶段 | Agent | 状态 | 验收点 | 下一触发 |"), "managed --profile app text should render a stage table");
   assert(text.includes("```mermaid"), "managed --profile app text should include Mermaid");
   assert(!/judgeMode|candidateBudget|cache key|cacheKey/i.test(text), "managed app text should not expose internal routing fields");
   assertNoManagedInternalLeaks(text, "managed app text");
 
-  const sensitiveTask = "开启子代理，审查 credential 工具，样例 access_token=abc123SECRET456、api_key=key_live_789 和 Bearer ghp_exampleSECRET000，不要输出 token";
+  const sensitiveTask = "开启子代理，审查 credential 工具，样例 access_token=abc123SECRET456、api_key=key_live_789、Bearer ghp_exampleSECRET000 和 user@example.com，不要输出 token";
   const sensitiveApp = managedDelegationPlan(deterministicManagedResult(sensitiveTask), { profile: "app" });
   const sensitiveCompact = managedDelegationPlan(deterministicManagedResult(sensitiveTask), { profile: "compact" });
   const sensitiveJson = JSON.stringify({ sensitiveApp, sensitiveCompact });
   assert(sensitiveJson.includes("[REDACTED]"), "compact/app managed plans should show redaction markers for secret-shaped values");
-  assert(!/abc123SECRET456|key_live_789|ghp_exampleSECRET000/.test(sensitiveJson), "compact/app managed plans must redact secret-shaped values recursively");
+  assert(!/abc123SECRET456|key_live_789|ghp_exampleSECRET000|user@example\.com/.test(sensitiveJson), "compact/app managed plans must redact secret-shaped values recursively");
   assertNoManagedInternalLeaks(sensitiveJson, "sensitive compact/app managed plans");
   const appAgency = managedDelegationPlan(deterministicManagedResult("开启子代理，帮我做 Reddit 社区增长策略"), { profile: "app" });
 
