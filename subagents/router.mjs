@@ -6135,7 +6135,7 @@ function runAppBoardTests() {
     assert(!Object.prototype.hasOwnProperty.call(plan, "judgeMode"), "app managed plan must hide judgeMode");
     assert(!Object.prototype.hasOwnProperty.call(plan, "candidateBudget"), "app managed plan must hide candidateBudget");
     assert(!Object.prototype.hasOwnProperty.call(plan, "cache"), "app managed plan must hide cache internals");
-    assert(collectDisplayBoardRedactionLeaks(plan.displayBoard).length === 0, "displayBoard must not leak internal routing fields, cache details, prompt paths, or secrets");
+    assertManagedPlanRedaction(plan, `app board ${plan.planningBrief?.objective || "sample"}`);
   }
   const credential = plans[2];
   assert(credential.displayBoard.safetyPanel.blockedChecks.some((item) => /OAuth|token|auth cache/i.test(item)), "credential app board should show OAuth/token blockers");
@@ -6146,6 +6146,10 @@ function runAppBoardTests() {
   assert(highRisk.displayBoard.safetyPanel.requiresParentReview || highRisk.displayBoard.goalBoard.some((stage) => /复核|review/i.test(`${stage.title} ${stage.status}`)), "high-risk app board should keep review visible");
   const vague = plans[4];
   assert(vague.displayBoard.safetyPanel.state === "需要先问一个问题", "vague app board should show clarify-first state");
+
+  const appAgency = managedDelegationPlan(deterministicManagedResult("开启子代理，做小红书社区种草和内容策略"), { profile: "app" });
+  assert(appAgency.agentProvider === "agency-agents", `app board should preserve agency provider, got ${appAgency.agentProvider}`);
+  assertManagedPlanRedaction(appAgency, "agency app board");
 
   const text = execFileSync(process.execPath, [fileURLToPath(import.meta.url), "managed", "--profile", "app", "开启子代理，调用合适 agent 完成任务"], {
     encoding: "utf8",
@@ -6163,6 +6167,10 @@ function runAppBoardTests() {
       stages: plan.displayBoard.goalBoard.length,
       safetyState: plan.displayBoard.safetyPanel.state,
     })),
+    agency: {
+      provider: appAgency.agentProvider,
+      stages: appAgency.displayBoard.goalBoard.length,
+    },
     textPreview: text.split("\n").slice(0, 8),
   }, null, 2));
 }
