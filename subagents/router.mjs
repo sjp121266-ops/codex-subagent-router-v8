@@ -6130,6 +6130,7 @@ function runAppBoardTests() {
     assert(!Object.prototype.hasOwnProperty.call(plan, "judgeMode"), "app managed plan must hide judgeMode");
     assert(!Object.prototype.hasOwnProperty.call(plan, "candidateBudget"), "app managed plan must hide candidateBudget");
     assert(!Object.prototype.hasOwnProperty.call(plan, "cache"), "app managed plan must hide cache internals");
+    assert(collectDisplayBoardRedactionLeaks(plan.displayBoard).length === 0, "displayBoard must not leak internal routing fields, cache details, prompt paths, or secrets");
   }
   const credential = plans[2];
   assert(credential.displayBoard.safetyPanel.blockedChecks.some((item) => /OAuth|token|auth cache/i.test(item)), "credential app board should show OAuth/token blockers");
