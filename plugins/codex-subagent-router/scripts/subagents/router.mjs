@@ -6106,6 +6106,13 @@ function runManagedContractTests() {
   assert(secretValidation.ok, `secret app board contract should remain valid: ${secretValidation.errors.join("; ")}`);
   assertNoManagedLeak(secretBoard.displayBoard, "secret app displayBoard");
 
+  const forbidden = validateManagedPlanContract({ ...highRisk, judgeModel: "gpt-5.5", decisionTrace: ["raw candidate scoring"], rejectedCandidates: [] });
+  assert(!forbidden.ok && forbidden.errors.some((error) => /leaks internal field/.test(error)), "managed contract should reject forbidden internal fields");
+  const secretBoard = managedDelegationPlan(deterministicManagedResult("开启子代理，只读审查 Authorization: Bearer sk-testsecret123456 refresh_token=abc，不输出 token"), { profile: "app" });
+  const secretValidation = validateManagedPlanContract(secretBoard);
+  assert(secretValidation.ok, `secret app board contract should remain valid: ${secretValidation.errors.join("; ")}`);
+  assertNoManagedLeak(secretBoard.displayBoard, "secret app displayBoard");
+
   console.log(JSON.stringify({
     pass: true,
     highRisk: {
