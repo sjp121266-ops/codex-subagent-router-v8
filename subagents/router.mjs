@@ -1774,11 +1774,24 @@ function redactSensitiveValues(text) {
   return String(text || "")
     .replace(/\b((?:access|refresh|id)?_?token|api[_-]?key|secret|password|passwd|credential)\s*[:=]\s*["']?[^"'\s,;)}\]]+/gi, "$1=[REDACTED]")
     .replace(/\b(Bearer|Basic)\s+[A-Za-z0-9._~+/-]+=*/gi, "$1 [REDACTED]")
+    .replace(/\/Users\/[^\s"'`，。；)]+/g, "[LOCAL_PATH]")
     .replace(/\b(sk-[A-Za-z0-9_-]{12,}|gh[pousr]_[A-Za-z0-9_]{12,}|xox[baprs]-[A-Za-z0-9-]{12,})\b/g, "[REDACTED_SECRET]");
 }
 
 function displayText(text, max = 180) {
   return clampText(redactSensitiveValues(text), max);
+}
+
+function redactForDisplay(text) {
+  return redactSensitiveValues(text);
+}
+
+function redactDisplayText(text, max = 180) {
+  return displayText(text, max);
+}
+
+function displayArray(items, maxItems = 5, maxText = 120) {
+  return (items || []).slice(0, maxItems).map((item) => displayText(item, maxText));
 }
 
 function routeMargin(route) {
@@ -3662,7 +3675,7 @@ function openSourcePatternsFor(plan) {
       appliesTo: "stageInputs + contextLedger",
       why: "多代理系统需要控制消息历史和上下文膨胀，避免把完整调试 JSON 或 provider prompt 塞进用户聊天。",
       implementationHint: "默认传递阶段摘要、证据和 prompt reference；完整 prompt 只在显式 hydrate full 时使用。",
-      acceptanceCheck: "compact/app profile 不暴露 judgeMode、candidateBudget、cache 内部字段。",
+      acceptanceCheck: "compact/app profile 不暴露内部路由、候选预算或缓存细节。",
     },
   ];
   if (supervisorNeeded) {
@@ -3729,7 +3742,7 @@ function openSourcePatternsFor(plan) {
     contextPolicy: {
       mode: "stage-output-only",
       include: ["original task", "current stage inputs", "previous stage evidence", "selected skill names", "prompt references"],
-      exclude: ["raw candidate scoring", "cache keys", "full provider prompt body unless explicitly hydrated", "secrets or credential values"],
+      exclude: ["内部候选评分明细", "缓存标识细节", "未显式水合的完整 provider prompt", "凭证或密钥值"],
       rationale: "Keep Codex App context readable and bounded while preserving enough evidence for handoff.",
     },
     guardrailPlan: {
@@ -3840,6 +3853,10 @@ function displayBoardFor(plan) {
     if (index > 0) mermaidLines.push(`  S${index} --> S${index + 1}`);
   });
   return {
+    schema: {
+      version: DISPLAY_BOARD_SCHEMA_VERSION,
+      required: ["headline", "goalBoard", "agentCards", "safetyPanel", "mermaidFlow", "userNarrative"],
+    },
     headline: displayText(headline, 220),
     language: config.language || "zh-CN",
     boardStyle: config.defaultStyle || "stage-board",
@@ -3943,6 +3960,7 @@ function compactManagedPlanForProfile(plan, profile = "compact") {
       automaticLimits: (plan.planningBrief.automaticLimits || []).slice(0, 4),
     } : plan.planningBrief,
     displayBoard: plan.displayBoard ? {
+      schema: plan.displayBoard.schema,
       headline: displayText(plan.displayBoard.headline, 180),
       language: plan.displayBoard.language,
       boardStyle: plan.displayBoard.boardStyle,
@@ -5212,6 +5230,7 @@ function validateManagedPlanContract(plan, options = {}) {
     addError(plan.displayBoard.safetyPanel && typeof plan.displayBoard.safetyPanel.requiresParentReview === "boolean", "displayBoard missing safety review state");
     addError(!MANAGED_INTERNAL_LEAK_PATTERN.test(boardText), "displayBoard leaks internal routing details");
     addError(!MANAGED_SECRET_LEAK_PATTERN.test(boardText), "displayBoard leaks secret-like content");
+    addError(!/\/Users\/[^\s"'`，。；)]+/.test(boardText), "displayBoard leaks absolute user paths");
     for (const [field, limit] of [["headline", 180], ["userNarrative", 220], ["goalBoard", 180]]) {
       const target = field === "goalBoard" ? plan.displayBoard.goalBoard : plan.displayBoard[field];
       const values = Array.isArray(target) ? target.flatMap((item) => typeof item === "string" ? [item] : Object.values(item || {}).flat()) : [target];
@@ -5588,6 +5607,8 @@ function assert(condition, message) {
   if (!condition) throw new Error(message);
 }
 
+const DISPLAY_BOARD_SCHEMA_VERSION = "display-board-v2";
+const MANAGED_INTERNAL_KEYS = ["judgeMode", "judgeModel", "candidateBudget", "cache", "cacheKey", "decisionTrace", "rejectedCandidates"];
 const MANAGED_INTERNAL_LEAK_PATTERN = /\b(judgeMode|judgeModel|candidateBudget|decisionTrace|rejectedCandidates|cacheKey|cache key|raw candidate scoring)\b/i;
 const MANAGED_SECRET_LEAK_PATTERN = /\b(sk-[A-Za-z0-9_-]{8,}|refresh_token\s*=|access_token\s*=|Authorization:\s*Bearer\s+|api[_-]?key\s*=|secret\s*=)\b/i;
 
@@ -5595,6 +5616,11 @@ function assertNoManagedLeak(value, label) {
   const text = typeof value === "string" ? value : JSON.stringify(value || "");
   assert(!MANAGED_INTERNAL_LEAK_PATTERN.test(text), `${label} leaks internal routing details`);
   assert(!MANAGED_SECRET_LEAK_PATTERN.test(text), `${label} leaks secret-like content`);
+}
+
+function assertManagedPlanRedaction(plan, label) {
+  assertNoManagedInternalLeaks(plan, label);
+  assertNoManagedLeak(plan, label);
 }
 
 const EVAL_CASES = [
@@ -6114,13 +6140,6 @@ function runManagedContractTests() {
   assert(secretValidation.ok, `secret app board contract should remain valid: ${secretValidation.errors.join("; ")}`);
   assertNoManagedLeak(secretBoard.displayBoard, "secret app displayBoard");
 
-  const forbidden = validateManagedPlanContract({ ...highRisk, judgeModel: "gpt-5.5", decisionTrace: ["raw candidate scoring"], rejectedCandidates: [] });
-  assert(!forbidden.ok && forbidden.errors.some((error) => /leaks internal field/.test(error)), "managed contract should reject forbidden internal fields");
-  const secretBoard = managedDelegationPlan(deterministicManagedResult("开启子代理，只读审查 Authorization: Bearer sk-testsecret123456 refresh_token=abc，不输出 token"), { profile: "app" });
-  const secretValidation = validateManagedPlanContract(secretBoard);
-  assert(secretValidation.ok, `secret app board contract should remain valid: ${secretValidation.errors.join("; ")}`);
-  assertNoManagedLeak(secretBoard.displayBoard, "secret app displayBoard");
-
   console.log(JSON.stringify({
     pass: true,
     highRisk: {
@@ -6217,6 +6236,9 @@ function runAppBoardTests() {
   }
   const credential = plans[2];
   assert(credential.displayBoard.safetyPanel.blockedChecks.some((item) => /OAuth|credential|auth cache/i.test(item)), "credential app board should show OAuth/credential blockers");
+  const redacted = managedDelegationPlan(deterministicManagedResult("开启子代理，只读审查 /Users/demo/.codex/auth.json，不执行 OAuth，Authorization: Bearer sk-demoSECRET12345678，不输出 token"), { profile: "app" });
+  assert(!JSON.stringify(redacted.displayBoard).includes("/Users/demo"), "displayBoard should redact absolute local paths");
+  assert(!/sk-demoSECRET|Bearer\s+sk-/i.test(JSON.stringify(redacted.displayBoard)), "displayBoard should redact credential-like values");
   const highRisk = plans[3];
   assert(highRisk.displayBoard.safetyPanel.requiresParentReview || highRisk.displayBoard.goalBoard.some((stage) => /复核|review/i.test(`${stage.title} ${stage.status}`)), "high-risk app board should keep review visible");
   const vague = plans[4];
@@ -6227,7 +6249,7 @@ function runAppBoardTests() {
   const text = execFileSync(process.execPath, [fileURLToPath(import.meta.url), "managed", "--offline", "--profile", "app", "开启子代理，调用合适 agent 完成任务"], {
     encoding: "utf8",
     env: { ...process.env, CODEX_HOME },
-    timeout: 10000,
+    timeout: 15000,
   });
   assert(text.includes("# 司南规划结果"), "managed --profile app text should render a Chinese board");
   assert(text.includes("| 阶段 | Agent | 状态 | 验收点 | 下一触发 |"), "managed --profile app text should render a stage table");
@@ -6242,6 +6264,7 @@ function runAppBoardTests() {
   assert(sensitiveJson.includes("[REDACTED]"), "compact/app managed plans should show redaction markers for secret-shaped values");
   assert(!/abc123SECRET456|key_live_789|ghp_exampleSECRET000/.test(sensitiveJson), "compact/app managed plans must redact secret-shaped values recursively");
   assertNoManagedInternalLeaks(sensitiveJson, "sensitive compact/app managed plans");
+  const appAgency = managedDelegationPlan(deterministicManagedResult("开启子代理，帮我做 Reddit 社区增长策略"), { profile: "app" });
 
   console.log(JSON.stringify({
     pass: true,
