@@ -6160,6 +6160,13 @@ function runAppBoardTests() {
   assert(text.includes("```mermaid"), "managed --profile app text should include Mermaid");
   assert(!/judgeMode|candidateBudget|cache key|cacheKey/i.test(text), "managed app text should not expose internal routing fields");
 
+  const sensitiveTask = "开启子代理，审查 credential 工具，样例 access_token=abc123SECRET456、api_key=key_live_789 和 Bearer ghp_exampleSECRET000，不要输出 token";
+  const sensitiveApp = managedDelegationPlan(deterministicManagedResult(sensitiveTask), { profile: "app" });
+  const sensitiveCompact = managedDelegationPlan(deterministicManagedResult(sensitiveTask), { profile: "compact" });
+  const sensitiveJson = JSON.stringify({ sensitiveApp, sensitiveCompact });
+  assert(sensitiveJson.includes("[REDACTED]"), "compact/app managed plans should show redaction markers for secret-shaped values");
+  assert(!/abc123SECRET456|key_live_789|ghp_exampleSECRET000/.test(sensitiveJson), "compact/app managed plans must redact secret-shaped values recursively");
+
   console.log(JSON.stringify({
     pass: true,
     samples: plans.map((plan) => ({
