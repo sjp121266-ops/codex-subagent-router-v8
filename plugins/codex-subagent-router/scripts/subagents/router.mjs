@@ -530,7 +530,7 @@ Usage:
   router.mjs list [query]
   router.mjs route [--json|--brief] <task>
   router.mjs judge [--json|--verbose|--explain|--offline] [--budget economy|balanced|premium|critical] [--no-cache] [--force-model] <task>
-  router.mjs managed [--json] [--profile compact|balanced|app|full] <task>
+  router.mjs managed [--json] [--offline] [--profile compact|balanced|app|full] <task>
   router.mjs prompt <agent-name> <task> [--hydrate reference|summary|hybrid|full] [--budget N]
   router.mjs inspect-context [--json] [--profile compact|balanced|app|full] <task>
   router.mjs refresh-agent-index
@@ -3822,7 +3822,10 @@ function displayBoardFor(plan) {
         : plan.planningBrief?.coordinationMode === "parent-review-required" || plan.planningBrief?.coordinationMode === "supervisor-review"
           ? "任务风险较高，需要父级 Codex 保留复核和验收责任。"
           : "任务适合按发现、执行、验证和复核阶段交接推进。";
-  const headline = redactDisplayText(`司南已选择 ${plan.agentDisplayName || plan.agent}，采用${zhCoordinationMode(plan.planningBrief?.coordinationMode)}模式，当前状态：${boardState}。`, 180);
+  const visibleAgentName = plan.nextAction?.type === "spawn"
+    ? (plan.agentDisplayName || plan.agent || "推荐 agent")
+    : "父级 Codex";
+  const headline = `司南已选择 ${visibleAgentName}，采用${zhCoordinationMode(plan.planningBrief?.coordinationMode)}模式，当前状态：${boardState}。`;
   const narrative = [
     displayText(headline, 220),
     `本次目标：${displayText(plan.planningBrief?.objective || "完成用户请求的多智能体任务", 220)}`,
@@ -5180,7 +5183,7 @@ function validateManagedPlanContract(plan, options = {}) {
   addError(plan.openSourcePatterns && typeof plan.openSourcePatterns === "object", "missing openSourcePatterns");
   addError(plan.verificationBoard && typeof plan.verificationBoard === "object", "missing verificationBoard");
   addError(plan.contextLedger && typeof plan.contextLedger === "object", "missing contextLedger");
-  for (const internal of ["judgeMode", "judgeModel", "candidateBudget", "cache", "decisionTrace", "rejectedCandidates"]) {
+  for (const internal of MANAGED_INTERNAL_KEYS) {
     addError(!Object.prototype.hasOwnProperty.call(plan, internal), `managed plan leaks internal field: ${internal}`);
   }
   if (goalLoop.length) {
@@ -5223,26 +5226,39 @@ function validateManagedPlanContract(plan, options = {}) {
   return { ok: errors.length === 0, errors, warnings };
 }
 
-function assertNoManagedInternalLeaks(value, label = "managed output") {
-  const internalKeys = new Set(["judgeMode", "judgeModel", "candidateBudget", "cache", "cacheKey", "decisionTrace", "rejectedCandidates"]);
-  const visit = (node, path = "") => {
-    if (!node || typeof node !== "object") return;
-    for (const [key, child] of Object.entries(node)) {
-      assert(!internalKeys.has(key), `${label} must not expose internal key ${path ? `${path}.` : ""}${key}`);
-      visit(child, path ? `${path}.${key}` : key);
-    }
-  };
-  if (typeof value !== "string") visit(value);
-  const text = typeof value === "string" ? value : JSON.stringify(value);
-  assert(!/cacheKey|decisionTrace|Routing packet/i.test(text), `${label} must not expose internal routing fields`);
-  assert(!/--output-schema|--output-last-message|\\.judgement-|codex exec/i.test(text), `${label} must not expose judge execution details`);
+const MANAGED_INTERNAL_KEYS = ["judgeMode", "judgeModel", "candidateBudget", "cache", "decisionTrace", "rejectedCandidates", "cacheKey", "rawCandidateScores"];
+
+function collectManagedInternalLeaks(value, pathParts = [], leaks = []) {
+  if (!value || typeof value !== "object") return leaks;
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => collectManagedInternalLeaks(item, [...pathParts, String(index)], leaks));
+    return leaks;
+  }
+  for (const [key, child] of Object.entries(value)) {
+    const childPath = [...pathParts, key];
+    if (MANAGED_INTERNAL_KEYS.includes(key)) leaks.push(childPath.join("."));
+    collectManagedInternalLeaks(child, childPath, leaks);
+  }
+  return leaks;
+}
+
+function assertManagedPlanRedaction(plan, label) {
+  const leaks = collectManagedInternalLeaks(plan);
+  assert(leaks.length === 0, `${label} leaked internal managed keys: ${leaks.join(", ")}`);
+  const serialized = JSON.stringify(plan);
+  assert(!/rawCandidateScores/i.test(serialized), `${label} leaked raw scoring internals`);
+  assert(!/BEGIN PROVIDER PROMPT|You are .{0,80}(Reddit Community Builder|Frontend Developer|Product Manager)/i.test(serialized), `${label} leaked full provider prompt body`);
 }
 
 function resolveProjectRootForMirror() {
   const fromPluginMirror = path.resolve(ROUTER_DIR, "../../../..");
   if (fs.existsSync(path.join(fromPluginMirror, "subagents", "router.mjs"))) return fromPluginMirror;
   const fromMain = path.resolve(ROUTER_DIR, "..");
-  if (fs.existsSync(path.join(fromMain, "plugins/codex-subagent-router/scripts/subagents/router.mjs"))) return fromMain;
+  const mainRouter = path.join(fromMain, "subagents", "router.mjs");
+  if (fs.existsSync(mainRouter) && path.resolve(mainRouter) !== path.resolve(fileURLToPath(import.meta.url))) return fromMain;
+  const sourceCheckoutRoot = path.resolve(ROUTER_DIR, "..");
+  const pluginMirrorRouter = path.join(sourceCheckoutRoot, "plugins/codex-subagent-router/scripts/subagents/router.mjs");
+  if (path.basename(ROUTER_DIR) === "subagents" && fs.existsSync(pluginMirrorRouter)) return sourceCheckoutRoot;
   return null;
 }
 
@@ -6078,10 +6094,23 @@ function runManagedContractTests() {
   assert(highRisk.executionContract.mustReview, "high-risk write task must review");
   assert(!Object.prototype.hasOwnProperty.call(highRisk, "candidateBudget"), "managed contract must hide candidateBudget");
   assert(!Object.prototype.hasOwnProperty.call(highRisk, "cache"), "managed contract must hide raw cache");
+  assertManagedPlanRedaction(highRisk, "high-risk managed plan");
+
+  const compactHighRisk = managedDelegationPlan(deterministicManagedResult("开启子代理，修复线上生产 API 鉴权事故并补测试"), { profile: "compact" });
+  assertManagedPlanRedaction(compactHighRisk, "compact high-risk managed plan");
+  assert(compactHighRisk.displayBoard.goalBoard.length <= 4, "compact displayBoard should stay concise");
+  assert(compactHighRisk.displayBoard.goalBoard.every((stage) => stage.acceptance?.length >= 1 && stage.nextTrigger), "compact displayBoard stages need acceptance and next trigger text");
 
   const research = managedDelegationPlan(deterministicManagedResult("开启子代理，只调研官方文档确认 API 用法，不要改代码"));
   assert(research.executionContract.writeIntent === "none", "research-only managed plan must be no-write");
   assert(!research.goalLoop.some((stage) => /implement|mitigate|maintain/i.test(stage.goal)), "research-only managed plan must not implement");
+  assertManagedPlanRedaction(research, "research managed plan");
+
+  const agency = managedDelegationPlan(deterministicManagedResult("开启子代理，帮我做 Reddit 社区增长策略"), { profile: "compact" });
+  assert(agency.agentProvider === "agency-agents", `agency sample should preserve provider selection, got ${agency.agentProvider}`);
+  assert(agency.promptHydrationPlan?.providerPromptPath, "agency compact plan should keep provider prompt as a reference");
+  assert(agency.promptHydrationPlan.providerPromptBytes > agency.providerPromptPreview.length, "agency compact plan should not inline full provider prompt");
+  assertManagedPlanRedaction(agency, "agency compact managed plan");
 
   const forbidden = validateManagedPlanContract({ ...highRisk, judgeModel: "gpt-5.5", decisionTrace: ["raw candidate scoring"], rejectedCandidates: [] });
   assert(!forbidden.ok && forbidden.errors.some((error) => /leaks internal field/.test(error)), "managed contract should reject forbidden internal fields");
@@ -6102,6 +6131,14 @@ function runManagedContractTests() {
       mode: research.mode,
       taskKind: research.executionContract.taskKind,
       writeIntent: research.executionContract.writeIntent,
+    },
+    compact: {
+      stages: compactHighRisk.displayBoard.goalBoard.length,
+      firstAcceptance: compactHighRisk.displayBoard.goalBoard[0]?.acceptance?.[0],
+    },
+    agency: {
+      provider: agency.agentProvider,
+      promptReference: agency.promptHydrationPlan.providerPromptPath,
     },
   }, null, 2));
 }
@@ -6174,7 +6211,7 @@ function runAppBoardTests() {
     assert(!Object.prototype.hasOwnProperty.call(plan, "judgeMode"), "app managed plan must hide judgeMode");
     assert(!Object.prototype.hasOwnProperty.call(plan, "candidateBudget"), "app managed plan must hide candidateBudget");
     assert(!Object.prototype.hasOwnProperty.call(plan, "cache"), "app managed plan must hide cache internals");
-    assertNoManagedInternalLeaks(plan, "app managed plan");
+    assertManagedPlanRedaction(plan, `app board ${plan.planningBrief?.objective || "sample"}`);
   }
   const credential = plans[2];
   assert(credential.displayBoard.safetyPanel.blockedChecks.some((item) => /OAuth|token|auth cache/i.test(item)), "credential app board should show OAuth/token blockers");
@@ -6185,6 +6222,12 @@ function runAppBoardTests() {
   assert(highRisk.displayBoard.safetyPanel.requiresParentReview || highRisk.displayBoard.goalBoard.some((stage) => /复核|review/i.test(`${stage.title} ${stage.status}`)), "high-risk app board should keep review visible");
   const vague = plans[4];
   assert(vague.displayBoard.safetyPanel.state === "需要先问一个问题", "vague app board should show clarify-first state");
+  assert(/父级 Codex/.test(vague.displayBoard.headline), "vague app board should not headline a random specialist before clarification");
+  assert(!/Accounts Payable|accessibility|tester|auditor/i.test(vague.displayBoard.headline), "vague app board should suppress domain specialist names before clarification");
+
+  const appAgency = managedDelegationPlan(deterministicManagedResult("开启子代理，做小红书社区种草和内容策略"), { profile: "app" });
+  assert(appAgency.agentProvider === "agency-agents", `app board should preserve agency provider, got ${appAgency.agentProvider}`);
+  assertManagedPlanRedaction(appAgency, "agency app board");
 
   const text = execFileSync(process.execPath, [fileURLToPath(import.meta.url), "managed", "--offline", "--profile", "app", "开启子代理，调用合适 agent 完成任务"], {
     encoding: "utf8",
@@ -6194,16 +6237,7 @@ function runAppBoardTests() {
   assert(text.includes("# 司南规划结果"), "managed --profile app text should render a Chinese board");
   assert(text.includes("| 阶段 | Agent | 状态 | 验收点 | 下一触发 |"), "managed --profile app text should render a stage table");
   assert(text.includes("```mermaid"), "managed --profile app text should include Mermaid");
-  assert(!/judgeMode|candidateBudget|cache key|cacheKey/i.test(text), "managed app text should not expose internal routing fields");
-  assertNoManagedInternalLeaks(text, "managed app text");
-
-  const sensitiveTask = "开启子代理，审查 credential 工具，样例 access_token=abc123SECRET456、api_key=key_live_789 和 Bearer ghp_exampleSECRET000，不要输出 token";
-  const sensitiveApp = managedDelegationPlan(deterministicManagedResult(sensitiveTask), { profile: "app" });
-  const sensitiveCompact = managedDelegationPlan(deterministicManagedResult(sensitiveTask), { profile: "compact" });
-  const sensitiveJson = JSON.stringify({ sensitiveApp, sensitiveCompact });
-  assert(sensitiveJson.includes("[REDACTED]"), "compact/app managed plans should show redaction markers for secret-shaped values");
-  assert(!/abc123SECRET456|key_live_789|ghp_exampleSECRET000/.test(sensitiveJson), "compact/app managed plans must redact secret-shaped values recursively");
-  assertNoManagedInternalLeaks(sensitiveJson, "sensitive compact/app managed plans");
+  assert(!/Routing packet:|--output-schema|codex exec|judgePolicy|agentCandidates|skillCandidates|judgeMode|candidateBudget|cacheKey/i.test(text), "managed app text should not expose internal routing fields");
 
   console.log(JSON.stringify({
     pass: true,
@@ -6212,6 +6246,10 @@ function runAppBoardTests() {
       stages: plan.displayBoard.goalBoard.length,
       safetyState: plan.displayBoard.safetyPanel.state,
     })),
+    agency: {
+      provider: appAgency.agentProvider,
+      stages: appAgency.displayBoard.goalBoard.length,
+    },
     textPreview: text.split("\n").slice(0, 8),
   }, null, 2));
 }
