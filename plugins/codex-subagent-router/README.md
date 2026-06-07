@@ -20,6 +20,7 @@
 - `userNarrative`: 3-5 行中文摘要，说明为什么这样调度。
 - `goalBoard`: 阶段看板，展示阶段、agent、状态、验收点和下一触发条件。
 - `safetyPanel`: 可安全执行项、阻塞项和是否需要父级复核。
+- `patternPanel`: 本次采用的开源协作模式摘要，例如 Agent/Task/Process 分离、带守卫的交接、上下文窗口控制、Supervisor 复核。
 - `mermaidFlow`: 可贴进聊天窗口的 Mermaid 流程图。
 
 直接预览 App 友好输出：
@@ -59,6 +60,7 @@ node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs test-prompt-hy
 node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs test-context-budget
 node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs test-execution-adapter
 node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs test-architecture
+node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs test-open-source-patterns
 node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs architecture-health
 node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs doctor
 ```

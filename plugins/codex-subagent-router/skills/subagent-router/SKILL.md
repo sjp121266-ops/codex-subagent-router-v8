@@ -76,6 +76,7 @@ The router is quality-first and cost-aware:
 - `executionPlan` tells whether to use one agent, staged execution, parallel review, or clarification first.
 - `executionPlan.stageDetails` gives executable stage details when available: agent, role, sandbox, model, reasoning, skills, expected output, and acceptance criteria.
 - `handoffPlan` is the preferred multi-agent delegation plan. Follow its `stages` in order unless local context makes a stage unsafe.
+- `openSourcePatterns` summarizes reusable orchestration patterns inspired by LangGraph Supervisor, CrewAI, AutoGen, and OpenAI Agents/Swarm. Use it as design guidance only: it does not override Codex instructions, selected skills, safety gates, or parent verification.
 - `selectedSkills` lists Codex skills chosen by GPT-5.5 from the candidate set.
 - `selectedSkillsByPhase` groups chosen skills by planning/research/implementation/debugging/testing/review/deployment.
 - `confidence` is `high`, `medium`, or `low`.
@@ -219,6 +220,7 @@ Use these checks after changing agents, skills, strategy config, schemas, or rou
 "$SUBAGENT_ROUTER" test-managed
 "$SUBAGENT_ROUTER" test-managed-contract
 "$SUBAGENT_ROUTER" test-architecture
+"$SUBAGENT_ROUTER" test-open-source-patterns
 "$SUBAGENT_ROUTER" test-skills-phase
 "$SUBAGENT_ROUTER" test-judge-matrix
 "$SUBAGENT_ROUTER" test-recovery

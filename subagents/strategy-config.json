@@ -664,6 +664,17 @@
       "maxStages": 6,
       "maxSafetyItems": 5,
       "includeMermaid": true
+    },
+    "openSourcePatterns": {
+      "enabled": true,
+      "sources": [
+        "LangGraph Supervisor",
+        "CrewAI",
+        "Microsoft AutoGen",
+        "OpenAI Agents / Swarm"
+      ],
+      "defaultContextPolicy": "stage-output-only",
+      "includeTracePlan": true
     }
   },
   "executionProfiles": {

@@ -13,6 +13,7 @@
 - Returns structured routing data for `finalAgent`, `selectedSkills`, `selectedModel`, `executionPlan`, `handoffPlan`, `qualityGates`, and fallback state.
 - Produces managed delegation output for the parent Codex, including a planning brief, agent work cards, batch plan, handoff contracts, verification board, write boundaries, stage inputs/outputs, parent responsibilities, and next safe action.
 - Renders an App-friendly Chinese `displayBoard` so Codex can show a readable stage board, safety panel, and Mermaid flow instead of raw JSON.
+- Adds `openSourcePatterns`, a compact design-hint layer inspired by LangGraph Supervisor, CrewAI, AutoGen, and OpenAI Agents/Swarm patterns: agent-task-process separation, guarded handoffs, context control, supervisor review, parallel batch join, read-only sandboxing, and trace planning.
 - Keeps provider prompts compact by default, with explicit hydration modes when a self-contained prompt is needed.
 - Fails safely when a route is ambiguous, high-risk, blocked, or requires parent review.
 
@@ -190,6 +191,7 @@ node --check subagents/import-community-skills.mjs
 node subagents/router.mjs test
 node subagents/router.mjs eval
 node subagents/router.mjs test-architecture
+node subagents/router.mjs test-open-source-patterns
 node subagents/router.mjs doctor
 node subagents/router.mjs report
 ```
@@ -210,6 +212,7 @@ Useful reports:
 
 - [`outputs/subagent-router-v16-context-efficiency-final-report.md`](outputs/subagent-router-v16-context-efficiency-final-report.md)
 - [`outputs/architecture-audit-optimization-report.md`](outputs/architecture-audit-optimization-report.md)
+- [`outputs/open-source-patterns-integration-report.md`](outputs/open-source-patterns-integration-report.md)
 - [`outputs/subagent-router-v15-agency-agents-final-report.md`](outputs/subagent-router-v15-agency-agents-final-report.md)
 - [`outputs/subagent-router-v14-execution-adapter-report.md`](outputs/subagent-router-v14-execution-adapter-report.md)
 - [`outputs/subagent-router-plugin-report.md`](outputs/subagent-router-plugin-report.md)
