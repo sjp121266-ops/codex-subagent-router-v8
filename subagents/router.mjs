@@ -1113,6 +1113,23 @@ function classifyFailure(errorMessage = "") {
   return "unknown";
 }
 
+function safeFailureSummary(errorMessage = "") {
+  const failureClass = classifyFailure(errorMessage);
+  if (failureClass === "none") return "";
+  const labels = {
+    offline: "offline routing fallback",
+    "invalid-skill-subset": "router returned an invalid skill subset",
+    "invalid-agent-candidate": "router returned an invalid agent candidate",
+    "schema-error": "router schema validation failed",
+    "model-unavailable": "model judgement unavailable",
+    "invalid-output": "model judgement returned invalid output",
+    "missing-file": "required routing file is missing",
+    timeout: "model judgement timed out",
+    unknown: "routing fallback requires parent review",
+  };
+  return labels[failureClass] || labels.unknown;
+}
+
 function classifyIntents(task) {
   const cleaned = cleanTask(task);
   const matches = [];
@@ -1875,7 +1892,7 @@ function cacheKeyFor(task, policy, route, skillCandidates) {
     .sort()
     .slice(0, Math.min(12, skillCandidates.length));
   const payload = {
-    routerMetadataVersion: 15,
+    routerMetadataVersion: ROUTER_METADATA_VERSION,
     task: cleanTask(task),
     budget: policy.budget,
     judgeMode: policy.judgeMode,
@@ -2239,6 +2256,7 @@ function clarificationQuestionFor(task, routeLike) {
 }
 
 function buildParentReviewHandoffPlan(task, reason = "routing fallback requires parent review") {
+  const safeReason = safeFailureSummary(reason) || displayText(reason, 160) || "routing fallback requires parent review";
   const stage = {
     id: "parent-review",
     agent: "parent-codex",
@@ -2257,7 +2275,7 @@ function buildParentReviewHandoffPlan(task, reason = "routing fallback requires 
   };
   return {
     mode: "parent-review-required",
-    clarificationQuestion: reason,
+    clarificationQuestion: safeReason,
     stages: [stage],
   };
 }
@@ -2462,9 +2480,10 @@ function fallbackSafetyFor(route, errorMessage, judgePolicy) {
   const isIntentionalDeterministic = !errorMessage && judgePolicy?.judgeMode === "deterministic";
   if (isIntentionalDeterministic) return { fallbackReason: "", fallbackSafety: "safe-deterministic", requiresParentReview: false };
   const failureClass = classifyFailure(errorMessage);
-  if (highRisk) return { fallbackReason: errorMessage || "high-risk fallback", failureClass, fallbackSafety: "conservative", requiresParentReview: true };
-  if (route.confidence === "low" || route.needsParentChoice) return { fallbackReason: errorMessage || "low-confidence fallback", failureClass, fallbackSafety: "needs-parent-choice", requiresParentReview: true };
-  return { fallbackReason: errorMessage || "deterministic fallback", failureClass, fallbackSafety: "acceptable", requiresParentReview: false };
+  const fallbackReason = safeFailureSummary(errorMessage) || "deterministic fallback";
+  if (highRisk) return { fallbackReason: fallbackReason === "deterministic fallback" ? "high-risk fallback" : fallbackReason, failureClass, fallbackSafety: "conservative", requiresParentReview: true };
+  if (route.confidence === "low" || route.needsParentChoice) return { fallbackReason: fallbackReason === "deterministic fallback" ? "low-confidence fallback" : fallbackReason, failureClass, fallbackSafety: "needs-parent-choice", requiresParentReview: true };
+  return { fallbackReason, failureClass, fallbackSafety: "acceptable", requiresParentReview: false };
 }
 
 function attachRoutingMetadata(result, route, skillCandidates = [], judgePolicy = {}, fallbackMeta = {}) {
@@ -4548,13 +4567,13 @@ function managedDelegationPlan(result, options = {}) {
   const nextAction = readinessState === "clarify-first"
     ? {
       type: "ask-clarification",
-      question: result.executionPlan?.clarificationQuestion || result.handoffPlan?.clarificationQuestion || "请补充一个关键范围或目标。",
+      question: displayText(result.executionPlan?.clarificationQuestion || result.handoffPlan?.clarificationQuestion || "请补充一个关键范围或目标。", 180),
     }
     : readinessState === "parent-review-required"
       ? {
         type: "parent-review",
         stageId: "parent-review",
-        reason: result.fallbackReason || "routing requires parent review before delegation",
+        reason: displayText(result.fallbackReason || "routing requires parent review before delegation", 180),
       }
       : {
         type: "spawn",
@@ -4653,7 +4672,7 @@ function managedDelegationPlan(result, options = {}) {
       executionAdapter: executionAdapter.userImpact,
     },
     planningBrief: planningBriefFor({ task: result.task || "", coordinationMode, result, profile, readinessState, stageDetails }),
-    clarificationQuestion: asksNow ? (result.executionPlan?.clarificationQuestion || result.handoffPlan?.clarificationQuestion || "请补充一个关键范围或目标，以便安全派发子代理。") : "",
+    clarificationQuestion: readinessState === "clarify-first" ? displayText(result.executionPlan?.clarificationQuestion || result.handoffPlan?.clarificationQuestion || "请补充一个关键范围或目标，以便安全派发子代理。", 180) : "",
     executionContract: {
       taskKind: profile.taskKind || "unknown",
       risk: profile.risk || "unknown",
