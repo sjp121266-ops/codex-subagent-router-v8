@@ -1,5 +1,5 @@
 {
-  "version": 18,
+  "version": 19,
   "skillRules": [
     {
       "id": "web-app-qa",
@@ -669,6 +669,14 @@
       "maxStages": 6,
       "maxSafetyItems": 5,
       "includeMermaid": true
+    },
+    "projectGraph": {
+      "enabled": true,
+      "storageDir": ".codex/sinan-codegraph",
+      "maxFiles": 3000,
+      "maxFileBytes": 262144,
+      "staleAfterHours": 24,
+      "includeInDisplayBoard": true
     },
     "openSourcePatterns": {
       "enabled": true,

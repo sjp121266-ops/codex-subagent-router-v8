@@ -32,6 +32,24 @@ node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs managed --prof
 node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs managed --offline --profile app "使用多智能体分批测试这个项目，输出规划看板"
 ```
 
+## First-Use Project Code Graph
+
+插件首次在一个项目里运行 `managed` 或 `inspect-context` 时，会生成本地轻量代码图谱：
+
+- 默认位置：`.codex/sinan-codegraph/`
+- 主要文件：`manifest.json`、`files.json`、`edges.json`、`queries.json`、`summary.md`
+- 用途：识别项目语言、框架、入口文件、测试命令候选、关键配置和模块 import 关系，帮助司南根据“任务语义 + 当前仓库结构”选择 agent。
+- 边界：图谱只是初始导航，不替代 Codex 真实代码阅读、测试和最终验收；高风险、凭证、生产和发布动作仍然需要父级 Codex 复核。
+
+常用命令：
+
+```bash
+node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs project-graph status --json
+node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs project-graph init --json
+node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs project-graph query --json "入口文件和测试"
+node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs managed --no-project-graph --json "调试时跳过项目图谱"
+```
+
 ## Execution Adapter
 
 Native custom-name agent spawning depends on the current Codex host. When direct spawning by a provider identity is unavailable, the router uses `executionAdapter.mode = "generic-role-bridge"` and tells Codex to run the selected identity through the generic `explorer` or `worker` role with `delegationPrompt` injected. This keeps the chosen agent identity, skills, model, sandbox, stages, and quality gates intact while changing only the transport layer.

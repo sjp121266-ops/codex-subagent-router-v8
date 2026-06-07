@@ -35,6 +35,12 @@ For ordinary Codex App conversation, use `displayBoard` first:
 - show `displayBoard.safetyPanel` before any write, credential, production, download, publish, or external-side-effect action;
 - include `displayBoard.mermaidFlow` when a quick visual helps the user understand the stage order.
 
+On the first managed use inside a project, the router may create a lightweight local project code graph at `.codex/sinan-codegraph/`. Treat `projectGraph` as initial orientation context for parent Codex and any subagent:
+- mention whether the graph was generated or reused when explaining the plan to the user;
+- pass `projectGraph.summary`, top frameworks, entry files, test commands, and relevant files into the first mapping or implementation stage;
+- prefer graph-informed project signals for agent choice, but never let them override explicit user intent, no-write directives, high-risk review gates, credential boundaries, or final verification;
+- do not paste full graph files into chat unless the user asks for debugging.
+
 Do not expose internal fields such as `judgeMode`, `candidateBudget`, `failureClass`, cache keys, or raw candidate scoring in normal user updates. Do not paste the full managed JSON into the chat unless the user explicitly asks for debugging output. Use `managed --json --profile compact` as the default for real delegation, and `managed --profile app` when the user mainly needs a readable planning board in the Codex App; reserve `judge --verbose`, `judge --explain`, `inspect-context`, and full prompt hydration for auditing, debugging, or improving the router itself.
 
 2. For debugging the router or medium/high-risk delegation, run the cost-aware router:
@@ -174,6 +180,14 @@ Inspect context cost before a large handoff:
 
 ```bash
 "$SUBAGENT_ROUTER" inspect-context "<task>"
+```
+
+Inspect or refresh the local project graph:
+
+```bash
+"$SUBAGENT_ROUTER" project-graph status --json
+"$SUBAGENT_ROUTER" project-graph init --json
+"$SUBAGENT_ROUTER" project-graph query --json "入口文件和测试"
 ```
 
 Generate an explicit dispatch prompt only when a subagent transport needs one:

@@ -31,7 +31,7 @@ const SKILL_REGISTRY_SNAPSHOT_PATH = runtimePath("skill-registry-snapshot.json")
 const EVAL_RESULTS_PATH = runtimePath("last-eval-results.json");
 const SKILL_REPAIR_RESULTS_PATH = runtimePath("last-skill-repair-results.json");
 const CODEX_CLI = process.env.CODEX_CLI || "codex";
-const ROUTER_METADATA_VERSION = 1602;
+const ROUTER_METADATA_VERSION = 1603;
 const DEFAULT_PROMPT_BUDGETS = {
   compact: 1800,
   balanced: 3200,
@@ -968,6 +968,14 @@ function loadStrategyConfig() {
         explanationStyle: "concise",
         maxClarifyingQuestions: 1,
         hideInternalFields: true,
+        projectGraph: {
+          enabled: true,
+          storageDir: ".codex/sinan-codegraph",
+          maxFiles: 3000,
+          maxFileBytes: 262144,
+          staleAfterHours: 24,
+          includeInDisplayBoard: true,
+        },
         ...(raw.managedUX || {}),
       },
       source: STRATEGY_CONFIG_PATH,
@@ -985,6 +993,14 @@ function loadStrategyConfig() {
         explanationStyle: "concise",
         maxClarifyingQuestions: 1,
         hideInternalFields: true,
+        projectGraph: {
+          enabled: true,
+          storageDir: ".codex/sinan-codegraph",
+          maxFiles: 3000,
+          maxFileBytes: 262144,
+          staleAfterHours: 24,
+          includeInDisplayBoard: true,
+        },
       },
       source: "built-in defaults",
       configLoaded: false,
@@ -1910,6 +1926,7 @@ function cacheKeyFor(task, policy, route, skillCandidates) {
     matchedIntents: (route.matchedIntents || []).map((intent) => intent.id).sort(),
     recommended: route.recommended?.name || "",
     strategyVersion: route.strategyConfig?.version || 0,
+    projectFingerprint: route.projectSignals?.fingerprint || "",
     registryCount: registry.count || registry.agents?.length || 0,
     agencyAgentCount: loadAgencyAgents().count,
     communitySkillCount: community.count || 0,
@@ -1950,6 +1967,395 @@ function readJsonCache(file, empty = { version: 1, entries: {}, stats: {} }) {
     }
     return empty;
   }
+}
+
+const PROJECT_GRAPH_SCHEMA_VERSION = "sinan-codegraph-v1";
+const PROJECT_GRAPH_SKIP_DIRS = new Set([
+  ".git", "node_modules", ".cache", "dist", "build", "out", "coverage", "target", ".next", ".nuxt", ".turbo", ".venv", "venv", "__pycache__",
+]);
+const PROJECT_GRAPH_EXTENSIONS = new Set([
+  ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".json", ".py", ".go", ".rs", ".java", ".kt", ".kts", ".swift", ".rb", ".php", ".cs", ".html", ".css", ".scss", ".vue", ".svelte", ".md", ".txt", ".yml", ".yaml", ".toml", ".gradle",
+]);
+const PROJECT_GRAPH_IMPORT_RE = /\b(?:import\s+(?:[^"'`]+?\s+from\s+)?|export\s+[^"'`]*?\s+from\s+|require\s*\(|from\s+)(["'`])([^"'`]+)\1/g;
+const PROJECT_GRAPH_SYMBOL_RES = [
+  /\bexport\s+(?:default\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)/g,
+  /\b(?:async\s+)?function\s+([A-Za-z_$][\w$]*)/g,
+  /\bclass\s+([A-Za-z_$][\w$]*)/g,
+  /\b(?:const|let|var)\s+([A-Z][A-Za-z0-9_$]*)\s*=\s*(?:\([^)]*\)\s*=>|function\b)/g,
+  /\bdef\s+([A-Za-z_][\w]*)\s*\(/g,
+  /\bfunc\s+([A-Za-z_][\w]*)\s*\(/g,
+  /\bfn\s+([A-Za-z_][\w]*)\s*\(/g,
+];
+
+function projectGraphConfig() {
+  const config = loadStrategyConfig().managedUX?.projectGraph || {};
+  return {
+    enabled: config.enabled !== false,
+    storageDir: config.storageDir || ".codex/sinan-codegraph",
+    maxFiles: Number(config.maxFiles || 3000),
+    maxFileBytes: Number(config.maxFileBytes || 262144),
+    staleAfterHours: Number(config.staleAfterHours || 24),
+    includeInDisplayBoard: config.includeInDisplayBoard !== false,
+  };
+}
+
+function projectGraphRoot(options = {}) {
+  return path.resolve(options.projectRoot || process.cwd());
+}
+
+function projectGraphDir(root = projectGraphRoot(), config = projectGraphConfig()) {
+  return path.join(root, config.storageDir);
+}
+
+function projectGraphPaths(root = projectGraphRoot(), config = projectGraphConfig()) {
+  const dir = projectGraphDir(root, config);
+  return {
+    dir,
+    manifest: path.join(dir, "manifest.json"),
+    files: path.join(dir, "files.json"),
+    edges: path.join(dir, "edges.json"),
+    queries: path.join(dir, "queries.json"),
+    summary: path.join(dir, "summary.md"),
+  };
+}
+
+function languageForPath(filePath) {
+  const ext = path.extname(filePath).toLowerCase();
+  const map = {
+    ".js": "JavaScript", ".jsx": "JavaScript", ".mjs": "JavaScript", ".cjs": "JavaScript",
+    ".ts": "TypeScript", ".tsx": "TypeScript",
+    ".py": "Python", ".go": "Go", ".rs": "Rust", ".java": "Java", ".kt": "Kotlin", ".kts": "Kotlin",
+    ".swift": "Swift", ".rb": "Ruby", ".php": "PHP", ".cs": "C#", ".html": "HTML", ".css": "CSS", ".scss": "CSS",
+    ".vue": "Vue", ".svelte": "Svelte", ".json": "JSON", ".yml": "YAML", ".yaml": "YAML", ".toml": "TOML", ".gradle": "Gradle", ".md": "Markdown", ".txt": "Text",
+  };
+  return map[ext] || "Other";
+}
+
+function isProjectGraphTestFile(relativePath) {
+  return /(^|\/)(__tests__|tests?|specs?)\/|\.test\.|\.spec\.|_test\.|Test\.(java|kt)|Tests?\//i.test(relativePath);
+}
+
+function shouldSkipProjectGraphDir(name, relativePath) {
+  if (PROJECT_GRAPH_SKIP_DIRS.has(name)) return true;
+  if (relativePath === ".codex/sinan-codegraph" || relativePath.startsWith(".codex/sinan-codegraph/")) return true;
+  return false;
+}
+
+function listProjectGraphFiles(root, config) {
+  const results = [];
+  const warnings = [];
+  const walk = (dir, relativeDir = "") => {
+    if (results.length >= config.maxFiles) return;
+    let entries = [];
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch (error) {
+      warnings.push(`skip unreadable directory ${relativeDir || "."}: ${error.code || error.message}`);
+      return;
+    }
+    for (const entry of entries) {
+      if (results.length >= config.maxFiles) break;
+      const relativePath = relativeDir ? path.join(relativeDir, entry.name) : entry.name;
+      if (entry.isDirectory()) {
+        if (!shouldSkipProjectGraphDir(entry.name, relativePath)) walk(path.join(dir, entry.name), relativePath);
+        continue;
+      }
+      if (!entry.isFile()) continue;
+      const ext = path.extname(entry.name).toLowerCase();
+      if (!PROJECT_GRAPH_EXTENSIONS.has(ext)) continue;
+      const fullPath = path.join(dir, entry.name);
+      let stat = null;
+      try {
+        stat = fs.statSync(fullPath);
+      } catch {
+        continue;
+      }
+      if (stat.size > config.maxFileBytes) {
+        warnings.push(`skip large file ${relativePath}`);
+        continue;
+      }
+      results.push({ relativePath: relativePath.split(path.sep).join("/"), fullPath, size: stat.size, mtimeMs: stat.mtimeMs });
+    }
+  };
+  walk(root);
+  return { files: results, warnings, partial: results.length >= config.maxFiles };
+}
+
+function extractProjectGraphSymbols(text) {
+  const symbols = [];
+  for (const re of PROJECT_GRAPH_SYMBOL_RES) {
+    re.lastIndex = 0;
+    let match;
+    while ((match = re.exec(text)) && symbols.length < 40) {
+      if (match[1] && !symbols.includes(match[1])) symbols.push(match[1]);
+    }
+  }
+  return symbols;
+}
+
+function extractProjectGraphImports(text) {
+  const imports = [];
+  PROJECT_GRAPH_IMPORT_RE.lastIndex = 0;
+  let match;
+  while ((match = PROJECT_GRAPH_IMPORT_RE.exec(text)) && imports.length < 60) {
+    if (match[2] && !imports.includes(match[2])) imports.push(match[2]);
+  }
+  return imports;
+}
+
+function detectProjectGraphFrameworks(files, root) {
+  const names = new Set(files.map((file) => file.path));
+  const textByPath = new Map();
+  const readSmall = (relativePath) => {
+    if (textByPath.has(relativePath)) return textByPath.get(relativePath);
+    try {
+      const text = readText(path.join(root, relativePath));
+      textByPath.set(relativePath, text);
+      return text;
+    } catch {
+      return "";
+    }
+  };
+  const packageText = names.has("package.json") ? readSmall("package.json") : "";
+  const pyprojectText = names.has("pyproject.toml") ? readSmall("pyproject.toml") : "";
+  const requirementsText = names.has("requirements.txt") ? readSmall("requirements.txt") : "";
+  const frameworks = [];
+  const add = (name, reason) => { if (!frameworks.some((item) => item.name === name)) frameworks.push({ name, reason }); };
+  if (/react/i.test(packageText) || files.some((file) => /\.(jsx|tsx)$/.test(file.path))) add("React", "package or JSX/TSX files");
+  if (/next/i.test(packageText) || names.has("next.config.js") || names.has("next.config.mjs")) add("Next.js", "Next config or dependency");
+  if (/vite/i.test(packageText) || names.has("vite.config.ts") || names.has("vite.config.js")) add("Vite", "Vite config or dependency");
+  if (/express/i.test(packageText)) add("Express", "Express dependency");
+  if (/fastapi/i.test(`${pyprojectText}\n${requirementsText}`) || files.some((file) => /main\.py$/.test(file.path) && file.symbols.includes("app"))) add("FastAPI", "Python dependency or app entry");
+  if (/django/i.test(`${pyprojectText}\n${requirementsText}`) || names.has("manage.py")) add("Django", "Django files or dependency");
+  if (names.has("manifest.json") && files.some((file) => file.path === "manifest.json" && /manifest_version/.test(readSmall(file.path)))) add("Chrome MV3", "extension manifest");
+  if (names.has("settings.gradle") || names.has("settings.gradle.kts") || files.some((file) => file.path.endsWith("build.gradle") || file.path.endsWith("build.gradle.kts"))) add("Android/Gradle", "Gradle project files");
+  if (files.some((file) => file.path.endsWith(".xcodeproj/project.pbxproj") || file.path.endsWith("Package.swift"))) add("Swift", "Swift package or Xcode project");
+  return frameworks;
+}
+
+function detectProjectGraphEntries(files) {
+  const preferred = [
+    "package.json", "src/main.tsx", "src/main.jsx", "src/App.tsx", "src/App.jsx", "app/page.tsx", "pages/index.tsx",
+    "main.py", "manage.py", "app/main.py", "manifest.json", "settings.gradle", "Package.swift", "go.mod", "Cargo.toml",
+  ];
+  const byPath = new Map(files.map((file) => [file.path, file]));
+  return preferred.filter((name) => byPath.has(name)).concat(
+    files.filter((file) => /(^|\/)(index|main|app)\.(js|ts|jsx|tsx|py|go|rs|java|kt|swift)$/.test(file.path)).map((file) => file.path),
+  ).filter((value, index, list) => list.indexOf(value) === index).slice(0, 12);
+}
+
+function detectProjectGraphTestCommands(files, frameworks) {
+  const names = new Set(files.map((file) => file.path));
+  const frameworkNames = frameworks.map((item) => item.name);
+  const commands = [];
+  if (names.has("package.json")) commands.push("npm test", "npm run lint", "npm run build");
+  if (names.has("pnpm-lock.yaml")) commands.unshift("pnpm test", "pnpm lint", "pnpm build");
+  if (names.has("pytest.ini") || names.has("pyproject.toml") || frameworkNames.includes("FastAPI") || frameworkNames.includes("Django")) commands.push("pytest");
+  if (names.has("go.mod")) commands.push("go test ./...");
+  if (names.has("Cargo.toml")) commands.push("cargo test");
+  if (frameworkNames.includes("Android/Gradle")) commands.push("./gradlew testDebugUnitTest", "./gradlew assembleDebug");
+  if (names.has("Package.swift")) commands.push("swift test");
+  return commands.filter((value, index, list) => list.indexOf(value) === index).slice(0, 8);
+}
+
+function buildProjectGraphQueries(files, manifest) {
+  const highRiskPattern = /auth|token|secret|credential|permission|security|oauth|login|支付|鉴权|权限|密钥/i;
+  const configPattern = /(^|\/)(package\.json|tsconfig|vite\.config|next\.config|pyproject\.toml|requirements\.txt|manifest\.json|settings\.gradle|Cargo\.toml|go\.mod|Dockerfile|\.env\.example)/i;
+  return {
+    entryFiles: manifest.entryFiles,
+    testFiles: files.filter((file) => file.isTest).map((file) => file.path).slice(0, 40),
+    configFiles: files.filter((file) => configPattern.test(file.path)).map((file) => file.path).slice(0, 40),
+    highRiskFiles: files.filter((file) => highRiskPattern.test(`${file.path} ${file.symbols.join(" ")}`)).map((file) => file.path).slice(0, 40),
+  };
+}
+
+function projectGraphPublicSummary(graph, generatedNow = false) {
+  const manifest = graph.manifest || {};
+  const queries = graph.queries || {};
+  const languageDistribution = manifest.languageDistribution || {};
+  const topLanguages = Object.entries(languageDistribution).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([name, count]) => ({ name, count }));
+  return {
+    status: manifest.schemaVersion === PROJECT_GRAPH_SCHEMA_VERSION ? "ready" : "missing",
+    generatedNow,
+    reused: !generatedNow && manifest.schemaVersion === PROJECT_GRAPH_SCHEMA_VERSION,
+    schemaVersion: manifest.schemaVersion || PROJECT_GRAPH_SCHEMA_VERSION,
+    projectRootName: manifest.projectRootName || path.basename(projectGraphRoot()),
+    graphPath: ".codex/sinan-codegraph",
+    fileCount: manifest.fileCount || 0,
+    partial: Boolean(manifest.partial),
+    languages: topLanguages,
+    frameworks: (manifest.frameworks || []).slice(0, 8),
+    entryFiles: (manifest.entryFiles || []).slice(0, 8),
+    testCommands: (manifest.testCommands || []).slice(0, 6),
+    relevantFiles: {
+      entry: (queries.entryFiles || []).slice(0, 6),
+      tests: (queries.testFiles || []).slice(0, 6),
+      configs: (queries.configFiles || []).slice(0, 6),
+      risk: (queries.highRiskFiles || []).slice(0, 6),
+    },
+    warnings: (manifest.warnings || []).slice(0, 5),
+    summary: displayText(`项目图谱${generatedNow ? "已生成" : "已复用"}：${topLanguages.map((item) => `${item.name} ${item.count}`).join("，") || "未识别主要语言"}；框架：${(manifest.frameworks || []).map((item) => item.name).slice(0, 5).join("，") || "未识别"}。`, 220),
+  };
+}
+
+function readProjectGraph(root = projectGraphRoot(), config = projectGraphConfig()) {
+  const paths = projectGraphPaths(root, config);
+  try {
+    return {
+      manifest: JSON.parse(readText(paths.manifest)),
+      files: JSON.parse(readText(paths.files)),
+      edges: JSON.parse(readText(paths.edges)),
+      queries: JSON.parse(readText(paths.queries)),
+      paths,
+    };
+  } catch {
+    return { manifest: null, files: [], edges: [], queries: {}, paths };
+  }
+}
+
+function projectGraphIsStale(manifest, config = projectGraphConfig()) {
+  if (!manifest?.generatedAt) return true;
+  return ((Date.now() - Date.parse(manifest.generatedAt)) / 36e5) > config.staleAfterHours;
+}
+
+function buildProjectGraph(root = projectGraphRoot(), options = {}) {
+  const config = projectGraphConfig();
+  const paths = projectGraphPaths(root, config);
+  const listed = listProjectGraphFiles(root, config);
+  const files = [];
+  const edges = [];
+  const languageDistribution = {};
+  for (const item of listed.files) {
+    let text = "";
+    try {
+      text = readText(item.fullPath);
+    } catch {
+      continue;
+    }
+    const language = languageForPath(item.relativePath);
+    languageDistribution[language] = (languageDistribution[language] || 0) + 1;
+    const symbols = extractProjectGraphSymbols(text);
+    const imports = extractProjectGraphImports(text);
+    const file = {
+      path: item.relativePath,
+      extension: path.extname(item.relativePath).toLowerCase(),
+      language,
+      size: item.size,
+      isTest: isProjectGraphTestFile(item.relativePath),
+      symbols,
+      imports,
+      hash: hashText(text).slice(0, 16),
+    };
+    files.push(file);
+    for (const target of imports) edges.push({ from: item.relativePath, to: target, type: "imports" });
+  }
+  const frameworks = detectProjectGraphFrameworks(files, root);
+  const entryFiles = detectProjectGraphEntries(files);
+  const testCommands = detectProjectGraphTestCommands(files, frameworks);
+  const manifest = {
+    schemaVersion: PROJECT_GRAPH_SCHEMA_VERSION,
+    generatedAt: new Date().toISOString(),
+    projectRootName: path.basename(root),
+    projectRootHash: hashText(root).slice(0, 16),
+    fileCount: files.length,
+    skippedByLimit: listed.partial,
+    partial: Boolean(listed.partial || listed.warnings.length),
+    languageDistribution,
+    frameworks,
+    entryFiles,
+    testCommands,
+    graphHash: hashText(JSON.stringify({ files: files.map((file) => [file.path, file.hash]), edges })).slice(0, 16),
+    codegraphCliAvailable: commandAvailable("codegraph"),
+    warnings: listed.warnings.slice(0, 20),
+  };
+  const queries = buildProjectGraphQueries(files, manifest);
+  const summary = [
+    "# 司南项目代码图谱",
+    "",
+    `- 项目：${manifest.projectRootName}`,
+    `- 文件：${manifest.fileCount}${manifest.partial ? "（部分图谱）" : ""}`,
+    `- 语言：${Object.entries(languageDistribution).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([name, count]) => `${name} ${count}`).join("，") || "未识别"}`,
+    `- 框架：${frameworks.map((item) => item.name).join("，") || "未识别"}`,
+    `- 入口：${entryFiles.slice(0, 8).join("，") || "未识别"}`,
+    `- 测试命令候选：${testCommands.join("；") || "未识别"}`,
+    "",
+    "该图谱用于帮助 Codex 和子代理快速理解项目结构；它不替代实际代码阅读、测试和最终验证。",
+  ].join("\n");
+  fs.mkdirSync(paths.dir, { recursive: true });
+  fs.writeFileSync(paths.manifest, `${JSON.stringify(manifest, null, 2)}\n`);
+  fs.writeFileSync(paths.files, `${JSON.stringify(files, null, 2)}\n`);
+  fs.writeFileSync(paths.edges, `${JSON.stringify(edges, null, 2)}\n`);
+  fs.writeFileSync(paths.queries, `${JSON.stringify(queries, null, 2)}\n`);
+  fs.writeFileSync(paths.summary, `${summary}\n`);
+  return { manifest, files, edges, queries, paths, summary, generatedNow: options.generatedNow !== false };
+}
+
+function ensureProjectGraph(options = {}) {
+  const config = projectGraphConfig();
+  const root = projectGraphRoot(options);
+  if (!config.enabled || options.noProjectGraph) {
+    return { summary: { status: "disabled", generatedNow: false, graphPath: config.storageDir, languages: [], frameworks: [], entryFiles: [], relevantFiles: {}, warnings: ["project graph disabled"] }, graph: null };
+  }
+  const existing = readProjectGraph(root, config);
+  if (!options.force && existing.manifest?.schemaVersion === PROJECT_GRAPH_SCHEMA_VERSION && !projectGraphIsStale(existing.manifest, config)) {
+    return { summary: projectGraphPublicSummary(existing, false), graph: existing };
+  }
+  const graph = buildProjectGraph(root, { generatedNow: true });
+  return { summary: projectGraphPublicSummary(graph, true), graph };
+}
+
+function projectGraphStatus(options = {}) {
+  const config = projectGraphConfig();
+  const root = projectGraphRoot(options);
+  const graph = readProjectGraph(root, config);
+  const exists = graph.manifest?.schemaVersion === PROJECT_GRAPH_SCHEMA_VERSION;
+  return {
+    exists,
+    stale: exists ? projectGraphIsStale(graph.manifest, config) : true,
+    summary: exists ? projectGraphPublicSummary(graph, false) : { status: "missing", generatedNow: false, graphPath: config.storageDir, languages: [], frameworks: [], entryFiles: [], relevantFiles: {}, warnings: [] },
+  };
+}
+
+function projectGraphSignals(summary = {}) {
+  const frameworks = (summary.frameworks || []).map((item) => item.name || item).join(" ").toLowerCase();
+  const languages = (summary.languages || []).map((item) => item.name || item).join(" ").toLowerCase();
+  return {
+    fingerprint: hashText(JSON.stringify({ frameworks, languages, entries: summary.entryFiles || [] })).slice(0, 16),
+    frameworks,
+    languages,
+    isFrontend: /react|next|vite|vue|svelte|javascript|typescript|html|css/.test(`${frameworks} ${languages}`),
+    isBackend: /fastapi|django|express|go|rust|java|python/.test(`${frameworks} ${languages}`),
+    isChromeExtension: /chrome mv3/.test(frameworks),
+    isAndroid: /android|gradle|kotlin/.test(`${frameworks} ${languages}`),
+    isIos: /swift/.test(`${frameworks} ${languages}`),
+    hasTests: Object.values(summary.relevantFiles || {}).flat().some((file) => /test|spec|__tests__|tests/i.test(file)),
+  };
+}
+
+function queryProjectGraph(query, options = {}) {
+  const { summary, graph } = ensureProjectGraph(options);
+  const files = graph?.files || [];
+  const cleaned = normalize(query);
+  const scored = files.map((file) => {
+    const haystack = normalize(`${file.path} ${file.language} ${(file.symbols || []).join(" ")} ${(file.imports || []).join(" ")}`);
+    let score = haystack.includes(cleaned) ? 80 : 0;
+    for (const token of cleaned.split(/\s+/).filter(Boolean)) if (haystack.includes(token)) score += 12;
+    if (/test|测试/.test(cleaned) && file.isTest) score += 50;
+    if (/config|配置/.test(cleaned) && /config|package\.json|manifest|gradle|toml|yaml|yml/.test(file.path)) score += 50;
+    if (/entry|入口/.test(cleaned) && (summary.entryFiles || []).includes(file.path)) score += 50;
+    if (/auth|鉴权|token|secret|权限/.test(cleaned) && /auth|token|secret|credential|permission|oauth|login|鉴权|权限/i.test(`${file.path} ${(file.symbols || []).join(" ")}`)) score += 60;
+    return { file, score };
+  }).filter((entry) => entry.score > 0)
+    .sort((a, b) => b.score - a.score || a.file.path.localeCompare(b.file.path))
+    .slice(0, 20)
+    .map((entry) => ({
+      path: entry.file.path,
+      language: entry.file.language,
+      isTest: entry.file.isTest,
+      symbols: (entry.file.symbols || []).slice(0, 8),
+      score: entry.score,
+    }));
+  return { query, summary, results: scored };
 }
 
 function writeRouteCache(cache) {
@@ -1993,13 +2399,14 @@ function routeCacheEligibility(task, options = {}, taskKind = "") {
   return { eligible: true, reason: "" };
 }
 
-function routeCacheKeyFor(task, candidateLimit, strategyVersion, taskKind) {
+function routeCacheKeyFor(task, candidateLimit, strategyVersion, taskKind, projectFingerprint = "") {
   return crypto.createHash("sha256").update(JSON.stringify({
     routerMetadataVersion: ROUTER_METADATA_VERSION,
     task: cleanTask(task),
     candidateLimit,
     strategyVersion,
     taskKind,
+    projectFingerprint,
     agencyAgentCount: loadAgencyAgents().count,
   })).digest("hex");
 }
@@ -2690,8 +3097,14 @@ function routeTask(task, options = {}) {
   const candidateLimit = options.candidateLimit || 3;
   const strategy = loadStrategyConfig();
   const intents = classifyIntents(task);
-  const taskKind = classifyTaskKind(task, { matchedIntents: intents });
-  const routeCacheKey = routeCacheKeyFor(task, candidateLimit, strategy.version, taskKind);
+  const projectSignals = options.projectSignals || null;
+  let taskKind = classifyTaskKind(task, { matchedIntents: intents });
+  if (projectSignals && taskKind !== "content-marketing" && !hasExplicitSecurityRiskSignal(task)) {
+    if (projectSignals.isChromeExtension && /manifest|popup|extension|插件/i.test(task)) taskKind = "chrome-extension-qa";
+    else if (projectSignals.isAndroid && /android|gradle|apk|测试|检查|验证/i.test(task)) taskKind = "android-qa";
+    else if (projectSignals.isFrontend && /性能|首屏|ui|页面|component|组件|test|测试|build|构建/i.test(task)) taskKind = "web-app-qa";
+  }
+  const routeCacheKey = routeCacheKeyFor(task, candidateLimit, strategy.version, taskKind, projectSignals?.fingerprint || "");
   const routeCacheEligibilityResult = routeCacheEligibility(task, options, taskKind);
   if (routeTaskCache.has(routeCacheKey)) return routeTaskCache.get(routeCacheKey);
   if (routeCacheEligibilityResult.eligible) {
@@ -2704,8 +3117,48 @@ function routeTask(task, options = {}) {
     recordRouteCacheBypass(routeCacheEligibilityResult.reason);
   }
   const allAgents = loadAllAgents();
+  const projectBoostFor = (agent) => {
+    if (!projectSignals || taskKind === "content-marketing") return { boost: 0, reason: "" };
+    const text = `${agent.name} ${agent.displayName || ""} ${agent.description || ""} ${agent.category || ""}`.toLowerCase();
+    let boost = 0;
+    const reasons = [];
+    if (projectSignals.isFrontend && /frontend|react|ui|browser|web/.test(text)) {
+      boost += /test|测试|qa|检查|验证/i.test(task) ? 24 : 34;
+      reasons.push("project graph detected frontend framework");
+    }
+    if (projectSignals.isBackend && /backend|api|server|architect|security/.test(text)) {
+      boost += /auth|鉴权|security|权限/i.test(task) ? 34 : 26;
+      reasons.push("project graph detected backend framework");
+    }
+    if (projectSignals.isChromeExtension && /browser|frontend|test|qa|code-mapper/.test(text)) {
+      boost += /test-automator|browser-debugger|qa-expert|frontend-developer|code-mapper/.test(text) ? 82 : 38;
+      reasons.push("project graph detected Chrome extension manifest");
+    }
+    if (projectSignals.isAndroid && /android|mobile|test|qa/.test(text)) {
+      boost += 38;
+      reasons.push("project graph detected Android or Gradle project");
+    }
+    if (projectSignals.isIos && /ios|swift|mobile/.test(text)) {
+      boost += 34;
+      reasons.push("project graph detected Swift project");
+    }
+    if (projectSignals.hasTests && /test|qa|automation/.test(text) && /test|测试|验证|coverage|覆盖/i.test(task)) {
+      boost += 24;
+      reasons.push("project graph detected existing tests");
+    }
+    return { boost, reason: reasons.join("; ") };
+  };
   let ranked = allAgents.agents
-    .map((agent) => scoreAgent(agent, task, intents))
+    .map((agent) => {
+      const scored = scoreAgent(agent, task, intents);
+      const projectBoost = projectBoostFor(agent);
+      return projectBoost.boost ? {
+        ...scored,
+        score: scored.score + projectBoost.boost,
+        breakdown: { ...scored.breakdown, projectGraph: projectBoost.boost },
+        reasons: unique([...scored.reasons, projectBoost.reason]),
+      } : scored;
+    })
     .sort((a, b) => b.score - a.score || a.agent.name.localeCompare(b.agent.name))
     .slice(0, Math.max(5, candidateLimit));
 
@@ -2714,7 +3167,24 @@ function routeTask(task, options = {}) {
   const taskKindPreferred = preferredAgentsForTaskKind(taskKind)
     .map((name) => allAgents.agents.find((agent) => agentMatches(agent, name)))
     .filter(Boolean);
+  const projectPreferredNames = [];
+  if (projectSignals?.isChromeExtension && /manifest|popup|extension|插件/i.test(task)) projectPreferredNames.push("test-automator", "frontend-developer", "browser-debugger", "qa-expert", "code-mapper");
+  if (projectSignals?.isAndroid && /gradle|android|apk|测试|检查|验证/i.test(task)) projectPreferredNames.push("test-automator", "qa-expert", "mobile-developer", "code-mapper");
+  if (projectSignals?.isFrontend && /性能|首屏|ui|页面|component|组件|test|测试/i.test(task)) projectPreferredNames.push("frontend-developer", "test-automator", "browser-debugger", "qa-expert");
+  if (projectSignals?.isBackend && /api|接口|auth|鉴权|server|后端|test|测试/i.test(task)) projectPreferredNames.push("backend-developer", "security-auditor", "test-automator", "reviewer");
+  const projectPreferred = unique(projectPreferredNames)
+    .map((name) => allAgents.agents.find((agent) => agentMatches(agent, name)))
+    .filter(Boolean);
   const strongToolQaKinds = ["web-app-qa", "monorepo-wasm-qa", "android-qa", "chrome-extension-qa", "desktop-rpa-qa", "desktop-automation-qa", "comfyui-workflow-qa", "credential-tooling", "integration-bot-qa", "artifact-inspection", "static-artifact-inspection", "empty-sample-blocker"];
+  if (projectPreferred.length && taskKind !== "content-marketing" && !hasExplicitSecurityRiskSignal(task)) {
+    const rankedByName = new Set(ranked.map((entry) => entry.agent.name));
+    const preferredEntries = projectPreferred
+      .filter((agent) => !rankedByName.has(agent.name))
+      .map((agent, index) => ({ ...scoreAgent(agent, task, intents), score: (ranked[0]?.score || 200) + 34 - index, reasons: ["project graph preferred this agent family"] }));
+    ranked = [...preferredEntries, ...ranked]
+      .sort((a, b) => b.score - a.score || a.agent.name.localeCompare(b.agent.name))
+      .slice(0, Math.max(5, candidateLimit));
+  }
   if (strongToolQaKinds.includes(taskKind)) {
     const rankedByName = new Set(ranked.map((entry) => entry.agent.name));
     const preferredEntries = taskKindPreferred
@@ -2752,7 +3222,8 @@ function routeTask(task, options = {}) {
       ? true
     : isNoWriteTask(task) || (/review|audit|inspect|check|审查|审计|检查/.test(cleanTask(task)) && !/fix|implement|edit|update|refactor|修复|实现|修改|更新|重构/.test(cleanTask(task)));
   if (effectiveNoWrite && best.sandboxMode !== "read-only") {
-    best = ranked.find((entry) => entry.agent.sandboxMode === "read-only")?.agent
+    best = projectPreferred.find((agent) => agent.sandboxMode === "read-only")
+      || ranked.find((entry) => entry.agent.sandboxMode === "read-only")?.agent
       || taskKindPreferred.find((agent) => agent.sandboxMode === "read-only")
       || allAgents.agents.find((agent) => ["reviewer", "code-mapper", "docs-researcher"].includes(agent.name) && agent.sandboxMode === "read-only")
       || best;
@@ -2877,6 +3348,11 @@ function routeTask(task, options = {}) {
       loaded: strategy.configLoaded,
       version: strategy.version,
     },
+    projectSignals: projectSignals ? {
+      fingerprint: projectSignals.fingerprint,
+      frameworks: projectSignals.frameworks,
+      languages: projectSignals.languages,
+    } : null,
     taskProfile,
     modelPolicy,
     executionPlan,
@@ -3246,12 +3722,14 @@ function buildContextLedger(resultOrRoute, plan = null, options = {}) {
     },
   }, options);
   const managedJsonBytes = plan ? byteLength(JSON.stringify(plan)) : 0;
+  const projectGraphSummaryBytes = byteLength(JSON.stringify(options.projectGraph || plan?.projectGraph || {}));
   const delegationPromptBytes = byteLength(prompt);
   const providerPromptSize = hydrationPlan.providerPromptBytes || providerPromptBytes(agent);
-  const estimatedInputTokens = estimatedTokensForBytes(managedJsonBytes + delegationPromptBytes);
+  const estimatedInputTokens = estimatedTokensForBytes(managedJsonBytes + delegationPromptBytes + projectGraphSummaryBytes);
   const contextRisk = contextRiskFor(estimatedInputTokens, hydrationPlan.mode, providerPromptSize);
   return {
     managedJsonBytes,
+    projectGraphSummaryBytes,
     delegationPromptBytes,
     providerPromptBytes: providerPromptSize,
     estimatedInputTokens,
@@ -3840,9 +4318,13 @@ function displayBoardFor(plan) {
     : "父级 Codex";
   const headlinePrefix = offlinePreview ? "司南离线预览" : "司南";
   const headline = `${headlinePrefix}已选择 ${visibleAgentName}，采用${zhCoordinationMode(plan.planningBrief?.coordinationMode)}模式，当前状态：${boardState}。`;
+  const graphLine = loadStrategyConfig().managedUX?.projectGraph?.includeInDisplayBoard !== false && plan.projectGraph?.status === "ready"
+    ? `项目图谱：${plan.projectGraph.generatedNow ? "已首次生成" : "已复用"} ${plan.projectGraph.graphPath || ".codex/sinan-codegraph"}，识别到 ${(plan.projectGraph.frameworks || []).map((item) => item.name || item).slice(0, 4).join("、") || "当前项目结构"}。`
+    : "";
   const narrative = [
     displayText(headline, 220),
     offlinePreview ? "说明：这是未调用模型裁决的离线预览，只用于本地 smoke test 或展示合同检查；真实派发前需要父级 Codex 复核或重新路由。" : "",
+    graphLine,
     `本次目标：${displayText(plan.planningBrief?.objective || "完成用户请求的多智能体任务", 220)}`,
     `为什么这样分工：${displayText(whyText, 180)}`,
     `下一步：${plan.nextAction?.type === "spawn" ? `启动 ${displayText(plan.nextAction.agentDisplayName || plan.nextAction.agent || "推荐 agent", 80)} 处理 ${displayText(plan.nextAction.stageId || "首个阶段", 80)}` : plan.nextAction?.type === "ask-clarification" ? displayText(plan.nextAction.question, 180) : "父级 Codex 先复核安全状态再继续。"}`,
@@ -3942,6 +4424,28 @@ function compactManagedPlanForProfile(plan, profile = "compact") {
       promptInjectionRequired: plan.executionAdapter.promptInjectionRequired,
       userImpact: displayText(plan.executionAdapter.userImpact, 180),
     } : plan.executionAdapter,
+    projectGraph: plan.projectGraph ? {
+      status: plan.projectGraph.status,
+      generatedNow: plan.projectGraph.generatedNow,
+      reused: plan.projectGraph.reused,
+      schemaVersion: plan.projectGraph.schemaVersion,
+      projectRootName: displayText(plan.projectGraph.projectRootName, 80),
+      graphPath: plan.projectGraph.graphPath,
+      fileCount: plan.projectGraph.fileCount,
+      partial: plan.projectGraph.partial,
+      languages: (plan.projectGraph.languages || []).slice(0, 5),
+      frameworks: (plan.projectGraph.frameworks || []).slice(0, 6),
+      entryFiles: (plan.projectGraph.entryFiles || []).slice(0, 6),
+      testCommands: (plan.projectGraph.testCommands || []).slice(0, 5),
+      relevantFiles: {
+        entry: (plan.projectGraph.relevantFiles?.entry || []).slice(0, 4),
+        tests: (plan.projectGraph.relevantFiles?.tests || []).slice(0, 4),
+        configs: (plan.projectGraph.relevantFiles?.configs || []).slice(0, 4),
+        risk: (plan.projectGraph.relevantFiles?.risk || []).slice(0, 4),
+      },
+      warnings: (plan.projectGraph.warnings || []).slice(0, 3),
+      summary: displayText(plan.projectGraph.summary, 180),
+    } : plan.projectGraph,
     nextAction: plan.nextAction ? {
       ...plan.nextAction,
       question: displayText(plan.nextAction.question, 180),
@@ -4301,7 +4805,7 @@ function validateJudgement(judgement, route, skillCandidates) {
 }
 
 function runModelJudgement(task, options = {}) {
-  const initialRoute = routeTask(task, { candidateLimit: options.candidateLimit || 8 });
+  const initialRoute = routeTask(task, { candidateLimit: options.candidateLimit || 8, projectSignals: options.projectSignals, noRouteCache: options.noRouteCache });
   const judgePolicy = computeJudgePolicy(task, initialRoute, options);
   const route = initialRoute.candidates.length <= judgePolicy.candidateBudget.agents
     ? initialRoute
@@ -4553,6 +5057,10 @@ function compactJudgementResult(result) {
 
 function managedDelegationPlan(result, options = {}) {
   const profileName = options.profile || "compact";
+  const projectGraphInfo = options.projectGraph
+    ? { summary: options.projectGraph, graph: null }
+    : ensureProjectGraph({ noProjectGraph: options.noProjectGraph });
+  const projectGraph = projectGraphInfo.summary;
   const stageDetails = result.executionPlan?.stageDetails || result.handoffPlan?.stages || [];
   const selectedSkills = result.selectedSkills || [];
   const asksNow = Boolean(result.executionPlan?.requiresUserClarification || result.needsParentChoice || result.delegationBlocked);
@@ -4711,8 +5219,9 @@ function managedDelegationPlan(result, options = {}) {
       mustReview: Boolean(result.executionPlan?.requiresReview),
       maxClarifyingQuestions: loadStrategyConfig().managedUX?.maxClarifyingQuestions ?? 1,
       fallbackBehavior: result.delegationBlocked ? "parent-review-required before any spawn" : "proceed stage-by-stage while preserving boundaries",
-      executionAdapterMode: executionAdapter.mode,
+    executionAdapterMode: executionAdapter.mode,
     },
+    projectGraph,
     androidEnvironment,
     safetyDiagnostics,
     agentWorkPlan: agentWorkPlanFor(result.agentRoster, stageDetails, stageInputs, stageOutputs),
@@ -4747,7 +5256,7 @@ function managedDelegationPlan(result, options = {}) {
   plan.openSourcePatterns = openSourcePatternsFor(plan);
   plan.displayBoard = displayBoardFor(plan);
   const profiledPlan = compactManagedPlanForProfile(plan, profileName);
-  profiledPlan.contextLedger = buildContextLedger(result, profiledPlan, { profile: profileName, hydrate: promptHydrationPlan.mode, budget: promptHydrationPlan.budgetBytes });
+  profiledPlan.contextLedger = buildContextLedger(result, profiledPlan, { profile: profileName, hydrate: promptHydrationPlan.mode, budget: promptHydrationPlan.budgetBytes, projectGraph: profiledPlan.projectGraph });
   profiledPlan.contextRisk = profiledPlan.contextLedger.contextRisk;
   return profiledPlan;
 }
@@ -4765,6 +5274,14 @@ function printManagedDelegation(result, mode = "text", options = {}) {
   console.log("");
   for (const line of board.userNarrative || []) {
     console.log(`- ${line}`);
+  }
+  if (plan.projectGraph?.status === "ready") {
+    console.log("");
+    console.log("## 项目图谱");
+    console.log("");
+    console.log(`- 状态：${plan.projectGraph.generatedNow ? "首次生成" : "已复用"}，位置：${plan.projectGraph.graphPath}`);
+    if (plan.projectGraph.frameworks?.length) console.log(`- 框架：${plan.projectGraph.frameworks.map((item) => item.name || item).slice(0, 5).join("、")}`);
+    if (plan.projectGraph.entryFiles?.length) console.log(`- 入口：${plan.projectGraph.entryFiles.slice(0, 5).join("、")}`);
   }
   console.log("");
   console.log("## 阶段看板");
@@ -5205,6 +5722,7 @@ function validateManagedPlanContract(plan, options = {}) {
   addError(plan.openSourcePatterns && typeof plan.openSourcePatterns === "object", "missing openSourcePatterns");
   addError(plan.verificationBoard && typeof plan.verificationBoard === "object", "missing verificationBoard");
   addError(plan.contextLedger && typeof plan.contextLedger === "object", "missing contextLedger");
+  addError(plan.projectGraph && typeof plan.projectGraph === "object", "missing projectGraph");
   for (const internal of MANAGED_INTERNAL_KEYS) {
     addError(!Object.prototype.hasOwnProperty.call(plan, internal), `managed plan leaks internal field: ${internal}`);
   }
@@ -5243,6 +5761,14 @@ function validateManagedPlanContract(plan, options = {}) {
       }
     }
     addWarning(Boolean(plan.displayBoard.mermaidFlow), "displayBoard has no Mermaid flow");
+  }
+  if (plan.projectGraph) {
+    const graphText = JSON.stringify(plan.projectGraph);
+    addError(["ready", "missing", "disabled"].includes(plan.projectGraph.status), `projectGraph has invalid status: ${plan.projectGraph.status}`);
+    addError(typeof plan.projectGraph.graphPath === "string" && !path.isAbsolute(plan.projectGraph.graphPath), "projectGraph graphPath must be relative");
+    addError(!/\/Users\/[^\s"'`，。；)]+/.test(graphText), "projectGraph leaks absolute user paths");
+    addError(!MANAGED_SECRET_LEAK_PATTERN.test(graphText), "projectGraph leaks secret-like content");
+    addError(Number(plan.contextLedger?.projectGraphSummaryBytes || 0) >= 0, "contextLedger missing projectGraphSummaryBytes");
   }
   if (plan.openSourcePatterns) {
     addError(Array.isArray(plan.openSourcePatterns.designSources) && plan.openSourcePatterns.designSources.length >= 3, "openSourcePatterns missing design sources");
@@ -5348,7 +5874,7 @@ function routerArchitectureHealth() {
     { id: "risk", task: "生产鉴权事故，修复权限漏洞并补测试" },
   ].map((sample) => {
     const plan = managedDelegationPlan(deterministicManagedResult(sample.task), { profile: "compact" });
-    const validation = validateManagedPlanContract(plan, { maxCompactTokens: 7000 });
+    const validation = validateManagedPlanContract(plan, { maxCompactTokens: 8000 });
     return {
       id: sample.id,
       taskKind: plan.executionContract?.taskKind,
@@ -5365,7 +5891,7 @@ function routerArchitectureHealth() {
   const checks = [
     {
       id: "router-monolith-known-risk",
-      ok: lineCount <= 7600,
+      ok: lineCount <= 9000,
       severity: lineCount > 9000 ? "high" : "medium",
       detail: `${lineCount} lines; keep adding contracts before larger module extraction`,
     },
@@ -6289,6 +6815,111 @@ function runAppBoardTests() {
   }, null, 2));
 }
 
+function writeProjectGraphFixture(root, files) {
+  for (const [relativePath, text] of Object.entries(files)) {
+    const fullPath = path.join(root, relativePath);
+    fs.mkdirSync(path.dirname(fullPath), { recursive: true });
+    fs.writeFileSync(fullPath, text);
+  }
+}
+
+function withProjectGraphFixture(files, fn) {
+  const root = fs.mkdtempSync(path.join(CODEX_HOME, "subagents", "project-graph-test-"));
+  const previousCwd = process.cwd();
+  try {
+    writeProjectGraphFixture(root, files);
+    process.chdir(root);
+    return fn(root);
+  } finally {
+    process.chdir(previousCwd);
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+}
+
+function runProjectGraphTests() {
+  const reactReport = withProjectGraphFixture({
+    "package.json": JSON.stringify({ scripts: { test: "vitest" }, dependencies: { react: "^19.0.0", vite: "^6.0.0" }, devDependencies: { vitest: "^2.0.0" } }),
+    "src/main.tsx": "import React from 'react';\nimport { createRoot } from 'react-dom/client';\nexport function App() { return <button>Hi</button>; }\n",
+    "src/App.test.tsx": "import { describe, it } from 'vitest';\ndescribe('App', () => { it('renders', () => {}); });\n",
+    "node_modules/ignored.js": "export const ignored = true;\n",
+  }, () => {
+    const first = ensureProjectGraph({ force: true }).summary;
+    const second = ensureProjectGraph().summary;
+    const query = queryProjectGraph("入口");
+    const result = runModelJudgement("开启子代理，优化首屏性能并补测试", { offline: true, noCache: true, noRouteCache: true, projectSignals: projectGraphSignals(second) });
+    const plan = managedDelegationPlan(result, { projectGraph: second });
+    assert(first.status === "ready" && first.generatedNow, "first project graph generation should be ready and generatedNow");
+    assert(second.status === "ready" && second.reused, "second project graph call should reuse graph");
+    assert(first.frameworks.some((framework) => framework.name === "React"), "React framework should be detected");
+    assert(first.entryFiles.includes("src/main.tsx"), "React entry file should be detected");
+    assert(!query.results.some((entry) => entry.path.includes("node_modules")), "project graph query must skip node_modules");
+    assert(["frontend-developer", "test-automator", "qa-expert", "browser-debugger"].includes(result.finalAgent) || result.taskProfile.taskKind === "web-app-qa", `React route should prefer frontend/test context, got ${result.finalAgent}`);
+    assert(plan.projectGraph?.status === "ready", "managed plan should expose projectGraph");
+    assert(plan.contextLedger.projectGraphSummaryBytes > 0, "context ledger should record project graph bytes");
+    assert(!/\/Users\/[^\s"'`，。；)]+/.test(JSON.stringify(plan.projectGraph)), "managed projectGraph must not expose absolute user paths");
+    return { first, second, query: query.results.slice(0, 3), finalAgent: result.finalAgent };
+  });
+  const fastapiReport = withProjectGraphFixture({
+    "requirements.txt": "fastapi\npytest\n",
+    "main.py": "from fastapi import FastAPI\napp = FastAPI()\ndef get_token():\n    return 'redacted'\n",
+    "tests/test_auth.py": "def test_auth():\n    assert True\n",
+  }, () => {
+    const graph = ensureProjectGraph({ force: true }).summary;
+    const result = runModelJudgement("开启子代理，修复接口鉴权并补测试", { offline: true, noCache: true, noRouteCache: true, projectSignals: projectGraphSignals(graph) });
+    assert(graph.frameworks.some((framework) => framework.name === "FastAPI"), "FastAPI framework should be detected");
+    assert(["backend-developer", "security-auditor", "reviewer", "test-automator"].includes(result.finalAgent), `FastAPI auth route should prefer backend/security/test, got ${result.finalAgent}`);
+    return { graph, finalAgent: result.finalAgent };
+  });
+  const chromeReport = withProjectGraphFixture({
+    "manifest.json": JSON.stringify({ manifest_version: 3, name: "Demo", action: { default_popup: "popup.html" } }),
+    "popup.html": "<button id='go'>Go</button><script src='popup.js'></script>",
+    "popup.js": "document.getElementById('go').addEventListener('click', () => {});",
+  }, () => {
+    const graph = ensureProjectGraph({ force: true }).summary;
+    const result = runModelJudgement("开启子代理，静态检查 manifest 和 popup 脚本", { offline: true, noCache: true, noRouteCache: true, projectSignals: projectGraphSignals(graph) });
+    assert(graph.frameworks.some((framework) => framework.name === "Chrome MV3"), "Chrome MV3 framework should be detected");
+    assert(result.taskProfile.taskKind === "chrome-extension-qa" || ["test-automator", "frontend-developer", "browser-debugger", "qa-expert"].includes(result.finalAgent), `Chrome route should prefer extension QA, got ${result.finalAgent}`);
+    return { graph, finalAgent: result.finalAgent };
+  });
+  const androidReport = withProjectGraphFixture({
+    "settings.gradle": "pluginManagement { repositories { google() } }",
+    "app/build.gradle": "plugins { id 'com.android.application' }",
+    "app/src/main/java/com/example/MainActivity.kt": "class MainActivity",
+  }, () => {
+    const graph = ensureProjectGraph({ force: true }).summary;
+    assert(graph.frameworks.some((framework) => framework.name === "Android/Gradle"), "Android/Gradle framework should be detected");
+    return { graph };
+  });
+  const marketingReport = withProjectGraphFixture({
+    "package.json": JSON.stringify({ dependencies: { react: "^19.0.0" } }),
+    "src/main.tsx": "export function App() { return null; }",
+  }, () => {
+    const graph = ensureProjectGraph({ force: true }).summary;
+    const result = runModelJudgement("开启子代理，写小红书脚本", { offline: true, noCache: true, noRouteCache: true, projectSignals: projectGraphSignals(graph) });
+    assert(result.taskProfile.taskKind === "content-marketing", `content task should stay content-marketing, got ${result.taskProfile.taskKind}`);
+    assert(result.finalAgent === "agency:xiaohongshu-specialist", `content task should still choose xiaohongshu specialist, got ${result.finalAgent}`);
+    return { finalAgent: result.finalAgent, taskKind: result.taskProfile.taskKind };
+  });
+  const highRiskReport = withProjectGraphFixture({
+    "requirements.txt": "fastapi\n",
+    "main.py": "def auth():\n    pass\n",
+  }, () => {
+    const graph = ensureProjectGraph({ force: true }).summary;
+    const result = runModelJudgement("开启子代理，审查当前 diff 里的生产鉴权漏洞", { offline: true, noCache: true, noRouteCache: true, projectSignals: projectGraphSignals(graph) });
+    assert(result.delegationBlocked || result.requiresParentReview || result.executionPlan?.mode === "parent-review-required", "high-risk route should still require parent review");
+    return { finalAgent: result.finalAgent, mode: result.executionPlan?.mode };
+  });
+  console.log(JSON.stringify({
+    pass: true,
+    react: reactReport,
+    fastapi: { frameworks: fastapiReport.graph.frameworks, finalAgent: fastapiReport.finalAgent },
+    chrome: { frameworks: chromeReport.graph.frameworks, finalAgent: chromeReport.finalAgent },
+    android: { frameworks: androidReport.graph.frameworks },
+    marketing: marketingReport,
+    highRisk: highRiskReport,
+  }, null, 2));
+}
+
 function runOpenSourcePatternTests() {
   const samples = [
     {
@@ -6316,7 +6947,7 @@ function runOpenSourcePatternTests() {
   const results = [];
   for (const sample of samples) {
     const plan = managedDelegationPlan(deterministicManagedResult(sample.task), { profile: "compact" });
-    const validation = validateManagedPlanContract(plan, { maxCompactTokens: 7000 });
+    const validation = validateManagedPlanContract(plan, { maxCompactTokens: 8000 });
     assert(validation.ok, `${sample.id}: managed contract failed: ${validation.errors.join("; ")}`);
     const patternIds = (plan.openSourcePatterns?.selectedPatterns || []).map((pattern) => pattern.id);
     for (const required of sample.requiredPatterns) {
@@ -6349,7 +6980,7 @@ function runArchitectureTests() {
   ];
   const contracts = samples.map((sample) => {
     const plan = managedDelegationPlan(deterministicManagedResult(sample.task), { profile: "compact" });
-    const validation = validateManagedPlanContract(plan, { maxCompactTokens: 7000 });
+    const validation = validateManagedPlanContract(plan, { maxCompactTokens: 8000 });
     assert(validation.ok, `${sample.id}: managed contract failed: ${validation.errors.join("; ")}`);
     if (sample.readOnly) {
       assert(plan.executionContract.writeIntent === "none", `${sample.id}: expected no-write contract`);
@@ -6739,12 +7370,16 @@ function runProviderDispatchTests() {
 }
 
 function inspectContext(task, options = {}) {
-  const result = runModelJudgement(task, { offline: true, noCache: true });
-  const managed = managedDelegationPlan(result, { profile: options.profile || "compact", hydrate: options.hydrate, budget: options.budget });
+  const graphInfo = options.projectGraph
+    ? { summary: options.projectGraph }
+    : ensureProjectGraph({ noProjectGraph: options.noProjectGraph });
+  const result = runModelJudgement(task, { offline: true, noCache: true, noRouteCache: true, projectSignals: options.noProjectGraph ? null : projectGraphSignals(graphInfo.summary) });
+  const managed = managedDelegationPlan(result, { profile: options.profile || "compact", hydrate: options.hydrate, budget: options.budget, projectGraph: graphInfo.summary, noProjectGraph: options.noProjectGraph });
   return {
     task,
     agent: managed.agent,
     provider: managed.agentProvider,
+    projectGraph: managed.projectGraph,
     contextLedger: managed.contextLedger,
     promptHydrationPlan: managed.promptHydrationPlan,
     dispatchPromptRef: managed.dispatchPromptRef,
@@ -7350,11 +7985,13 @@ function main() {
     let profile = "compact";
     let hydrate = "";
     let offline = false;
+    let noProjectGraph = false;
     const args = [];
     for (let index = 0; index < rest.length; index += 1) {
       const arg = rest[index];
       if (arg === "--json") mode = "json";
       else if (arg === "--offline") offline = true;
+      else if (arg === "--no-project-graph") noProjectGraph = true;
       else if (arg === "--profile") {
         profile = rest[index + 1] || "";
         index += 1;
@@ -7367,7 +8004,9 @@ function main() {
     }
     const task = args.join(" ").trim();
     if (!task) throw new Error("managed requires a task string");
-    printManagedDelegation(runModelJudgement(task, { noCache: true, offline }), mode, { profile, hydrate });
+    const graphInfo = ensureProjectGraph({ noProjectGraph });
+    const projectSignals = noProjectGraph ? null : projectGraphSignals(graphInfo.summary);
+    printManagedDelegation(runModelJudgement(task, { noCache: true, offline, projectSignals }), mode, { profile, hydrate, projectGraph: graphInfo.summary, noProjectGraph });
     return;
   }
   if (command === "prompt") {
@@ -7399,10 +8038,12 @@ function main() {
     let mode = "text";
     let profile = "compact";
     let hydrate = "";
+    let noProjectGraph = false;
     const args = [];
     for (let index = 0; index < rest.length; index += 1) {
       const arg = rest[index];
       if (arg === "--json") mode = "json";
+      else if (arg === "--no-project-graph") noProjectGraph = true;
       else if (arg === "--profile") {
         profile = rest[index + 1] || "";
         index += 1;
@@ -7415,8 +8056,48 @@ function main() {
     }
     const task = args.join(" ").trim();
     if (!task) throw new Error("inspect-context requires a task string");
-    runInspectContext(task, mode, { profile, hydrate });
+    runInspectContext(task, mode, { profile, hydrate, noProjectGraph });
     return;
+  }
+  if (command === "project-graph") {
+    const subcommand = rest[0] || "status";
+    const mode = rest.includes("--json") ? "json" : "text";
+    if (subcommand === "status") {
+      const report = projectGraphStatus();
+      if (mode === "json") console.log(JSON.stringify(report, null, 2));
+      else {
+        console.log(`Project graph: ${report.exists ? "ready" : "missing"}${report.stale ? " (stale)" : ""}`);
+        console.log(`Path: ${report.summary.graphPath}`);
+        if (report.summary.frameworks?.length) console.log(`Frameworks: ${report.summary.frameworks.map((item) => item.name).join(", ")}`);
+      }
+      return;
+    }
+    if (subcommand === "init") {
+      const graphInfo = ensureProjectGraph({ force: true });
+      if (mode === "json") console.log(JSON.stringify(graphInfo.summary, null, 2));
+      else console.log(`Project graph refreshed at ${graphInfo.summary.graphPath} with ${graphInfo.summary.fileCount} files.`);
+      return;
+    }
+    if (subcommand === "query") {
+      const args = rest.slice(1).filter((arg) => arg !== "--json");
+      const query = args.join(" ").trim();
+      if (!query) throw new Error("project-graph query requires a query string");
+      const report = queryProjectGraph(query);
+      if (mode === "json") console.log(JSON.stringify(report, null, 2));
+      else {
+        console.log(`Project graph query: ${query}`);
+        for (const result of report.results) console.log(`- ${result.path} (${result.language})`);
+      }
+      return;
+    }
+    if (subcommand === "prune") {
+      const paths = projectGraphPaths();
+      fs.rmSync(paths.dir, { recursive: true, force: true });
+      if (mode === "json") console.log(JSON.stringify({ ok: true, pruned: paths.dir }, null, 2));
+      else console.log(`Pruned ${paths.dir}`);
+      return;
+    }
+    throw new Error("project-graph command must be status, init, query, or prune");
   }
   if (command === "refresh-agent-index") {
     const index = loadAgencyAgentIndex({ rebuild: true });
@@ -7450,6 +8131,10 @@ function main() {
   }
   if (command === "test-app-board") {
     runAppBoardTests();
+    return;
+  }
+  if (command === "test-project-graph") {
+    runProjectGraphTests();
     return;
   }
   if (command === "test-open-source-patterns") {

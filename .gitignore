@@ -3,6 +3,7 @@
 work/
 node_modules/
 .cache/
+.codex/sinan-codegraph/
 *.log
 subagents/judgement-cache.json
 subagents/.judgement-*.json
