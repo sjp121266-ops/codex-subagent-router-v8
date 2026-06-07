@@ -218,6 +218,7 @@ Use these checks after changing agents, skills, strategy config, schemas, or rou
 "$SUBAGENT_ROUTER" test-performance
 "$SUBAGENT_ROUTER" test-managed
 "$SUBAGENT_ROUTER" test-managed-contract
+"$SUBAGENT_ROUTER" test-architecture
 "$SUBAGENT_ROUTER" test-skills-phase
 "$SUBAGENT_ROUTER" test-judge-matrix
 "$SUBAGENT_ROUTER" test-recovery
@@ -237,6 +238,7 @@ Use these checks after changing agents, skills, strategy config, schemas, or rou
 "$SUBAGENT_ROUTER" test-prompt-hydration
 "$SUBAGENT_ROUTER" test-context-budget
 "$SUBAGENT_ROUTER" config-check
+"$SUBAGENT_ROUTER" architecture-health
 "$SUBAGENT_ROUTER" doctor
 "$SUBAGENT_ROUTER" report
 ```

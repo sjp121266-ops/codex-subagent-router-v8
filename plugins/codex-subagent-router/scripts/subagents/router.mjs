@@ -550,6 +550,7 @@ Usage:
   router.mjs test-managed-contract
   router.mjs test-planning-board
   router.mjs test-app-board
+  router.mjs test-architecture
   router.mjs test-agent-roster
   router.mjs test-managed-readiness
   router.mjs test-execution-adapter
@@ -568,6 +569,7 @@ Usage:
   router.mjs test-judge
   router.mjs doctor [--json]
   router.mjs report [--json]
+  router.mjs architecture-health [--json]
 
 Environment:
   CODEX_HOME   Defaults to ~/.codex
@@ -584,6 +586,10 @@ function hashText(text) {
 
 function byteLength(text) {
   return Buffer.byteLength(String(text || ""), "utf8");
+}
+
+function fileHash(file) {
+  return fs.existsSync(file) ? hashText(readText(file)) : "";
 }
 
 function estimatedTokensForBytes(bytes) {
@@ -4908,6 +4914,201 @@ function detectExecutionAdapter(stage = {}) {
   };
 }
 
+function validateManagedPlanContract(plan, options = {}) {
+  const errors = [];
+  const warnings = [];
+  const addError = (condition, message) => { if (!condition) errors.push(message); };
+  const addWarning = (condition, message) => { if (!condition) warnings.push(message); };
+  const goalLoop = plan.goalLoop || [];
+  const stageInputs = plan.stageInputs || {};
+  const stageOutputs = plan.stageOutputs || {};
+  addError(plan && typeof plan === "object", "managed plan must be an object");
+  addError(plan.executionContract && typeof plan.executionContract === "object", "missing executionContract");
+  addError(plan.planningBrief && typeof plan.planningBrief === "object", "missing planningBrief");
+  addError(Array.isArray(goalLoop) && goalLoop.length > 0, "missing non-empty goalLoop");
+  addError(plan.writeBoundaries && typeof plan.writeBoundaries === "object", "missing writeBoundaries");
+  addError(Array.isArray(plan.parentResponsibilities) && plan.parentResponsibilities.length >= 3, "missing parent responsibilities");
+  addError(plan.delegationReadiness && typeof plan.delegationReadiness === "object", "missing delegationReadiness");
+  addError(plan.nextAction && typeof plan.nextAction === "object", "missing nextAction");
+  addError(Array.isArray(plan.stageSkillLoadingOrder), "missing stageSkillLoadingOrder");
+  addError(plan.displayBoard && typeof plan.displayBoard === "object", "missing displayBoard");
+  addError(plan.verificationBoard && typeof plan.verificationBoard === "object", "missing verificationBoard");
+  addError(plan.contextLedger && typeof plan.contextLedger === "object", "missing contextLedger");
+  for (const internal of ["judgeMode", "judgeModel", "candidateBudget", "cache", "decisionTrace", "rejectedCandidates"]) {
+    addError(!Object.prototype.hasOwnProperty.call(plan, internal), `managed plan leaks internal field: ${internal}`);
+  }
+  if (goalLoop.length) {
+    addError(Object.keys(stageInputs).length === goalLoop.length, "stageInputs must cover every goal stage");
+    addError(Object.keys(stageOutputs).length === goalLoop.length, "stageOutputs must cover every goal stage");
+    addError((plan.stageSkillLoadingOrder || []).length === goalLoop.length, "stageSkillLoadingOrder must cover every goal stage");
+    addError((plan.handoffContracts || []).length === goalLoop.length, "handoffContracts must cover every goal stage");
+    addError((plan.verificationBoard?.stageChecks || []).length === goalLoop.length, "verificationBoard.stageChecks must cover every goal stage");
+  }
+  const readOnly = plan.executionContract?.writeIntent === "none";
+  if (readOnly) {
+    const stageText = JSON.stringify(goalLoop);
+    addError(!/implement|mitigate|maintain/i.test(stageText), "read-only managed plan must not include implementation or mitigation stages");
+    addError(!(plan.agentWorkPlan || []).some((card) => card.rosterRole === "implementer" && card.agent), "read-only managed plan must not assign an implementer");
+  }
+  if (plan.executionContract?.mustReview || plan.delegationReadiness?.state === "parent-review-required") {
+    addError(Boolean(plan.verificationBoard?.summary?.requiresParentReview || goalLoop.some((stage) => /review|parent-review/i.test(`${stage.goal} ${stage.role}`))), "review-required plan must expose a visible review gate");
+  }
+  if (plan.displayBoard) {
+    addError(/司南/.test(plan.displayBoard.headline || ""), "displayBoard headline must be Chinese and branded");
+    addError(Array.isArray(plan.displayBoard.userNarrative) && plan.displayBoard.userNarrative.length >= 3, "displayBoard missing user narrative");
+    addError(Array.isArray(plan.displayBoard.goalBoard) && plan.displayBoard.goalBoard.length >= 1, "displayBoard missing goal board");
+    addError(plan.displayBoard.safetyPanel && typeof plan.displayBoard.safetyPanel.requiresParentReview === "boolean", "displayBoard missing safety review state");
+    addWarning(Boolean(plan.displayBoard.mermaidFlow), "displayBoard has no Mermaid flow");
+  }
+  if (options.maxCompactTokens && plan.contextLedger?.estimatedInputTokens) {
+    addError(plan.contextLedger.estimatedInputTokens <= options.maxCompactTokens, `managed plan exceeds compact token budget: ${plan.contextLedger.estimatedInputTokens}`);
+  }
+  return { ok: errors.length === 0, errors, warnings };
+}
+
+function resolveProjectRootForMirror() {
+  const fromPluginMirror = path.resolve(ROUTER_DIR, "../../../..");
+  if (fs.existsSync(path.join(fromPluginMirror, "subagents", "router.mjs"))) return fromPluginMirror;
+  const fromMain = path.resolve(ROUTER_DIR, "..");
+  const mainRouter = path.join(fromMain, "subagents", "router.mjs");
+  if (fs.existsSync(mainRouter) && path.resolve(mainRouter) !== path.resolve(fileURLToPath(import.meta.url))) return fromMain;
+  return null;
+}
+
+function pluginMirrorSyncHealth() {
+  const projectRoot = resolveProjectRootForMirror();
+  if (!projectRoot) {
+    return {
+      projectRoot: "",
+      ok: true,
+      skipped: true,
+      reason: "source checkout not available from this installed plugin copy",
+      files: [],
+      drift: [],
+    };
+  }
+  const pairs = [
+    ["router", path.join(projectRoot, "subagents", "router.mjs"), path.join(projectRoot, "plugins/codex-subagent-router/scripts/subagents/router.mjs")],
+    ["strategy-config", path.join(projectRoot, "subagents", "strategy-config.json"), path.join(projectRoot, "plugins/codex-subagent-router/scripts/subagents/strategy-config.json")],
+    ["judgement-schema", path.join(projectRoot, "subagents", "judgement.schema.json"), path.join(projectRoot, "plugins/codex-subagent-router/scripts/subagents/judgement.schema.json")],
+    ["community-skills-manifest", path.join(projectRoot, "subagents", "community-skills-manifest.json"), path.join(projectRoot, "plugins/codex-subagent-router/scripts/subagents/community-skills-manifest.json")],
+    ["import-community-skills", path.join(projectRoot, "subagents", "import-community-skills.mjs"), path.join(projectRoot, "plugins/codex-subagent-router/scripts/subagents/import-community-skills.mjs")],
+    ["skill", path.join(projectRoot, "skills/subagent-router/SKILL.md"), path.join(projectRoot, "plugins/codex-subagent-router/skills/subagent-router/SKILL.md")],
+  ];
+  const files = pairs.map(([id, source, mirror]) => {
+    const sourceHash = fileHash(source);
+    const mirrorHash = fileHash(mirror);
+    return {
+      id,
+      source,
+      mirror,
+      sourceExists: Boolean(sourceHash),
+      mirrorExists: Boolean(mirrorHash),
+      inSync: Boolean(sourceHash && mirrorHash && sourceHash === mirrorHash),
+      sourceHash: sourceHash ? sourceHash.slice(0, 12) : "",
+      mirrorHash: mirrorHash ? mirrorHash.slice(0, 12) : "",
+    };
+  });
+  return {
+    projectRoot,
+    ok: files.every((file) => file.inSync),
+    files,
+    drift: files.filter((file) => !file.inSync).map((file) => file.id),
+  };
+}
+
+function routerArchitectureHealth() {
+  const config = loadStrategyConfig();
+  const configValidation = validateStrategyConfig(config);
+  const routerText = readText(fileURLToPath(import.meta.url));
+  const lineCount = routerText.split(/\r?\n/).length;
+  const managedSamples = [
+    { id: "goal", task: "开启子代理，调用合适 agent 完成任务" },
+    { id: "readonly", task: "只读审查 get_token，不执行 OAuth、不输出 token" },
+    { id: "risk", task: "生产鉴权事故，修复权限漏洞并补测试" },
+  ].map((sample) => {
+    const plan = managedDelegationPlan(deterministicManagedResult(sample.task), { profile: "compact" });
+    const validation = validateManagedPlanContract(plan, { maxCompactTokens: 6500 });
+    return {
+      id: sample.id,
+      taskKind: plan.executionContract?.taskKind,
+      mode: plan.mode,
+      agent: plan.agent,
+      stages: plan.goalLoop?.length || 0,
+      tokens: plan.contextLedger?.estimatedInputTokens || 0,
+      contractOk: validation.ok,
+      errors: validation.errors,
+      warnings: validation.warnings,
+    };
+  });
+  const mirrorSync = pluginMirrorSyncHealth();
+  const checks = [
+    {
+      id: "router-monolith-known-risk",
+      ok: lineCount <= 7200,
+      severity: lineCount > 9000 ? "high" : "medium",
+      detail: `${lineCount} lines; keep adding contracts before larger module extraction`,
+    },
+    {
+      id: "managed-contract-v17",
+      ok: managedSamples.every((sample) => sample.contractOk),
+      severity: "high",
+      detail: managedSamples.map((sample) => `${sample.id}:${sample.contractOk ? "ok" : sample.errors.join("|")}`).join("; "),
+    },
+    {
+      id: "plugin-mirror-sync",
+      ok: mirrorSync.ok,
+      severity: "high",
+      detail: mirrorSync.ok ? "main plugin files match mirror copies" : `drift: ${mirrorSync.drift.join(", ")}`,
+    },
+    {
+      id: "config-schema-coverage",
+      ok: configValidation.ok && Boolean(config.managedUX?.appBoard?.enabled) && Number(config.version) >= 17,
+      severity: "medium",
+      detail: configValidation.ok ? `v${config.version}; appBoard ${config.managedUX?.appBoard?.enabled ? "enabled" : "disabled"}` : configValidation.errors.join("; "),
+    },
+    {
+      id: "observability-surfaces",
+      ok: true,
+      severity: "medium",
+      detail: "doctor, report, config-explain, cache-status, inspect-context, app board, and architecture health are available",
+    },
+  ];
+  return {
+    generatedAt: new Date().toISOString(),
+    ok: checks.every((check) => check.ok),
+    checks,
+    router: {
+      path: fileURLToPath(import.meta.url),
+      lineCount,
+      metadataVersion: ROUTER_METADATA_VERSION,
+    },
+    managedContractSamples: managedSamples,
+    mirrorSync,
+    recommendedExtractionOrder: [
+      "contracts/managed-plan validator and display-board schema",
+      "routing/task-kind classifiers and signal helpers",
+      "providers/agent registry and prompt hydration",
+      "observability/doctor report trace surfaces",
+      "cli/tests command adapters",
+    ],
+  };
+}
+
+function runArchitectureHealth(mode = "text") {
+  const report = routerArchitectureHealth();
+  if (mode === "json") {
+    console.log(JSON.stringify(report, null, 2));
+    return;
+  }
+  console.log(`ARCHITECTURE ${report.ok ? "PASS" : "FAIL"}`);
+  for (const check of report.checks) {
+    console.log(`${check.ok ? "PASS" : "FAIL"} ${check.id} [${check.severity}]: ${check.detail}`);
+  }
+  console.log(`Router: ${report.router.lineCount} lines at ${report.router.path}`);
+  if (!report.ok) throw new Error("architecture health failed");
+}
+
 function runDoctor(mode = "text") {
   const registry = loadRegistry();
   const agency = loadAgencyAgents();
@@ -4919,6 +5120,7 @@ function runDoctor(mode = "text") {
   const snapshot = skillSnapshotStats();
   const indexHealth = agentIndexStats();
   const executionAdapter = detectExecutionAdapter({ role: "worker", agent: "documentation-engineer" });
+  const architectureHealth = routerArchitectureHealth();
   const skillNames = new Set(skills.flatMap((skill) => [skill.name, skill.name.split(":").at(-1)]));
   const missingSkillNames = unique(config.skillRules.flatMap((rule) => rule.skills || []))
     .filter((name) => !skillNames.has(name) && !skillNames.has(name.split(":").at(-1)));
@@ -4939,6 +5141,7 @@ function runDoctor(mode = "text") {
     { id: "config-v13", ok: configValidation.ok && Number(config.version) >= 13 && Boolean(config.taskKindPolicy?.["incident-response"]), detail: configValidation.ok ? `v${config.version} with ${Object.keys(config.taskKindPolicy || {}).length} task kinds` : configValidation.errors.join("; ") },
     { id: "agent-roster-v13", ok: Boolean(routeTask("开启子代理，调用合适子代理优化 subagent-router 调度算法和调用速度", { candidateLimit: 8 }).agentRoster?.primary?.name), detail: "route outputs include agent roster and fallback candidates" },
     { id: "execution-adapter-v14", ok: executionAdapter.bridgeAvailable && (executionAdapter.nativeCustomAgents || executionAdapter.codexExecAvailable), detail: `${executionAdapter.mode}; codex exec ${executionAdapter.codexExecAvailable ? "available" : "missing"}` },
+    { id: "architecture-health-v18", ok: architectureHealth.ok, detail: architectureHealth.checks.map((check) => `${check.id}:${check.ok ? "ok" : "fail"}`).join("; ") },
   ];
   const report = {
     generatedAt: new Date().toISOString(),
@@ -4949,6 +5152,7 @@ function runDoctor(mode = "text") {
       ...budgetRisk.risks.map((risk) => `skill rule ${risk.ruleId} has ${risk.skillCount} skills over smallest budget ${risk.smallestBudget}; configured skills are protected from truncation`),
       ...(agency.loaded ? [] : [`agency provider unavailable; router is running VoltAgent-only (${agency.error || "missing catalog"})`]),
       ...(indexHealth.readable ? [] : [`agency agent card index unavailable; run refresh-agent-index (${indexHealth.error || "missing index"})`]),
+      ...architectureHealth.checks.filter((check) => !check.ok && check.severity !== "high").map((check) => `architecture ${check.id}: ${check.detail}`),
     ]),
   };
   if (mode === "json") console.log(JSON.stringify(report, null, 2));
@@ -4968,6 +5172,7 @@ function runReport(mode = "text") {
   const config = loadStrategyConfig();
   const budgetRisk = configuredSkillBudgetRisk(config);
   const executionAdapter = detectExecutionAdapter({ role: "worker", agent: "documentation-engineer" });
+  const architectureHealth = routerArchitectureHealth();
   const sampleContextTasks = [
     "开启子代理，帮我做 Reddit 社区增长策略",
     "开启子代理，只读分析产品 adoption 下降原因，不要改代码",
@@ -5047,6 +5252,20 @@ function runReport(mode = "text") {
       samplePrimary: routeTask("开启子代理，完善公开 GitHub README 发布说明和安装步骤", { candidateLimit: 8 }).agentRoster?.primary?.name || null,
     },
     executionAdapter,
+    architectureHealth: {
+      ok: architectureHealth.ok,
+      routerLineCount: architectureHealth.router.lineCount,
+      mirrorInSync: architectureHealth.mirrorSync.ok,
+      managedContractSamples: architectureHealth.managedContractSamples.map((sample) => ({
+        id: sample.id,
+        contractOk: sample.contractOk,
+        taskKind: sample.taskKind,
+        mode: sample.mode,
+        stages: sample.stages,
+        tokens: sample.tokens,
+      })),
+      checks: architectureHealth.checks,
+    },
   };
   if (mode === "json") console.log(JSON.stringify(report, null, 2));
   else {
@@ -5064,6 +5283,7 @@ function runReport(mode = "text") {
     console.log(`Last skill repair: ${lastSkillRepair ? `${lastSkillRepair.pass ? "pass" : "fail"} (${lastSkillRepair.repairedSkill})` : "not run"}`);
     console.log(`Agent roster: ${report.agentRoster.available ? `available (sample ${report.agentRoster.samplePrimary})` : "missing"}`);
     console.log(`Execution adapter: ${report.executionAdapter.mode} (${report.executionAdapter.userImpact})`);
+    console.log(`Architecture: ${report.architectureHealth.ok ? "pass" : "fail"}; router ${report.architectureHealth.routerLineCount} lines; mirror ${report.architectureHealth.mirrorInSync ? "sync" : "drift"}`);
   }
 }
 
@@ -5676,6 +5896,50 @@ function runAppBoardTests() {
       safetyState: plan.displayBoard.safetyPanel.state,
     })),
     textPreview: text.split("\n").slice(0, 8),
+  }, null, 2));
+}
+
+function runArchitectureTests() {
+  const samples = [
+    { id: "goal", task: "开启子代理，调用合适 agent 完成任务" },
+    { id: "batch", task: "使用多智能体分批测试项目和工具目录" },
+    { id: "readonly", task: "只读审查 get_token，不执行 OAuth、不输出 token", readOnly: true },
+    { id: "high-risk", task: "生产鉴权事故，修复权限漏洞并补测试", review: true },
+    { id: "vague", task: "多代理帮我优化一下这个" },
+  ];
+  const contracts = samples.map((sample) => {
+    const plan = managedDelegationPlan(deterministicManagedResult(sample.task), { profile: "compact" });
+    const validation = validateManagedPlanContract(plan, { maxCompactTokens: 6500 });
+    assert(validation.ok, `${sample.id}: managed contract failed: ${validation.errors.join("; ")}`);
+    if (sample.readOnly) {
+      assert(plan.executionContract.writeIntent === "none", `${sample.id}: expected no-write contract`);
+      assert(!plan.agentWorkPlan.some((card) => card.rosterRole === "implementer" && card.agent), `${sample.id}: read-only plan assigned implementer`);
+    }
+    if (sample.review) {
+      assert(plan.verificationBoard.summary.requiresParentReview || plan.goalLoop.some((stage) => /review/i.test(stage.goal)), `${sample.id}: review gate not visible`);
+    }
+    return {
+      id: sample.id,
+      taskKind: plan.executionContract.taskKind,
+      mode: plan.mode,
+      stages: plan.goalLoop.length,
+      tokens: plan.contextLedger.estimatedInputTokens,
+      warnings: validation.warnings,
+    };
+  });
+  const architecture = routerArchitectureHealth();
+  assert(architecture.ok, `architecture health failed: ${architecture.checks.filter((check) => !check.ok).map((check) => `${check.id}: ${check.detail}`).join("; ")}`);
+  assert(architecture.mirrorSync.ok, `plugin mirror drift: ${architecture.mirrorSync.drift.join(", ")}`);
+  assert(architecture.router.lineCount <= 7200, `router monolith exceeded current guardrail: ${architecture.router.lineCount} lines`);
+  console.log(JSON.stringify({
+    pass: true,
+    contracts,
+    architecture: {
+      routerLineCount: architecture.router.lineCount,
+      mirrorInSync: architecture.mirrorSync.ok,
+      checks: architecture.checks.map((check) => ({ id: check.id, ok: check.ok })),
+      extractionOrder: architecture.recommendedExtractionOrder,
+    },
   }, null, 2));
 }
 
@@ -6740,6 +7004,10 @@ function main() {
     runAppBoardTests();
     return;
   }
+  if (command === "test-architecture") {
+    runArchitectureTests();
+    return;
+  }
   if (command === "test-skills-phase") {
     runSkillsPhaseTests();
     return;
@@ -6854,6 +7122,11 @@ function main() {
   if (command === "report") {
     const mode = rest.includes("--json") ? "json" : "text";
     runReport(mode);
+    return;
+  }
+  if (command === "architecture-health") {
+    const mode = rest.includes("--json") ? "json" : "text";
+    runArchitectureHealth(mode);
     return;
   }
   throw new Error(`Unknown command: ${command}`);

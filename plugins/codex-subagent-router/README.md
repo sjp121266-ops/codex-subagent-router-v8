@@ -58,6 +58,8 @@ node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs test-agent-ind
 node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs test-prompt-hydration
 node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs test-context-budget
 node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs test-execution-adapter
+node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs test-architecture
+node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs architecture-health
 node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs doctor
 ```
 

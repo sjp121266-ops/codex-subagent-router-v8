@@ -175,6 +175,7 @@ node subagents/router.mjs judge --json "开启子代理，修复 API 鉴权问�
 node subagents/router.mjs managed --json --profile compact "开启子代理，调用合适子代理，用 goal 模式持续实现"
 node subagents/router.mjs managed --profile app "开启子代理，调用合适子代理，用 goal 模式持续实现"
 node subagents/router.mjs config-explain "开启子代理，根据生产日志处理线上事故并准备回滚"
+node subagents/router.mjs architecture-health
 node subagents/router.mjs cache-status
 node subagents/router.mjs cache-prune --all --older-than-hours 168
 node subagents/router.mjs judge --json --budget economy "开启子代理，补齐 pytest 覆盖率"
@@ -188,6 +189,7 @@ node --check subagents/router.mjs
 node --check subagents/import-community-skills.mjs
 node subagents/router.mjs test
 node subagents/router.mjs eval
+node subagents/router.mjs test-architecture
 node subagents/router.mjs doctor
 node subagents/router.mjs report
 ```
@@ -207,6 +209,7 @@ Detailed implementation notes, plans, and verification runs live in [`outputs/`]
 Useful reports:
 
 - [`outputs/subagent-router-v16-context-efficiency-final-report.md`](outputs/subagent-router-v16-context-efficiency-final-report.md)
+- [`outputs/architecture-audit-optimization-report.md`](outputs/architecture-audit-optimization-report.md)
 - [`outputs/subagent-router-v15-agency-agents-final-report.md`](outputs/subagent-router-v15-agency-agents-final-report.md)
 - [`outputs/subagent-router-v14-execution-adapter-report.md`](outputs/subagent-router-v14-execution-adapter-report.md)
 - [`outputs/subagent-router-plugin-report.md`](outputs/subagent-router-plugin-report.md)
