@@ -31,7 +31,7 @@ const SKILL_REGISTRY_SNAPSHOT_PATH = runtimePath("skill-registry-snapshot.json")
 const EVAL_RESULTS_PATH = runtimePath("last-eval-results.json");
 const SKILL_REPAIR_RESULTS_PATH = runtimePath("last-skill-repair-results.json");
 const CODEX_CLI = process.env.CODEX_CLI || "codex";
-const ROUTER_METADATA_VERSION = 1603;
+const ROUTER_METADATA_VERSION = 1604;
 const DEFAULT_PROMPT_BUDGETS = {
   compact: 1800,
   balanced: 3200,
@@ -524,10 +524,12 @@ Usage:
   router.mjs rebuild
   router.mjs list [query]
   router.mjs route [--json|--brief] <task>
+  router.mjs route-trace [--json] [--no-project-graph] <task>
   router.mjs judge [--json|--verbose|--explain|--offline] [--budget economy|balanced|premium|critical] [--no-cache] [--force-model] <task>
   router.mjs managed [--json] [--offline] [--profile compact|balanced|app|full] <task>
   router.mjs prompt <agent-name> <task> [--hydrate reference|summary|hybrid|full] [--budget N]
   router.mjs inspect-context [--json] [--profile compact|balanced|app|full] <task>
+  router.mjs project-graph status|init|query|prune [--json]
   router.mjs refresh-agent-index
   router.mjs install-all
   router.mjs test
@@ -545,6 +547,9 @@ Usage:
   router.mjs test-managed-contract
   router.mjs test-planning-board
   router.mjs test-app-board
+  router.mjs test-project-graph
+  router.mjs test-project-graph-performance
+  router.mjs test-routing-golden
   router.mjs test-open-source-patterns
   router.mjs test-architecture
   router.mjs test-agent-roster
@@ -976,6 +981,12 @@ function loadStrategyConfig() {
           staleAfterHours: 24,
           includeInDisplayBoard: true,
         },
+        routingEvidence: {
+          enabled: true,
+          includeInManagedJson: true,
+          includeInAppText: false,
+          maxRejectedAgents: 8,
+        },
         ...(raw.managedUX || {}),
       },
       source: STRATEGY_CONFIG_PATH,
@@ -1000,6 +1011,12 @@ function loadStrategyConfig() {
           maxFileBytes: 262144,
           staleAfterHours: 24,
           includeInDisplayBoard: true,
+        },
+        routingEvidence: {
+          enabled: true,
+          includeInManagedJson: true,
+          includeInAppText: false,
+          maxRejectedAgents: 8,
         },
       },
       source: "built-in defaults",
@@ -1282,7 +1299,7 @@ function confidenceFor(ranked, intents) {
 function isVagueTask(task, ranked) {
   const cleaned = cleanTask(task);
   const vague = /奇怪|问题|情况|东西|这个|看看|帮我看|不对|优化一下|改一下|弄一下|something|thing|issue/i.test(cleaned);
-  const concrete = /api|auth|database|react|vue|swift|docker|kubernetes|pytest|diff|error|stack|file|接口|鉴权|数据库|前端|页面|部署|测试|代码|文件|日志/i.test(cleaned);
+  const concrete = /api|auth|database|react|vue|swift|docker|kubernetes|pytest|package\.json|npm|pnpm|yarn|lint|typecheck|test|build|local qa|local validation|diff|error|stack|file|接口|鉴权|数据库|前端|页面|部署|测试|验证|检查|代码|文件|日志/i.test(cleaned);
   const topKeyword = ranked[0]?.breakdown?.keyword || 0;
   return vague && !concrete && topKeyword < 8;
 }
@@ -2332,6 +2349,135 @@ function projectGraphSignals(summary = {}) {
   };
 }
 
+function platformSignalForTask(task = "") {
+  const cleaned = cleanTask(task);
+  if (/小红书|xiaohongshu|rednote|red note/i.test(cleaned)) return "xiaohongshu";
+  if (/抖音|douyin|tiktok/i.test(cleaned)) return "douyin";
+  if (/bilibili|哔哩|b\s*站/i.test(cleaned)) return "bilibili";
+  if (/微信公号|公众号|wechat official/i.test(cleaned)) return "wechat-official-account";
+  if (/微博|weibo/i.test(cleaned)) return "weibo";
+  if (/知乎|zhihu/i.test(cleaned)) return "zhihu";
+  if (/reddit|社区/i.test(cleaned)) return "reddit";
+  return "";
+}
+
+function agentDisqualification(agent, task, context = {}) {
+  const cleaned = cleanTask(task);
+  const taskKind = context.taskKind || "";
+  const text = normalize(`${agent.name} ${agent.displayName || ""} ${agent.slug || ""} ${agent.category || ""} ${agent.description || ""}`);
+  const noWrite = context.effectiveNoWrite ?? isNoWriteTask(task);
+  const strongToolQaKinds = context.strongToolQaKinds || [];
+  const platform = platformSignalForTask(task);
+
+  if (noWrite && agent.sandboxMode === "workspace-write" && !/test-automator|qa|reviewer|auditor|mapper|research/i.test(text)) {
+    return {
+      code: "no-write-disallows-writer",
+      reason: "用户明确只读或任务合同禁止写入，排除普通写入型 agent。",
+    };
+  }
+  if (taskKind === "content-marketing" && agent.provider !== "agency-agents" && /frontend|backend|developer|engineer|devops|android|ios|security/.test(text)) {
+    return {
+      code: "content-task-disallows-engineering-agent",
+      reason: "内容营销任务优先内容/增长专家，避免被当前仓库技术栈误导成工程实现。",
+    };
+  }
+  if (platform && agent.provider === "agency-agents" && !text.includes(platform) && /specialist|strategist|creator|growth|community|content/.test(text)) {
+    return {
+      code: `platform-mismatch-${platform}`,
+      reason: `任务明确指向 ${platform}，排除不匹配的平台型内容 agent。`,
+    };
+  }
+  if (strongToolQaKinds.includes(taskKind) && agent.provider === "agency-agents" && !/api-tester|accessibility-auditor/.test(text)) {
+    return {
+      code: "tool-qa-disallows-general-agency",
+      reason: "本地工具/项目 QA 任务需要工程验证 agent，而不是通用业务专家。",
+    };
+  }
+  if (context.projectSignals?.isChromeExtension && /android|mobile|ios|swift/.test(text) && !/browser|frontend|qa|test/.test(text)) {
+    return {
+      code: "chrome-extension-disallows-mobile-agent",
+      reason: "项目图谱显示 Chrome 扩展，排除移动端专用 agent。",
+    };
+  }
+  if (context.projectSignals?.isAndroid && /browser|chrome|extension|ios|swift/.test(text) && !/qa|test/.test(text)) {
+    return {
+      code: "android-disallows-browser-or-ios-agent",
+      reason: "项目图谱显示 Android/Gradle，排除浏览器或 iOS 专用 agent。",
+    };
+  }
+  if (/oauth|token|secret|credential|鉴权|凭证|密钥/i.test(cleaned) && /content|marketing|sales|growth|social|xiaohongshu|douyin|bilibili/.test(text)) {
+    return {
+      code: "credential-risk-disallows-marketing-agent",
+      reason: "凭证/鉴权风险任务必须留在安全或工程审查路径。",
+    };
+  }
+  return null;
+}
+
+function routingEvidenceFor(task, route, context = {}) {
+  const taskSignals = [
+    ...(route.matchedIntents || []).slice(0, 5).map((intent) => ({
+      id: intent.id,
+      label: intent.label,
+      score: intent.score,
+      source: "intent-rule",
+    })),
+    route.taskKind ? { id: route.taskKind, label: "taskKind", score: 100, source: "task-classifier" } : null,
+  ].filter(Boolean);
+  const projectSignals = context.projectSignals ? {
+    fingerprint: context.projectSignals.fingerprint,
+    frameworks: context.projectSignals.frameworks,
+    languages: context.projectSignals.languages,
+    detected: [
+      context.projectSignals.isFrontend ? "frontend" : "",
+      context.projectSignals.isBackend ? "backend" : "",
+      context.projectSignals.isChromeExtension ? "chrome-extension" : "",
+      context.projectSignals.isAndroid ? "android" : "",
+      context.projectSignals.isIos ? "ios" : "",
+      context.projectSignals.hasTests ? "tests" : "",
+    ].filter(Boolean),
+  } : null;
+  const userConstraints = [
+    isNoWriteTask(task) ? "no-write/read-only" : "",
+    hasExplicitNoWriteDirective(task) ? "explicit-no-write" : "",
+    isExplicitBroadAuthorization(task) ? "broad-multi-agent-authorization" : "",
+    isProjectScopeTask(task) ? "project-scope" : "",
+    route.needsParentChoice ? "needs-parent-choice" : "",
+  ].filter(Boolean);
+  const safetySignals = [
+    hasExplicitSecurityRiskSignal(task) ? "security/auth/privacy signal" : "",
+    hasVolatileContext(task) ? "volatile current-context signal" : "",
+    route.taskProfile?.risk ? `risk:${route.taskProfile.risk}` : "",
+    route.executionPlan?.requiresReview ? "requires-review" : "",
+    route.routeCache?.eligible === false ? `route-cache-bypass:${route.routeCache.bypassReason || "not-eligible"}` : "",
+  ].filter(Boolean);
+  const agentScores = (route.candidates || []).slice(0, 8).map((candidate) => ({
+    name: candidate.name,
+    provider: candidate.provider,
+    score: candidate.score,
+    breakdown: candidate.breakdown,
+    reasons: (candidate.reasons || []).slice(0, 4),
+  }));
+  const rejectedByPolicy = context.rejectedByPolicy || [];
+  const selectedAgent = route.recommended?.name || "";
+  return {
+    schemaVersion: "routing-evidence-v1",
+    selectedAgent,
+    selectedBecause: [
+      `${selectedAgent || "selected agent"} matched taskKind ${route.taskKind || route.taskProfile?.taskKind || "unknown"}`,
+      ...(route.reasons || []).slice(0, 4),
+      projectSignals?.detected?.length ? `project graph signals: ${projectSignals.detected.join(", ")}` : "",
+      route.recommended?.sandboxMode === "read-only" ? "read-only sandbox matches constraints" : "",
+    ].filter(Boolean),
+    taskSignals,
+    projectSignals,
+    userConstraints,
+    safetySignals,
+    agentScores,
+    rejectedByPolicy: rejectedByPolicy.slice(0, 8),
+  };
+}
+
 function queryProjectGraph(query, options = {}) {
   const { summary, graph } = ensureProjectGraph(options);
   const files = graph?.files || [];
@@ -2961,6 +3107,31 @@ function attachRoutingMetadata(result, route, skillCandidates = [], judgePolicy 
     result.taskProfile || route.taskProfile,
     enrichedExecutionPlan,
   );
+  const finalRouteForEvidence = {
+    ...route,
+    recommended: summarizeAgent(selectedAgent || route.recommended),
+    reasons: result.rationale || route.reasons,
+    confidence: result.confidence || route.confidence,
+    needsParentChoice: result.needsParentChoice ?? route.needsParentChoice,
+    taskProfile: result.taskProfile || route.taskProfile,
+    executionPlan: enrichedExecutionPlan,
+    routeCache: route.routeCache || result.cache,
+  };
+  const finalRoutingEvidence = routingEvidenceFor(result.task || route.task, finalRouteForEvidence, { projectSignals: route.projectSignals });
+  const mergedRoutingEvidence = result.routingEvidence || route.routingEvidence
+    ? {
+      ...(route.routingEvidence || {}),
+      ...(result.routingEvidence || {}),
+      selectedAgent: finalRoutingEvidence.selectedAgent,
+      selectedBecause: finalRoutingEvidence.selectedBecause,
+      taskSignals: finalRoutingEvidence.taskSignals,
+      projectSignals: finalRoutingEvidence.projectSignals || route.routingEvidence?.projectSignals || null,
+      userConstraints: finalRoutingEvidence.userConstraints,
+      safetySignals: finalRoutingEvidence.safetySignals,
+      agentScores: finalRoutingEvidence.agentScores.length ? finalRoutingEvidence.agentScores : (route.routingEvidence?.agentScores || []),
+      rejectedByPolicy: result.routingEvidence?.rejectedByPolicy || route.routingEvidence?.rejectedByPolicy || [],
+    }
+    : finalRoutingEvidence;
   return {
     ...result,
     finalAgentProvider: selectedAgent?.provider || "voltagent",
@@ -2975,6 +3146,7 @@ function attachRoutingMetadata(result, route, skillCandidates = [], judgePolicy 
     executionPlan: enrichedExecutionPlan,
     handoffPlan,
     agentRoster,
+    routingEvidence: mergedRoutingEvidence,
     decisionTrace: decisionTraceFor(result.task || route.task, route, judgePolicy, result),
     qualityGates: qualityGatesFor(route, judgePolicy),
     rejectedCandidates: rejectedCandidatesFor(route, result.finalAgent),
@@ -3117,6 +3289,8 @@ function routeTask(task, options = {}) {
     recordRouteCacheBypass(routeCacheEligibilityResult.reason);
   }
   const allAgents = loadAllAgents();
+  const strongToolQaKinds = ["web-app-qa", "monorepo-wasm-qa", "android-qa", "chrome-extension-qa", "desktop-rpa-qa", "desktop-automation-qa", "comfyui-workflow-qa", "credential-tooling", "integration-bot-qa", "artifact-inspection", "static-artifact-inspection", "empty-sample-blocker"];
+  const rejectedByPolicy = [];
   const projectBoostFor = (agent) => {
     if (!projectSignals || taskKind === "content-marketing") return { boost: 0, reason: "" };
     const text = `${agent.name} ${agent.displayName || ""} ${agent.description || ""} ${agent.category || ""}`.toLowerCase();
@@ -3159,6 +3333,19 @@ function routeTask(task, options = {}) {
         reasons: unique([...scored.reasons, projectBoost.reason]),
       } : scored;
     })
+    .filter((entry) => {
+      const rejection = agentDisqualification(entry.agent, task, { taskKind, projectSignals, strongToolQaKinds });
+      if (rejection) {
+        rejectedByPolicy.push({
+          agent: entry.agent.name,
+          provider: entry.agent.provider || "voltagent",
+          code: rejection.code,
+          reason: rejection.reason,
+        });
+        return false;
+      }
+      return true;
+    })
     .sort((a, b) => b.score - a.score || a.agent.name.localeCompare(b.agent.name))
     .slice(0, Math.max(5, candidateLimit));
 
@@ -3175,7 +3362,6 @@ function routeTask(task, options = {}) {
   const projectPreferred = unique(projectPreferredNames)
     .map((name) => allAgents.agents.find((agent) => agentMatches(agent, name)))
     .filter(Boolean);
-  const strongToolQaKinds = ["web-app-qa", "monorepo-wasm-qa", "android-qa", "chrome-extension-qa", "desktop-rpa-qa", "desktop-automation-qa", "comfyui-workflow-qa", "credential-tooling", "integration-bot-qa", "artifact-inspection", "static-artifact-inspection", "empty-sample-blocker"];
   if (projectPreferred.length && taskKind !== "content-marketing" && !hasExplicitSecurityRiskSignal(task)) {
     const rankedByName = new Set(ranked.map((entry) => entry.agent.name));
     const preferredEntries = projectPreferred
@@ -3237,7 +3423,7 @@ function routeTask(task, options = {}) {
   const needsParentChoice = confidence === "low" && !broadAuthorized;
   if (broadAuthorized && confidence === "low") confidence = "medium";
   const codebaseImplied = /code|repo|project|file|diff|代码|仓库|项目|文件/.test(cleanTask(task));
-  if (needsParentChoice && codebaseImplied) {
+  if (needsParentChoice && (codebaseImplied || projectSignals)) {
     best = allAgents.agents.find((agent) => agent.name === "code-mapper") || best;
   }
   let skillEntries = skillMatches(task).filter((entry) => shouldKeepSkillForTaskKind(entry, taskKind, task));
@@ -3365,6 +3551,7 @@ function routeTask(task, options = {}) {
     },
     delegationPrompt: buildPrompt(best, task, skills, { confidence, needsParentChoice, intents, modelPolicy }),
   };
+  result.routingEvidence = routingEvidenceFor(task, result, { projectSignals, rejectedByPolicy });
   routeTaskCache.set(routeCacheKey, result);
   if (routeCacheEligibilityResult.eligible) putPersistentRouteCache(routeCacheKey, result);
   return result;
@@ -4374,6 +4561,11 @@ function displayBoardFor(plan) {
 
 function compactManagedPlanForProfile(plan, profile = "compact") {
   if (!["compact", "app"].includes(profile)) return plan;
+  const compactRejectedPolicy = (item) => item ? {
+    agent: item.agent,
+    provider: item.provider,
+    code: item.code,
+  } : item;
   const compactRosterAgent = (agent) => agent ? {
     name: agent.name,
     id: agent.id,
@@ -4424,6 +4616,31 @@ function compactManagedPlanForProfile(plan, profile = "compact") {
       promptInjectionRequired: plan.executionAdapter.promptInjectionRequired,
       userImpact: displayText(plan.executionAdapter.userImpact, 180),
     } : plan.executionAdapter,
+    routingEvidence: plan.routingEvidence ? {
+      schemaVersion: plan.routingEvidence.schemaVersion,
+      selectedAgent: plan.routingEvidence.selectedAgent,
+      selectedBecause: (plan.routingEvidence.selectedBecause || []).slice(0, profile === "app" ? 3 : 2).map((item) => displayText(item, profile === "app" ? 90 : 60)),
+      taskSignals: (plan.routingEvidence.taskSignals || []).slice(0, 3).map((signal) => ({
+        id: signal.id,
+        score: signal.score,
+        source: signal.source,
+      })),
+      projectSignals: plan.routingEvidence.projectSignals ? {
+        fingerprint: plan.routingEvidence.projectSignals.fingerprint,
+        detected: (plan.routingEvidence.projectSignals.detected || []).slice(0, 4),
+      } : null,
+      userConstraints: (plan.routingEvidence.userConstraints || []).slice(0, 4),
+      safetySignals: (plan.routingEvidence.safetySignals || []).slice(0, 4),
+      agentScores: (plan.routingEvidence.agentScores || []).slice(0, 3).map((agent) => ({
+        name: agent.name,
+        provider: agent.provider,
+        score: agent.score,
+        reasons: profile === "app" ? (agent.reasons || []).slice(0, 2).map((reason) => displayText(reason, 60)) : undefined,
+      })),
+      rejectedByPolicy: (plan.routingEvidence.rejectedByPolicy || [])
+        .slice(0, Math.min(loadStrategyConfig().managedUX?.routingEvidence?.maxRejectedAgents || 4, 4))
+        .map(compactRejectedPolicy),
+    } : plan.routingEvidence,
     projectGraph: plan.projectGraph ? {
       status: plan.projectGraph.status,
       generatedNow: plan.projectGraph.generatedNow,
@@ -4474,7 +4691,7 @@ function compactManagedPlanForProfile(plan, profile = "compact") {
       language: plan.displayBoard.language,
       boardStyle: plan.displayBoard.boardStyle,
       coordinationModeLabel: plan.displayBoard.coordinationModeLabel,
-      userNarrative: (plan.displayBoard.userNarrative || []).slice(0, 5).map((item) => displayText(item, 180)),
+      userNarrative: (plan.displayBoard.userNarrative || []).slice(0, profile === "app" ? 5 : 3).map((item) => displayText(item, profile === "app" ? 180 : 120)),
       goalBoard: (plan.displayBoard.goalBoard || []).slice(0, profile === "app" ? 6 : 4).map((stage) => ({
         order: stage.order,
         stageId: stage.stageId,
@@ -4485,10 +4702,10 @@ function compactManagedPlanForProfile(plan, profile = "compact") {
         acceptance: (stage.acceptance || []).slice(0, 2).map((item) => displayText(item, 100)),
         nextTrigger: displayText(stage.nextTrigger, 120),
       })),
-      agentCards: (plan.displayBoard.agentCards || []).slice(0, profile === "app" ? 5 : 3).map((card) => ({
+      agentCards: (plan.displayBoard.agentCards || []).slice(0, profile === "app" ? 5 : 2).map((card) => ({
         role: card.role,
         agent: card.agent,
-        responsibility: displayText(card.responsibility, 100),
+        responsibility: displayText(card.responsibility, profile === "app" ? 100 : 70),
         permission: card.permission,
         canWrite: card.canWrite,
         handoffTo: (card.handoffTo || []).slice(0, 2),
@@ -4500,17 +4717,17 @@ function compactManagedPlanForProfile(plan, profile = "compact") {
         requiresParentReview: plan.displayBoard.safetyPanel.requiresParentReview,
         automaticLimits: displayArray(plan.displayBoard.safetyPanel.automaticLimits, 4, 90),
       } : plan.displayBoard.safetyPanel,
-      patternPanel: plan.displayBoard.patternPanel ? {
+      patternPanel: plan.displayBoard.patternPanel && profile === "app" ? {
         title: plan.displayBoard.patternPanel.title,
-        selected: (plan.displayBoard.patternPanel.selected || []).slice(0, profile === "app" ? 4 : 3).map((pattern) => ({
+        selected: (plan.displayBoard.patternPanel.selected || []).slice(0, 4).map((pattern) => ({
           id: pattern.id,
           label: pattern.label,
           why: displayText(pattern.why, 100),
         })),
         contextPolicy: plan.displayBoard.patternPanel.contextPolicy,
         traceWorkflow: displayText(plan.displayBoard.patternPanel.traceWorkflow, 90),
-      } : plan.displayBoard.patternPanel,
-      mermaidFlow: profile === "app" ? redactSensitiveValues(plan.displayBoard.mermaidFlow) : displayText(plan.displayBoard.mermaidFlow, 500),
+      } : null,
+      mermaidFlow: profile === "app" ? redactSensitiveValues(plan.displayBoard.mermaidFlow) : "",
     } : plan.displayBoard,
     openSourcePatterns: plan.openSourcePatterns ? {
       version: plan.openSourcePatterns.version,
@@ -4518,7 +4735,7 @@ function compactManagedPlanForProfile(plan, profile = "compact") {
         project: source.project,
         takeaway: profile === "app" ? displayText(source.takeaway, 120) : "",
       })),
-      selectedPatterns: (plan.openSourcePatterns.selectedPatterns || []).slice(0, 6).map((pattern) => ({
+      selectedPatterns: (plan.openSourcePatterns.selectedPatterns || []).slice(0, profile === "app" ? 6 : 4).map((pattern) => ({
         id: pattern.id,
         label: pattern.label,
         sourceProjects: profile === "app" ? pattern.sourceProjects : undefined,
@@ -4990,6 +5207,61 @@ function printRoute(route, mode) {
   console.log(route.delegationPrompt);
 }
 
+function printRouteTrace(route, mode = "text") {
+  const evidence = route.routingEvidence || routingEvidenceFor(route.task, route, { projectSignals: route.projectSignals });
+  if (mode === "json") {
+    console.log(JSON.stringify({
+      task: route.task,
+      taskKind: route.taskKind,
+      recommended: route.recommended,
+      confidence: route.confidence,
+      needsParentChoice: route.needsParentChoice,
+      routingEvidence: evidence,
+      executionPlan: {
+        mode: route.executionPlan?.mode,
+        requiresReview: route.executionPlan?.requiresReview,
+        requiresTests: route.executionPlan?.requiresTests,
+      },
+      routeCache: route.routeCache,
+    }, null, 2));
+    return;
+  }
+  console.log("# 司南路由追踪");
+  console.log("");
+  console.log(`任务类型：${route.taskKind}`);
+  console.log(`推荐 agent：${route.recommended.name} (${route.recommended.provider || "voltagent"})`);
+  console.log(`置信度：${route.confidence}${route.needsParentChoice ? "，建议父级选择" : ""}`);
+  console.log("");
+  console.log("## 选择原因");
+  for (const reason of evidence.selectedBecause || []) console.log(`- ${reason}`);
+  console.log("");
+  console.log("## 任务信号");
+  for (const signal of evidence.taskSignals || []) console.log(`- ${signal.id}: ${signal.label || signal.source} (${signal.score || 0})`);
+  if (evidence.projectSignals?.detected?.length) {
+    console.log("");
+    console.log("## 项目信号");
+    console.log(`- ${evidence.projectSignals.detected.join("、")}`);
+  }
+  if (evidence.userConstraints?.length) {
+    console.log("");
+    console.log("## 用户约束");
+    for (const item of evidence.userConstraints) console.log(`- ${item}`);
+  }
+  if (evidence.safetySignals?.length) {
+    console.log("");
+    console.log("## 安全信号");
+    for (const item of evidence.safetySignals) console.log(`- ${item}`);
+  }
+  console.log("");
+  console.log("## 候选分数");
+  for (const agent of evidence.agentScores || []) console.log(`- ${agent.name}: ${agent.score}`);
+  if (evidence.rejectedByPolicy?.length) {
+    console.log("");
+    console.log("## 规则排除");
+    for (const item of evidence.rejectedByPolicy) console.log(`- ${item.agent}: ${item.code}，${item.reason}`);
+  }
+}
+
 function compactJudgementResult(result) {
   const agent = findAgentByName(result.finalAgent) || result.deterministic?.recommended || {};
   const hydrationPlan = buildPromptHydrationPlan(agent, result.task, { profile: "compact" });
@@ -5015,6 +5287,7 @@ function compactJudgementResult(result) {
     needsParentChoice: result.needsParentChoice,
     cache: result.cache,
     taskProfile: result.taskProfile,
+    routingEvidence: result.routingEvidence,
     agentRoster: result.agentRoster,
     executionPlan: {
       mode: result.executionPlan?.mode,
@@ -5222,6 +5495,7 @@ function managedDelegationPlan(result, options = {}) {
     executionAdapterMode: executionAdapter.mode,
     },
     projectGraph,
+    routingEvidence: loadStrategyConfig().managedUX?.routingEvidence?.includeInManagedJson === false ? null : result.routingEvidence,
     androidEnvironment,
     safetyDiagnostics,
     agentWorkPlan: agentWorkPlanFor(result.agentRoster, stageDetails, stageInputs, stageOutputs),
@@ -6920,6 +7194,131 @@ function runProjectGraphTests() {
   }, null, 2));
 }
 
+function runRoutingGoldenTests() {
+  const cases = [
+    {
+      id: "xiaohongshu-over-react",
+      task: "开启子代理，在当前 React 项目里写小红书种草脚本",
+      project: {
+        "package.json": JSON.stringify({ dependencies: { react: "^19.0.0", vite: "^6.0.0" } }),
+        "src/main.tsx": "export function App() { return null; }",
+      },
+      expected: { taskKind: "content-marketing", agent: "agency:xiaohongshu-specialist", rejectedCode: "content-task-disallows-engineering-agent" },
+    },
+    {
+      id: "readonly-token-review",
+      task: "开启子代理，只读审查 get_token，不执行 OAuth、不输出 token",
+      project: {
+        "requirements.txt": "requests\n",
+        "get_token.py": "def get_token():\n    return None\n",
+      },
+      expected: { taskKind: "credential-tooling", sandbox: "read-only", rejectedCode: "no-write-disallows-writer" },
+    },
+    {
+      id: "chrome-extension-not-android",
+      task: "开启子代理，静态检查 manifest 和 popup 脚本，不做 Android 测试",
+      project: {
+        "manifest.json": JSON.stringify({ manifest_version: 3, name: "Demo", action: { default_popup: "popup.html" } }),
+        "popup.html": "<script src='popup.js'></script>",
+        "popup.js": "export function boot() {}",
+      },
+      expected: { taskKind: "chrome-extension-qa", agentIn: ["test-automator", "frontend-developer", "browser-debugger", "qa-expert", "code-mapper"] },
+    },
+    {
+      id: "fastapi-auth-security",
+      task: "开启子代理，修复接口鉴权并补测试",
+      project: {
+        "requirements.txt": "fastapi\npytest\n",
+        "main.py": "from fastapi import FastAPI\napp = FastAPI()\ndef auth():\n    pass\n",
+        "tests/test_auth.py": "def test_auth():\n    assert True\n",
+      },
+      expected: { agentIn: ["backend-developer", "security-auditor", "reviewer", "test-automator"], forbiddenProvider: "agency-agents" },
+    },
+    {
+      id: "vague-project-asks-first",
+      task: "开启子代理，多代理帮我优化一下这个",
+      project: {
+        "package.json": JSON.stringify({ dependencies: { react: "^19.0.0" } }),
+        "src/main.tsx": "export function App() { return null; }",
+      },
+      expected: { mode: "clarify-first", needsParentChoice: true, agent: "code-mapper" },
+    },
+  ];
+  const results = cases.map((testCase) => withProjectGraphFixture(testCase.project, () => {
+    const graph = ensureProjectGraph({ force: true }).summary;
+    const route = routeTask(testCase.task, { candidateLimit: 8, noRouteCache: true, projectSignals: projectGraphSignals(graph) });
+    const failures = [];
+    const check = (condition, message) => { if (!condition) failures.push(message); };
+    const expected = testCase.expected;
+    if (expected.taskKind) check(route.taskProfile.taskKind === expected.taskKind, `expected taskKind ${expected.taskKind}, got ${route.taskProfile.taskKind}`);
+    if (expected.agent) check(route.recommended.name === expected.agent, `expected agent ${expected.agent}, got ${route.recommended.name}`);
+    if (expected.agentIn) check(expected.agentIn.includes(route.recommended.name), `expected agent in ${expected.agentIn.join(", ")}, got ${route.recommended.name}`);
+    if (expected.sandbox) check(route.recommended.sandboxMode === expected.sandbox, `expected sandbox ${expected.sandbox}, got ${route.recommended.sandboxMode}`);
+    if (expected.forbiddenProvider) check(route.recommended.provider !== expected.forbiddenProvider, `forbidden provider ${expected.forbiddenProvider} selected`);
+    if (expected.mode) check(route.executionPlan.mode === expected.mode, `expected mode ${expected.mode}, got ${route.executionPlan.mode}`);
+    if (expected.needsParentChoice !== undefined) check(route.needsParentChoice === expected.needsParentChoice, `expected needsParentChoice ${expected.needsParentChoice}, got ${route.needsParentChoice}`);
+    if (expected.rejectedCode) check((route.routingEvidence?.rejectedByPolicy || []).some((item) => item.code === expected.rejectedCode), `missing rejectedCode ${expected.rejectedCode}`);
+    check(route.routingEvidence?.selectedBecause?.length > 0, "routingEvidence should explain selection");
+    check(route.routingEvidence?.agentScores?.length > 0, "routingEvidence should expose candidate scores");
+    return {
+      id: testCase.id,
+      pass: failures.length === 0,
+      failures,
+      summary: {
+        agent: route.recommended.name,
+        provider: route.recommended.provider,
+        taskKind: route.taskProfile.taskKind,
+        mode: route.executionPlan.mode,
+        rejectedCodes: (route.routingEvidence?.rejectedByPolicy || []).map((item) => item.code).slice(0, 5),
+      },
+    };
+  }));
+  const failed = results.filter((result) => !result.pass);
+  if (failed.length) throw new Error(`routing golden failed: ${failed.map((item) => `${item.id}: ${item.failures.join("; ")}`).join(" | ")}`);
+  console.log(JSON.stringify({
+    pass: true,
+    total: results.length,
+    passed: results.length,
+    results,
+  }, null, 2));
+}
+
+function runProjectGraphPerformanceTests() {
+  const files = {
+    "package.json": JSON.stringify({ dependencies: { react: "^19.0.0", vite: "^6.0.0" }, scripts: { test: "vitest", build: "vite build" } }),
+    "src/main.tsx": "import React from 'react';\nexport function App() { return <div />; }\n",
+    "src/App.test.tsx": "import { describe, it } from 'vitest';\ndescribe('App', () => { it('works', () => {}); });\n",
+  };
+  for (let index = 0; index < 80; index += 1) {
+    files[`src/modules/module-${index}.ts`] = `import { App } from '../main';\nexport function module${index}() { return App; }\n`;
+  }
+  const report = withProjectGraphFixture(files, () => {
+    const firstStart = Date.now();
+    const first = ensureProjectGraph({ force: true }).summary;
+    const firstMs = Date.now() - firstStart;
+    const secondStart = Date.now();
+    const second = ensureProjectGraph().summary;
+    const secondMs = Date.now() - secondStart;
+    const queryStart = Date.now();
+    const query = queryProjectGraph("入口 文件 测试");
+    const queryMs = Date.now() - queryStart;
+    assert(first.status === "ready" && first.generatedNow, "performance first graph should generate");
+    assert(second.status === "ready" && second.reused, "performance second graph should reuse");
+    assert(secondMs <= firstMs, `reused graph should be no slower than first scan, first=${firstMs}ms second=${secondMs}ms`);
+    assert(firstMs < 2500, `first graph scan should stay fast for medium fixture, got ${firstMs}ms`);
+    assert(queryMs < 500, `project graph query should stay fast, got ${queryMs}ms`);
+    return {
+      fileCount: first.fileCount,
+      firstMs,
+      secondMs,
+      queryMs,
+      queryResults: query.results.length,
+      frameworks: first.frameworks,
+    };
+  });
+  console.log(JSON.stringify({ pass: true, report }, null, 2));
+}
+
 function runOpenSourcePatternTests() {
   const samples = [
     {
@@ -7092,10 +7491,14 @@ function runConfigTests() {
   assert(config.managedUX?.appBoard?.enabled, "managedUX appBoard should be enabled");
   assert(config.managedUX.appBoard.language === "zh-CN", "appBoard should default to Chinese");
   assert(config.managedUX.appBoard.defaultStyle === "stage-board", "appBoard should default to stage-board");
+  assert(config.managedUX?.projectGraph?.enabled, "managedUX projectGraph should be enabled");
+  assert(config.managedUX?.routingEvidence?.enabled, "managedUX routingEvidence should be enabled");
+  assert(config.managedUX.routingEvidence.includeInManagedJson, "routingEvidence should be included in managed JSON");
+  assert(config.managedUX.routingEvidence.includeInAppText === false, "routingEvidence should stay out of normal App text");
   assert(config.managedUX?.openSourcePatterns?.enabled, "managedUX openSourcePatterns should be enabled");
   assert(config.managedUX.openSourcePatterns.defaultContextPolicy === "stage-output-only", "openSourcePatterns should default to stage-output-only");
   assert((config.managedUX.openSourcePatterns.sources || []).length >= 3, "openSourcePatterns should name source projects");
-  console.log(JSON.stringify({ pass: true, taskKinds: Object.keys(config.taskKindPolicy || {}), highRiskRules: config.highRiskRules.map((rule) => rule.id), planningBoard: config.managedUX.planningBoard, appBoard: config.managedUX.appBoard, openSourcePatterns: config.managedUX.openSourcePatterns }, null, 2));
+  console.log(JSON.stringify({ pass: true, taskKinds: Object.keys(config.taskKindPolicy || {}), highRiskRules: config.highRiskRules.map((rule) => rule.id), planningBoard: config.managedUX.planningBoard, appBoard: config.managedUX.appBoard, projectGraph: config.managedUX.projectGraph, routingEvidence: config.managedUX.routingEvidence, openSourcePatterns: config.managedUX.openSourcePatterns }, null, 2));
 }
 
 function runConfigExplainTests() {
@@ -7952,6 +8355,23 @@ function main() {
     printRoute(routeTask(task), mode);
     return;
   }
+  if (command === "route-trace") {
+    let mode = "text";
+    let noProjectGraph = false;
+    const args = [];
+    for (let index = 0; index < rest.length; index += 1) {
+      const arg = rest[index];
+      if (arg === "--json") mode = "json";
+      else if (arg === "--no-project-graph") noProjectGraph = true;
+      else args.push(arg);
+    }
+    const task = args.join(" ").trim();
+    if (!task) throw new Error("route-trace requires a task string");
+    const graphInfo = ensureProjectGraph({ noProjectGraph });
+    const projectSignals = noProjectGraph ? null : projectGraphSignals(graphInfo.summary);
+    printRouteTrace(routeTask(task, { candidateLimit: 8, projectSignals, noRouteCache: true }), mode);
+    return;
+  }
   if (command === "judge") {
     let mode = "full";
     let offline = false;
@@ -8135,6 +8555,14 @@ function main() {
   }
   if (command === "test-project-graph") {
     runProjectGraphTests();
+    return;
+  }
+  if (command === "test-project-graph-performance") {
+    runProjectGraphPerformanceTests();
+    return;
+  }
+  if (command === "test-routing-golden") {
+    runRoutingGoldenTests();
     return;
   }
   if (command === "test-open-source-patterns") {

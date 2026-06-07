@@ -1,5 +1,5 @@
 {
-  "version": 19,
+  "version": 20,
   "skillRules": [
     {
       "id": "web-app-qa",
@@ -677,6 +677,12 @@
       "maxFileBytes": 262144,
       "staleAfterHours": 24,
       "includeInDisplayBoard": true
+    },
+    "routingEvidence": {
+      "enabled": true,
+      "includeInManagedJson": true,
+      "includeInAppText": false,
+      "maxRejectedAgents": 8
     },
     "openSourcePatterns": {
       "enabled": true,

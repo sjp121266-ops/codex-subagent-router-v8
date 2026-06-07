@@ -43,6 +43,14 @@ On the first managed use inside a project, the router may create a lightweight l
 
 Do not expose internal fields such as `judgeMode`, `candidateBudget`, `failureClass`, cache keys, or raw candidate scoring in normal user updates. Do not paste the full managed JSON into the chat unless the user explicitly asks for debugging output. Use `managed --json --profile compact` as the default for real delegation, and `managed --profile app` when the user mainly needs a readable planning board in the Codex App; reserve `judge --verbose`, `judge --explain`, `inspect-context`, and full prompt hydration for auditing, debugging, or improving the router itself.
 
+When debugging routing accuracy, prefer `route-trace` before changing rules:
+
+```bash
+"$SUBAGENT_ROUTER" route-trace --json "<task>"
+```
+
+Use `routingEvidence.taskSignals`, `projectSignals`, `userConstraints`, `safetySignals`, `agentScores`, and `rejectedByPolicy` to explain why the router chose or rejected agents. Keep this evidence in debug/reporting contexts; do not show full candidate scoring in ordinary user-facing Codex App messages.
+
 2. For debugging the router or medium/high-risk delegation, run the cost-aware router:
 
 ```bash
@@ -242,6 +250,8 @@ Use these checks after changing agents, skills, strategy config, schemas, or rou
 "$SUBAGENT_ROUTER" test-managed
 "$SUBAGENT_ROUTER" test-managed-contract
 "$SUBAGENT_ROUTER" test-app-board
+"$SUBAGENT_ROUTER" test-routing-golden
+"$SUBAGENT_ROUTER" test-project-graph-performance
 "$SUBAGENT_ROUTER" test-architecture
 "$SUBAGENT_ROUTER" test-open-source-patterns
 "$SUBAGENT_ROUTER" test-skills-phase

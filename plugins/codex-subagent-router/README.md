@@ -50,6 +50,24 @@ node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs project-graph 
 node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs managed --no-project-graph --json "调试时跳过项目图谱"
 ```
 
+## Routing Accuracy Tools
+
+当你想知道“为什么选这个 agent”时，可以用路由追踪：
+
+```bash
+node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs route-trace "写小红书种草脚本"
+node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs route-trace --json "只读审查 get_token，不执行 OAuth、不输出 token"
+```
+
+`route-trace` 会展示任务信号、项目图谱信号、用户约束、安全信号、候选分数和被规则排除的 agent。普通 Codex App 聊天仍默认显示中文规划板，不会把内部候选评分塞给用户。
+
+维护调度准确率时使用：
+
+```bash
+node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs test-routing-golden
+node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs test-project-graph-performance
+```
+
 ## Execution Adapter
 
 Native custom-name agent spawning depends on the current Codex host. When direct spawning by a provider identity is unavailable, the router uses `executionAdapter.mode = "generic-role-bridge"` and tells Codex to run the selected identity through the generic `explorer` or `worker` role with `delegationPrompt` injected. This keeps the chosen agent identity, skills, model, sandbox, stages, and quality gates intact while changing only the transport layer.
