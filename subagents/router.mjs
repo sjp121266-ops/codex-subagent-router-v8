@@ -7244,10 +7244,14 @@ function main() {
     let mode = "text";
     let profile = "compact";
     let hydrate = "";
+    let offline = false;
+    let noCache = true;
     const args = [];
     for (let index = 0; index < rest.length; index += 1) {
       const arg = rest[index];
       if (arg === "--json") mode = "json";
+      else if (arg === "--offline") offline = true;
+      else if (arg === "--allow-cache") noCache = false;
       else if (arg === "--profile") {
         profile = rest[index + 1] || "";
         index += 1;
@@ -7260,7 +7264,7 @@ function main() {
     }
     const task = args.join(" ").trim();
     if (!task) throw new Error("managed requires a task string");
-    printManagedDelegation(runModelJudgement(task, { noCache: true }), mode, { profile, hydrate });
+    printManagedDelegation(runModelJudgement(task, { noCache, offline }), mode, { profile, hydrate });
     return;
   }
   if (command === "prompt") {
