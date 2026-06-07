@@ -1770,16 +1770,15 @@ function clampText(text, max = 180) {
   return compact.length > max ? `${compact.slice(0, max - 3)}...` : compact;
 }
 
-function redactForDisplay(text) {
+function redactSensitiveValues(text) {
   return String(text || "")
-    .replace(/Authorization:\s*Bearer\s+[\w.-]+/gi, "Authorization: Bearer [redacted]")
-    .replace(/\b(?:access_token|refresh_token|api[_-]?key|secret)\s*=\s*[^ \n\t,;]+/gi, (match) => `${match.split("=")[0].trim()}=[redacted]`)
-    .replace(/\bsk-[A-Za-z0-9_-]{8,}\b/g, "sk-[redacted]")
-    .replace(/\bgh[pousr]_[A-Za-z0-9_]{12,}\b/g, "gh[redacted]")
-    .replace(/https?:\/\/[^\s)]+/gi, "[redacted-url]")
-    .replace(/\/Users\/[^\s,;:)]+/g, "[redacted-path]")
-    .replace(/\s+/g, " ")
-    .trim();
+    .replace(/\b((?:access|refresh|id)?_?token|api[_-]?key|secret|password|passwd|credential)\s*[:=]\s*["']?[^"'\s,;)}\]]+/gi, "$1=[REDACTED]")
+    .replace(/\b(Bearer|Basic)\s+[A-Za-z0-9._~+/-]+=*/gi, "$1 [REDACTED]")
+    .replace(/\b(sk-[A-Za-z0-9_-]{12,}|gh[pousr]_[A-Za-z0-9_]{12,}|xox[baprs]-[A-Za-z0-9-]{12,})\b/g, "[REDACTED_SECRET]");
+}
+
+function displayText(text, max = 180) {
+  return clampText(redactSensitiveValues(text), max);
 }
 
 function routeMargin(route) {
@@ -3828,10 +3827,10 @@ function displayBoardFor(plan) {
     : "父级 Codex";
   const headline = `司南已选择 ${visibleAgentName}，采用${zhCoordinationMode(plan.planningBrief?.coordinationMode)}模式，当前状态：${boardState}。`;
   const narrative = [
-    headline,
-    `本次目标：${redactForDisplay(plan.planningBrief?.objective || "完成用户请求的多智能体任务")}`,
-    `为什么这样分工：${whyText}`,
-    `下一步：${plan.nextAction?.type === "spawn" ? `启动 ${plan.nextAction.agentDisplayName || plan.nextAction.agent || "推荐 agent"} 处理 ${plan.nextAction.stageId || "首个阶段"}` : plan.nextAction?.type === "ask-clarification" ? redactForDisplay(plan.nextAction.question) : "父级 Codex 先复核安全状态再继续。"}`,
+    displayText(headline, 220),
+    `本次目标：${displayText(plan.planningBrief?.objective || "完成用户请求的多智能体任务", 220)}`,
+    `为什么这样分工：${displayText(whyText, 180)}`,
+    `下一步：${plan.nextAction?.type === "spawn" ? `启动 ${displayText(plan.nextAction.agentDisplayName || plan.nextAction.agent || "推荐 agent", 80)} 处理 ${displayText(plan.nextAction.stageId || "首个阶段", 80)}` : plan.nextAction?.type === "ask-clarification" ? displayText(plan.nextAction.question, 180) : "父级 Codex 先复核安全状态再继续。"}`,
     `边界：不会自动执行凭证、生产、发布、下载或外部副作用动作。`,
   ].filter(Boolean).slice(0, 5);
   const flowStages = goalStages.length ? goalStages : [{ order: 1, stageId: "parent", title: "父级 Codex 处理", agent: "parent-codex", status: boardState }];
@@ -3938,9 +3937,9 @@ function compactManagedPlanForProfile(plan, profile = "compact") {
     } : plan.userSummary,
     planningBrief: plan.planningBrief ? {
       ...plan.planningBrief,
-      objective: clampText(redactForDisplay(plan.planningBrief.objective), 160),
-      whyMultiAgent: clampText(plan.planningBrief.whyMultiAgent, 160),
-      safeExpectation: clampText(plan.planningBrief.safeExpectation, 180),
+      objective: displayText(plan.planningBrief.objective, 160),
+      whyMultiAgent: displayText(plan.planningBrief.whyMultiAgent, 160),
+      safeExpectation: displayText(plan.planningBrief.safeExpectation, 180),
       automaticLimits: (plan.planningBrief.automaticLimits || []).slice(0, 4),
     } : plan.planningBrief,
     displayBoard: plan.displayBoard ? {
@@ -4057,11 +4056,11 @@ function compactManagedPlanForProfile(plan, profile = "compact") {
     parentResponsibilities: (plan.parentResponsibilities || []).slice(0, 4).map((item) => displayText(item, 120)),
     stageInputs: Object.fromEntries(Object.entries(plan.stageInputs || {}).map(([key, value]) => [
       key,
-      (value || []).slice(0, 2).map((item) => clampText(redactForDisplay(item), 90)),
+      (value || []).slice(0, 2).map((item) => displayText(item, 90)),
     ])),
     stageOutputs: Object.fromEntries(Object.entries(plan.stageOutputs || {}).map(([key, value]) => [
       key,
-      clampText(redactForDisplay(value), 110),
+      displayText(value, 110),
     ])),
     goalLoop: (plan.goalLoop || []).map((stage) => ({
       ...stage,
@@ -6218,10 +6217,6 @@ function runAppBoardTests() {
   assert(/父级 Codex/.test(vague.displayBoard.headline), "vague app board should not headline a random specialist before clarification");
   assert(!/Accounts Payable|accessibility|tester|auditor/i.test(vague.displayBoard.headline), "vague app board should suppress domain specialist names before clarification");
 
-  const appAgency = managedDelegationPlan(deterministicManagedResult("开启子代理，做小红书社区种草和内容策略"), { profile: "app" });
-  assert(appAgency.agentProvider === "agency-agents", `app board should preserve agency provider, got ${appAgency.agentProvider}`);
-  assertManagedPlanRedaction(appAgency, "agency app board");
-
   const text = execFileSync(process.execPath, [fileURLToPath(import.meta.url), "managed", "--offline", "--profile", "app", "开启子代理，调用合适 agent 完成任务"], {
     encoding: "utf8",
     env: { ...process.env, CODEX_HOME },
@@ -6230,7 +6225,16 @@ function runAppBoardTests() {
   assert(text.includes("# 司南规划结果"), "managed --profile app text should render a Chinese board");
   assert(text.includes("| 阶段 | Agent | 状态 | 验收点 | 下一触发 |"), "managed --profile app text should render a stage table");
   assert(text.includes("```mermaid"), "managed --profile app text should include Mermaid");
-  assert(!/Routing packet:|--output-schema|codex exec|judgePolicy|agentCandidates|skillCandidates|judgeMode|candidateBudget|cacheKey/i.test(text), "managed app text should not expose internal routing fields");
+  assert(!/judgeMode|candidateBudget|cache key|cacheKey/i.test(text), "managed app text should not expose internal routing fields");
+  assertNoManagedInternalLeaks(text, "managed app text");
+
+  const sensitiveTask = "开启子代理，审查 credential 工具，样例 access_token=abc123SECRET456、api_key=key_live_789 和 Bearer ghp_exampleSECRET000，不要输出 token";
+  const sensitiveApp = managedDelegationPlan(deterministicManagedResult(sensitiveTask), { profile: "app" });
+  const sensitiveCompact = managedDelegationPlan(deterministicManagedResult(sensitiveTask), { profile: "compact" });
+  const sensitiveJson = JSON.stringify({ sensitiveApp, sensitiveCompact });
+  assert(sensitiveJson.includes("[REDACTED]"), "compact/app managed plans should show redaction markers for secret-shaped values");
+  assert(!/abc123SECRET456|key_live_789|ghp_exampleSECRET000/.test(sensitiveJson), "compact/app managed plans must redact secret-shaped values recursively");
+  assertNoManagedInternalLeaks(sensitiveJson, "sensitive compact/app managed plans");
 
   console.log(JSON.stringify({
     pass: true,

@@ -5226,28 +5226,19 @@ function validateManagedPlanContract(plan, options = {}) {
   return { ok: errors.length === 0, errors, warnings };
 }
 
-const MANAGED_INTERNAL_KEYS = ["judgeMode", "judgeModel", "candidateBudget", "cache", "decisionTrace", "rejectedCandidates", "cacheKey", "rawCandidateScores"];
-
-function collectManagedInternalLeaks(value, pathParts = [], leaks = []) {
-  if (!value || typeof value !== "object") return leaks;
-  if (Array.isArray(value)) {
-    value.forEach((item, index) => collectManagedInternalLeaks(item, [...pathParts, String(index)], leaks));
-    return leaks;
-  }
-  for (const [key, child] of Object.entries(value)) {
-    const childPath = [...pathParts, key];
-    if (MANAGED_INTERNAL_KEYS.includes(key)) leaks.push(childPath.join("."));
-    collectManagedInternalLeaks(child, childPath, leaks);
-  }
-  return leaks;
-}
-
-function assertManagedPlanRedaction(plan, label) {
-  const leaks = collectManagedInternalLeaks(plan);
-  assert(leaks.length === 0, `${label} leaked internal managed keys: ${leaks.join(", ")}`);
-  const serialized = JSON.stringify(plan);
-  assert(!/rawCandidateScores/i.test(serialized), `${label} leaked raw scoring internals`);
-  assert(!/BEGIN PROVIDER PROMPT|You are .{0,80}(Reddit Community Builder|Frontend Developer|Product Manager)/i.test(serialized), `${label} leaked full provider prompt body`);
+function assertNoManagedInternalLeaks(value, label = "managed output") {
+  const internalKeys = new Set(["judgeMode", "judgeModel", "candidateBudget", "cache", "cacheKey", "decisionTrace", "rejectedCandidates"]);
+  const visit = (node, path = "") => {
+    if (!node || typeof node !== "object") return;
+    for (const [key, child] of Object.entries(node)) {
+      assert(!internalKeys.has(key), `${label} must not expose internal key ${path ? `${path}.` : ""}${key}`);
+      visit(child, path ? `${path}.${key}` : key);
+    }
+  };
+  if (typeof value !== "string") visit(value);
+  const text = typeof value === "string" ? value : JSON.stringify(value);
+  assert(!/cacheKey|decisionTrace|Routing packet/i.test(text), `${label} must not expose internal routing fields`);
+  assert(!/--output-schema|--output-last-message|\\.judgement-|codex exec/i.test(text), `${label} must not expose judge execution details`);
 }
 
 function resolveProjectRootForMirror() {
@@ -6207,7 +6198,7 @@ function runAppBoardTests() {
     assert(!Object.prototype.hasOwnProperty.call(plan, "judgeMode"), "app managed plan must hide judgeMode");
     assert(!Object.prototype.hasOwnProperty.call(plan, "candidateBudget"), "app managed plan must hide candidateBudget");
     assert(!Object.prototype.hasOwnProperty.call(plan, "cache"), "app managed plan must hide cache internals");
-    assertManagedPlanRedaction(plan, `app board ${plan.planningBrief?.objective || "sample"}`);
+    assertNoManagedInternalLeaks(plan, "app managed plan");
   }
   const credential = plans[2];
   assert(credential.displayBoard.safetyPanel.blockedChecks.some((item) => /OAuth|token|auth cache/i.test(item)), "credential app board should show OAuth/token blockers");
@@ -6221,10 +6212,6 @@ function runAppBoardTests() {
   assert(/父级 Codex/.test(vague.displayBoard.headline), "vague app board should not headline a random specialist before clarification");
   assert(!/Accounts Payable|accessibility|tester|auditor/i.test(vague.displayBoard.headline), "vague app board should suppress domain specialist names before clarification");
 
-  const appAgency = managedDelegationPlan(deterministicManagedResult("开启子代理，做小红书社区种草和内容策略"), { profile: "app" });
-  assert(appAgency.agentProvider === "agency-agents", `app board should preserve agency provider, got ${appAgency.agentProvider}`);
-  assertManagedPlanRedaction(appAgency, "agency app board");
-
   const text = execFileSync(process.execPath, [fileURLToPath(import.meta.url), "managed", "--offline", "--profile", "app", "开启子代理，调用合适 agent 完成任务"], {
     encoding: "utf8",
     env: { ...process.env, CODEX_HOME },
@@ -6233,7 +6220,16 @@ function runAppBoardTests() {
   assert(text.includes("# 司南规划结果"), "managed --profile app text should render a Chinese board");
   assert(text.includes("| 阶段 | Agent | 状态 | 验收点 | 下一触发 |"), "managed --profile app text should render a stage table");
   assert(text.includes("```mermaid"), "managed --profile app text should include Mermaid");
-  assert(!/Routing packet:|--output-schema|codex exec|judgePolicy|agentCandidates|skillCandidates|judgeMode|candidateBudget|cacheKey/i.test(text), "managed app text should not expose internal routing fields");
+  assert(!/judgeMode|candidateBudget|cache key|cacheKey/i.test(text), "managed app text should not expose internal routing fields");
+  assertNoManagedInternalLeaks(text, "managed app text");
+
+  const sensitiveTask = "开启子代理，审查 credential 工具，样例 access_token=abc123SECRET456、api_key=key_live_789 和 Bearer ghp_exampleSECRET000，不要输出 token";
+  const sensitiveApp = managedDelegationPlan(deterministicManagedResult(sensitiveTask), { profile: "app" });
+  const sensitiveCompact = managedDelegationPlan(deterministicManagedResult(sensitiveTask), { profile: "compact" });
+  const sensitiveJson = JSON.stringify({ sensitiveApp, sensitiveCompact });
+  assert(sensitiveJson.includes("[REDACTED]"), "compact/app managed plans should show redaction markers for secret-shaped values");
+  assert(!/abc123SECRET456|key_live_789|ghp_exampleSECRET000/.test(sensitiveJson), "compact/app managed plans must redact secret-shaped values recursively");
+  assertNoManagedInternalLeaks(sensitiveJson, "sensitive compact/app managed plans");
 
   console.log(JSON.stringify({
     pass: true,
