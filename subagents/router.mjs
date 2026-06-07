@@ -5178,6 +5178,30 @@ function validateManagedPlanContract(plan, options = {}) {
   return { ok: errors.length === 0, errors, warnings };
 }
 
+const MANAGED_INTERNAL_KEYS = ["judgeMode", "judgeModel", "candidateBudget", "cache", "decisionTrace", "rejectedCandidates", "cacheKey", "rawCandidateScores"];
+
+function collectManagedInternalLeaks(value, pathParts = [], leaks = []) {
+  if (!value || typeof value !== "object") return leaks;
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => collectManagedInternalLeaks(item, [...pathParts, String(index)], leaks));
+    return leaks;
+  }
+  for (const [key, child] of Object.entries(value)) {
+    const childPath = [...pathParts, key];
+    if (MANAGED_INTERNAL_KEYS.includes(key)) leaks.push(childPath.join("."));
+    collectManagedInternalLeaks(child, childPath, leaks);
+  }
+  return leaks;
+}
+
+function assertManagedPlanRedaction(plan, label) {
+  const leaks = collectManagedInternalLeaks(plan);
+  assert(leaks.length === 0, `${label} leaked internal managed keys: ${leaks.join(", ")}`);
+  const serialized = JSON.stringify(plan);
+  assert(!/cache key|cacheKey|raw candidate scoring|rawCandidateScores/i.test(serialized), `${label} leaked cache or raw scoring language`);
+  assert(!/BEGIN PROVIDER PROMPT|You are .{0,80}(Reddit Community Builder|Frontend Developer|Product Manager)/i.test(serialized), `${label} leaked full provider prompt body`);
+}
+
 function resolveProjectRootForMirror() {
   const fromPluginMirror = path.resolve(ROUTER_DIR, "../../../..");
   if (fs.existsSync(path.join(fromPluginMirror, "subagents", "router.mjs"))) return fromPluginMirror;
