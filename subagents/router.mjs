@@ -3823,7 +3823,10 @@ function displayBoardFor(plan) {
         : plan.planningBrief?.coordinationMode === "parent-review-required" || plan.planningBrief?.coordinationMode === "supervisor-review"
           ? "任务风险较高，需要父级 Codex 保留复核和验收责任。"
           : "任务适合按发现、执行、验证和复核阶段交接推进。";
-  const headline = redactForDisplay(`司南已选择 ${plan.agentDisplayName || plan.agent}，采用${zhCoordinationMode(plan.planningBrief?.coordinationMode)}模式，当前状态：${boardState}。`);
+  const visibleAgentName = plan.nextAction?.type === "spawn"
+    ? (plan.agentDisplayName || plan.agent || "推荐 agent")
+    : "父级 Codex";
+  const headline = `司南已选择 ${visibleAgentName}，采用${zhCoordinationMode(plan.planningBrief?.coordinationMode)}模式，当前状态：${boardState}。`;
   const narrative = [
     headline,
     `本次目标：${redactForDisplay(plan.planningBrief?.objective || "完成用户请求的多智能体任务")}`,
