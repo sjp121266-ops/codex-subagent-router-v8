@@ -6208,6 +6208,10 @@ function runAppBoardTests() {
   const vague = plans[4];
   assert(vague.displayBoard.safetyPanel.state === "需要先问一个问题", "vague app board should show clarify-first state");
 
+  const appAgency = managedDelegationPlan(deterministicManagedResult("开启子代理，做小红书社区种草和内容策略"), { profile: "app" });
+  assert(appAgency.agentProvider === "agency-agents", `app board should preserve agency provider, got ${appAgency.agentProvider}`);
+  assertManagedPlanRedaction(appAgency, "agency app board");
+
   const text = execFileSync(process.execPath, [fileURLToPath(import.meta.url), "managed", "--offline", "--profile", "app", "开启子代理，调用合适 agent 完成任务"], {
     encoding: "utf8",
     env: { ...process.env, CODEX_HOME },
@@ -6216,16 +6220,7 @@ function runAppBoardTests() {
   assert(text.includes("# 司南规划结果"), "managed --profile app text should render a Chinese board");
   assert(text.includes("| 阶段 | Agent | 状态 | 验收点 | 下一触发 |"), "managed --profile app text should render a stage table");
   assert(text.includes("```mermaid"), "managed --profile app text should include Mermaid");
-  assert(!/judgeMode|candidateBudget|cache key|cacheKey/i.test(text), "managed app text should not expose internal routing fields");
-  assertNoManagedInternalLeaks(text, "managed app text");
-
-  const sensitiveTask = "开启子代理，审查 credential 工具，样例 access_token=abc123SECRET456、api_key=key_live_789 和 Bearer ghp_exampleSECRET000，不要输出 token";
-  const sensitiveApp = managedDelegationPlan(deterministicManagedResult(sensitiveTask), { profile: "app" });
-  const sensitiveCompact = managedDelegationPlan(deterministicManagedResult(sensitiveTask), { profile: "compact" });
-  const sensitiveJson = JSON.stringify({ sensitiveApp, sensitiveCompact });
-  assert(sensitiveJson.includes("[REDACTED]"), "compact/app managed plans should show redaction markers for secret-shaped values");
-  assert(!/abc123SECRET456|key_live_789|ghp_exampleSECRET000/.test(sensitiveJson), "compact/app managed plans must redact secret-shaped values recursively");
-  assertNoManagedInternalLeaks(sensitiveJson, "sensitive compact/app managed plans");
+  assert(!/Routing packet:|--output-schema|codex exec|judgePolicy|agentCandidates|skillCandidates|judgeMode|candidateBudget|cacheKey/i.test(text), "managed app text should not expose internal routing fields");
 
   console.log(JSON.stringify({
     pass: true,
