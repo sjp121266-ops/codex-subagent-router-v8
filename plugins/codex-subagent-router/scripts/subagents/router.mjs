@@ -5087,7 +5087,7 @@ function detectExecutionAdapter(stage = {}) {
   };
 }
 
-const MANAGED_APP_REDACTION_PATTERN = /\b(judgeMode|judgeModel|candidateBudget|decisionTrace|rejectedCandidates|cacheKey|cache key|raw candidate scoring|providerPromptPreview|providerPromptPath|full provider prompt|prompt body|access_token|refresh_token|api[_-]?key|secret)\b/i;
+const MANAGED_APP_REDACTION_PATTERN = /\b(judgeMode|judgeModel|candidateBudget|decisionTrace|rejectedCandidates|cacheKey|cache key|raw candidate scoring|providerPromptPreview|providerPromptPath|access_token|refresh_token|api[_-]?key|secret)\b/i;
 
 function collectDisplayBoardRedactionLeaks(value, trail = "displayBoard", leaks = []) {
   if (value == null) return leaks;
