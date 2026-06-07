@@ -75,6 +75,20 @@ node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs managed --json
 
 `report` should show 351 agents in the tested bundle: 167 VoltAgent and 184 Agency.
 
+
+## Contract and Redaction Gates
+
+Release validation includes the managed contract and App board gates:
+
+```bash
+node scripts/subagents/router.mjs test-managed-contract
+node scripts/subagents/router.mjs test-app-board
+node scripts/subagents/router.mjs test-architecture
+node scripts/subagents/router.mjs architecture-health --json
+```
+
+`test-app-board` now verifies that the user-facing `displayBoard` does not leak internal routing fields, cache details, provider prompt paths/full prompt wording, or credential-shaped secrets. Keep source and plugin mirror files byte-for-byte aligned before publishing.
+
 ## Global Sync
 
 The plugin is self-contained. If you also want the router available through the global non-plugin path, sync these files:

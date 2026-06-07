@@ -210,6 +210,7 @@ Detailed implementation notes, plans, and verification runs live in [`outputs/`]
 
 Useful reports:
 
+- [`outputs/subagent-router-v17-contract-boundary-report.md`](outputs/subagent-router-v17-contract-boundary-report.md)
 - [`outputs/subagent-router-v16-context-efficiency-final-report.md`](outputs/subagent-router-v16-context-efficiency-final-report.md)
 - [`outputs/architecture-audit-optimization-report.md`](outputs/architecture-audit-optimization-report.md)
 - [`outputs/open-source-patterns-integration-report.md`](outputs/open-source-patterns-integration-report.md)

@@ -5087,6 +5087,27 @@ function detectExecutionAdapter(stage = {}) {
   };
 }
 
+const MANAGED_APP_REDACTION_PATTERN = /\b(judgeMode|judgeModel|candidateBudget|decisionTrace|rejectedCandidates|cacheKey|cache key|raw candidate scoring|providerPromptPreview|providerPromptPath|full provider prompt|prompt body|access_token|refresh_token|api[_-]?key|secret)\b/i;
+
+function collectDisplayBoardRedactionLeaks(value, trail = "displayBoard", leaks = []) {
+  if (value == null) return leaks;
+  if (typeof value === "string") {
+    if (MANAGED_APP_REDACTION_PATTERN.test(value)) leaks.push(`${trail}: ${clampText(value, 80)}`);
+    return leaks;
+  }
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => collectDisplayBoardRedactionLeaks(item, `${trail}[${index}]`, leaks));
+    return leaks;
+  }
+  if (typeof value === "object") {
+    for (const [key, nested] of Object.entries(value)) {
+      if (MANAGED_APP_REDACTION_PATTERN.test(key)) leaks.push(`${trail}.${key}: internal key`);
+      collectDisplayBoardRedactionLeaks(nested, `${trail}.${key}`, leaks);
+    }
+  }
+  return leaks;
+}
+
 function validateManagedPlanContract(plan, options = {}) {
   const errors = [];
   const warnings = [];
@@ -5132,6 +5153,8 @@ function validateManagedPlanContract(plan, options = {}) {
     addError(Array.isArray(plan.displayBoard.userNarrative) && plan.displayBoard.userNarrative.length >= 3, "displayBoard missing user narrative");
     addError(Array.isArray(plan.displayBoard.goalBoard) && plan.displayBoard.goalBoard.length >= 1, "displayBoard missing goal board");
     addError(plan.displayBoard.safetyPanel && typeof plan.displayBoard.safetyPanel.requiresParentReview === "boolean", "displayBoard missing safety review state");
+    const displayLeaks = collectDisplayBoardRedactionLeaks(plan.displayBoard);
+    addError(displayLeaks.length === 0, `displayBoard leaks internal or sensitive details: ${displayLeaks.join("; ")}`);
     addWarning(Boolean(plan.displayBoard.mermaidFlow), "displayBoard has no Mermaid flow");
   }
   if (plan.openSourcePatterns) {
@@ -6052,6 +6075,7 @@ function runAppBoardTests() {
     assert(!Object.prototype.hasOwnProperty.call(plan, "judgeMode"), "app managed plan must hide judgeMode");
     assert(!Object.prototype.hasOwnProperty.call(plan, "candidateBudget"), "app managed plan must hide candidateBudget");
     assert(!Object.prototype.hasOwnProperty.call(plan, "cache"), "app managed plan must hide cache internals");
+    assert(collectDisplayBoardRedactionLeaks(plan.displayBoard).length === 0, "displayBoard must not leak internal routing fields, cache details, prompt paths, or secrets");
   }
   const credential = plans[2];
   assert(credential.displayBoard.safetyPanel.blockedChecks.some((item) => /OAuth|token|auth cache/i.test(item)), "credential app board should show OAuth/token blockers");
