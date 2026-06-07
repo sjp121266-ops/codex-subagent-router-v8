@@ -1752,6 +1752,36 @@ function clampText(text, max = 180) {
   return compact.length > max ? `${compact.slice(0, max - 3)}...` : compact;
 }
 
+const DISPLAY_BOARD_SCHEMA_VERSION = "display-board-v2";
+
+function redactDisplayText(text, max = 180) {
+  const compact = String(text || "")
+    .replace(/Bearer\s+[A-Za-z0-9._~+/=-]+/gi, "Bearer [redacted]")
+    .replace(/\b(?:sk|pk|rk|sess|ghp|github_pat|xox[baprs]?)-[A-Za-z0-9._-]{8,}\b/gi, "[redacted-credential]")
+    .replace(/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g, "[redacted-email]")
+    .replace(/\/Users\/[^\s"'`，。；)]+/g, "[local-path]")
+    .replace(/\s+/g, " ")
+    .trim();
+  return clampText(compact, max);
+}
+
+function displayArray(items, maxItems, maxChars) {
+  return (items || [])
+    .slice(0, maxItems)
+    .map((item) => redactDisplayText(item, maxChars))
+    .filter(Boolean);
+}
+
+function displayBoardSchemaFor(plan) {
+  return {
+    version: DISPLAY_BOARD_SCHEMA_VERSION,
+    required: ["headline", "userNarrative", "goalBoard", "safetyPanel", "mermaidFlow"],
+    redaction: "credential-values, bearer tokens, emails, and absolute /Users paths are redacted before App display.",
+    provider: plan.agentProvider || "voltagent",
+    adapterMode: plan.executionAdapter?.mode || "",
+  };
+}
+
 function routeMargin(route) {
   const scores = route.candidates?.map((candidate) => candidate.score).sort((a, b) => b - a) || [];
   if (scores.length < 2) return scores[0] || 0;
@@ -3748,8 +3778,8 @@ function displayBoardFor(plan) {
       agent: stage.agent,
       role: zhRole(stage.role),
       status: zhStatus(check.status || "pending"),
-      acceptance: [zhAcceptanceForStage(stageId, stage.role)],
-      nextTrigger: stage.nextTrigger || "完成本阶段验收后进入下一步",
+      acceptance: [redactDisplayText(zhAcceptanceForStage(stageId, stage.role), 100)],
+      nextTrigger: redactDisplayText(stage.nextTrigger || "完成本阶段验收后进入下一步", 120),
     };
   });
   const agentCards = (plan.agentWorkPlan || [])
@@ -3757,13 +3787,13 @@ function displayBoardFor(plan) {
     .map((card) => ({
       role: card.rosterRole,
       agent: card.agent || "不启用",
-      responsibility: card.responsibility,
+      responsibility: redactDisplayText(card.responsibility, 120),
       permission: card.permission,
       canWrite: card.permission !== "read-only" && card.permission !== "not-used" && card.agent !== null,
       handoffTo: (card.handoffTo || []).slice(0, 2),
     }));
-  const safeChecks = (plan.verificationBoard?.safeChecks || []).slice(0, maxSafetyItems);
-  const blockedChecks = (plan.verificationBoard?.blockedChecks || []).slice(0, maxSafetyItems);
+  const safeChecks = displayArray(plan.verificationBoard?.safeChecks, maxSafetyItems, 90);
+  const blockedChecks = displayArray(plan.verificationBoard?.blockedChecks, maxSafetyItems, 90);
   const requiresParentReview = Boolean(plan.verificationBoard?.summary?.requiresParentReview || plan.nextAction?.type === "parent-review");
   const boardState = plan.nextAction?.type === "ask-clarification"
     ? "需要先问一个问题"
@@ -3779,12 +3809,12 @@ function displayBoardFor(plan) {
         : plan.planningBrief?.coordinationMode === "parent-review-required" || plan.planningBrief?.coordinationMode === "supervisor-review"
           ? "任务风险较高，需要父级 Codex 保留复核和验收责任。"
           : "任务适合按发现、执行、验证和复核阶段交接推进。";
-  const headline = `司南已选择 ${plan.agentDisplayName || plan.agent}，采用${zhCoordinationMode(plan.planningBrief?.coordinationMode)}模式，当前状态：${boardState}。`;
+  const headline = redactDisplayText(`司南已选择 ${plan.agentDisplayName || plan.agent}，采用${zhCoordinationMode(plan.planningBrief?.coordinationMode)}模式，当前状态：${boardState}。`, 180);
   const narrative = [
     headline,
-    `本次目标：${plan.planningBrief?.objective || "完成用户请求的多智能体任务"}`,
-    `为什么这样分工：${whyText}`,
-    `下一步：${plan.nextAction?.type === "spawn" ? `启动 ${plan.nextAction.agentDisplayName || plan.nextAction.agent || "推荐 agent"} 处理 ${plan.nextAction.stageId || "首个阶段"}` : plan.nextAction?.type === "ask-clarification" ? plan.nextAction.question : "父级 Codex 先复核安全状态再继续。"}`,
+    redactDisplayText(`本次目标：${plan.planningBrief?.objective || "完成用户请求的多智能体任务"}`, 180),
+    redactDisplayText(`为什么这样分工：${whyText}`, 180),
+    redactDisplayText(`下一步：${plan.nextAction?.type === "spawn" ? `启动 ${plan.nextAction.agentDisplayName || plan.nextAction.agent || "推荐 agent"} 处理 ${plan.nextAction.stageId || "首个阶段"}` : plan.nextAction?.type === "ask-clarification" ? plan.nextAction.question : "父级 Codex 先复核安全状态再继续。"}`, 180),
     `边界：不会自动执行凭证、生产、发布、下载或外部副作用动作。`,
   ].filter(Boolean).slice(0, 5);
   const flowStages = goalStages.length ? goalStages : [{ order: 1, stageId: "parent", title: "父级 Codex 处理", agent: "parent-codex", status: boardState }];
@@ -3795,6 +3825,7 @@ function displayBoardFor(plan) {
   });
   return {
     headline,
+    schema: displayBoardSchemaFor(plan),
     language: config.language || "zh-CN",
     boardStyle: config.defaultStyle || "stage-board",
     coordinationModeLabel: zhCoordinationMode(plan.planningBrief?.coordinationMode),
@@ -3813,7 +3844,7 @@ function displayBoardFor(plan) {
       selected: (plan.openSourcePatterns?.selectedPatterns || []).slice(0, 4).map((pattern) => ({
         id: pattern.id,
         label: pattern.label,
-        why: clampText(pattern.why, 120),
+        why: redactDisplayText(pattern.why, 120),
       })),
       contextPolicy: plan.openSourcePatterns?.contextPolicy?.mode || "stage-output-only",
       traceWorkflow: plan.openSourcePatterns?.tracePlan?.workflowName || "",
