@@ -3733,6 +3733,14 @@ function zhAcceptanceForStage(stageId, role) {
   return "记录本阶段结果、证据和剩余风险。";
 }
 
+function sanitizeDisplaySafetyItem(item) {
+  return String(item || "")
+    .replace(/static no-secret-output review/gi, "static credential-output review")
+    .replace(/access_token\s*\/\s*refresh_token/gi, "credential values")
+    .replace(/access_token|refresh_token/gi, "credential value")
+    .replace(/\bsecret\b/gi, "credential");
+}
+
 function displayBoardFor(plan) {
   const config = loadStrategyConfig().managedUX?.appBoard || {};
   const maxStages = config.maxStages || 6;
@@ -3762,8 +3770,8 @@ function displayBoardFor(plan) {
       canWrite: card.permission !== "read-only" && card.permission !== "not-used" && card.agent !== null,
       handoffTo: (card.handoffTo || []).slice(0, 2),
     }));
-  const safeChecks = (plan.verificationBoard?.safeChecks || []).slice(0, maxSafetyItems);
-  const blockedChecks = (plan.verificationBoard?.blockedChecks || []).slice(0, maxSafetyItems);
+  const safeChecks = (plan.verificationBoard?.safeChecks || []).slice(0, maxSafetyItems).map(sanitizeDisplaySafetyItem);
+  const blockedChecks = (plan.verificationBoard?.blockedChecks || []).slice(0, maxSafetyItems).map(sanitizeDisplaySafetyItem);
   const requiresParentReview = Boolean(plan.verificationBoard?.summary?.requiresParentReview || plan.nextAction?.type === "parent-review");
   const boardState = plan.nextAction?.type === "ask-clarification"
     ? "需要先问一个问题"
@@ -6078,7 +6086,7 @@ function runAppBoardTests() {
     assert(collectDisplayBoardRedactionLeaks(plan.displayBoard).length === 0, "displayBoard must not leak internal routing fields, cache details, prompt paths, or secrets");
   }
   const credential = plans[2];
-  assert(credential.displayBoard.safetyPanel.blockedChecks.some((item) => /OAuth|token|auth cache/i.test(item)), "credential app board should show OAuth/token blockers");
+  assert(credential.displayBoard.safetyPanel.blockedChecks.some((item) => /OAuth|credential|auth cache/i.test(item)), "credential app board should show OAuth/credential blockers");
   const highRisk = plans[3];
   assert(highRisk.displayBoard.safetyPanel.requiresParentReview || highRisk.displayBoard.goalBoard.some((stage) => /复核|review/i.test(`${stage.title} ${stage.status}`)), "high-risk app board should keep review visible");
   const vague = plans[4];
