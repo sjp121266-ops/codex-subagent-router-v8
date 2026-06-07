@@ -162,6 +162,14 @@ Render an App-friendly Chinese board:
 "$SUBAGENT_ROUTER" managed --profile app "<task>"
 ```
 
+Use deterministic offline rendering for local App-board smoke tests when live model judgement is unnecessary:
+
+```bash
+"$SUBAGENT_ROUTER" managed --offline --profile app "<task>"
+```
+
+The App board includes `displayBoard.schema.version = "display-board-v2"` and redacts credential-like values, bearer tokens, emails, and absolute `/Users/...` paths from user-facing board text.
+
 Inspect context cost before a large handoff:
 
 ```bash
@@ -219,6 +227,7 @@ Use these checks after changing agents, skills, strategy config, schemas, or rou
 "$SUBAGENT_ROUTER" test-performance
 "$SUBAGENT_ROUTER" test-managed
 "$SUBAGENT_ROUTER" test-managed-contract
+"$SUBAGENT_ROUTER" test-app-board
 "$SUBAGENT_ROUTER" test-architecture
 "$SUBAGENT_ROUTER" test-open-source-patterns
 "$SUBAGENT_ROUTER" test-skills-phase

@@ -1752,6 +1752,36 @@ function clampText(text, max = 180) {
   return compact.length > max ? `${compact.slice(0, max - 3)}...` : compact;
 }
 
+const DISPLAY_BOARD_SCHEMA_VERSION = "display-board-v2";
+
+function redactDisplayText(text, max = 180) {
+  const compact = String(text || "")
+    .replace(/Bearer\s+[A-Za-z0-9._~+/=-]+/gi, "Bearer [redacted]")
+    .replace(/\b(?:sk|pk|rk|sess|ghp|github_pat|xox[baprs]?)-[A-Za-z0-9._-]{8,}\b/gi, "[redacted-credential]")
+    .replace(/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g, "[redacted-email]")
+    .replace(/\/Users\/[^\s"'`，。；)]+/g, "[local-path]")
+    .replace(/\s+/g, " ")
+    .trim();
+  return clampText(compact, max);
+}
+
+function displayArray(items, maxItems, maxChars) {
+  return (items || [])
+    .slice(0, maxItems)
+    .map((item) => redactDisplayText(item, maxChars))
+    .filter(Boolean);
+}
+
+function displayBoardSchemaFor(plan) {
+  return {
+    version: DISPLAY_BOARD_SCHEMA_VERSION,
+    required: ["headline", "userNarrative", "goalBoard", "safetyPanel", "mermaidFlow"],
+    redaction: "credential-values, bearer tokens, emails, and absolute /Users paths are redacted before App display.",
+    provider: plan.agentProvider || "voltagent",
+    adapterMode: plan.executionAdapter?.mode || "",
+  };
+}
+
 function routeMargin(route) {
   const scores = route.candidates?.map((candidate) => candidate.score).sort((a, b) => b - a) || [];
   if (scores.length < 2) return scores[0] || 0;
@@ -3756,8 +3786,8 @@ function displayBoardFor(plan) {
       agent: stage.agent,
       role: zhRole(stage.role),
       status: zhStatus(check.status || "pending"),
-      acceptance: [zhAcceptanceForStage(stageId, stage.role)],
-      nextTrigger: stage.nextTrigger || "完成本阶段验收后进入下一步",
+      acceptance: [redactDisplayText(zhAcceptanceForStage(stageId, stage.role), 100)],
+      nextTrigger: redactDisplayText(stage.nextTrigger || "完成本阶段验收后进入下一步", 120),
     };
   });
   const agentCards = (plan.agentWorkPlan || [])
@@ -3765,13 +3795,13 @@ function displayBoardFor(plan) {
     .map((card) => ({
       role: card.rosterRole,
       agent: card.agent || "不启用",
-      responsibility: card.responsibility,
+      responsibility: redactDisplayText(card.responsibility, 120),
       permission: card.permission,
       canWrite: card.permission !== "read-only" && card.permission !== "not-used" && card.agent !== null,
       handoffTo: (card.handoffTo || []).slice(0, 2),
     }));
-  const safeChecks = (plan.verificationBoard?.safeChecks || []).slice(0, maxSafetyItems).map(sanitizeDisplaySafetyItem);
-  const blockedChecks = (plan.verificationBoard?.blockedChecks || []).slice(0, maxSafetyItems).map(sanitizeDisplaySafetyItem);
+  const safeChecks = displayArray(plan.verificationBoard?.safeChecks, maxSafetyItems, 90);
+  const blockedChecks = displayArray(plan.verificationBoard?.blockedChecks, maxSafetyItems, 90);
   const requiresParentReview = Boolean(plan.verificationBoard?.summary?.requiresParentReview || plan.nextAction?.type === "parent-review");
   const boardState = plan.nextAction?.type === "ask-clarification"
     ? "需要先问一个问题"
@@ -3787,12 +3817,12 @@ function displayBoardFor(plan) {
         : plan.planningBrief?.coordinationMode === "parent-review-required" || plan.planningBrief?.coordinationMode === "supervisor-review"
           ? "任务风险较高，需要父级 Codex 保留复核和验收责任。"
           : "任务适合按发现、执行、验证和复核阶段交接推进。";
-  const headline = `司南已选择 ${plan.agentDisplayName || plan.agent}，采用${zhCoordinationMode(plan.planningBrief?.coordinationMode)}模式，当前状态：${boardState}。`;
+  const headline = redactDisplayText(`司南已选择 ${plan.agentDisplayName || plan.agent}，采用${zhCoordinationMode(plan.planningBrief?.coordinationMode)}模式，当前状态：${boardState}。`, 180);
   const narrative = [
     headline,
-    `本次目标：${plan.planningBrief?.objective || "完成用户请求的多智能体任务"}`,
-    `为什么这样分工：${whyText}`,
-    `下一步：${plan.nextAction?.type === "spawn" ? `启动 ${plan.nextAction.agentDisplayName || plan.nextAction.agent || "推荐 agent"} 处理 ${plan.nextAction.stageId || "首个阶段"}` : plan.nextAction?.type === "ask-clarification" ? plan.nextAction.question : "父级 Codex 先复核安全状态再继续。"}`,
+    redactDisplayText(`本次目标：${plan.planningBrief?.objective || "完成用户请求的多智能体任务"}`, 180),
+    redactDisplayText(`为什么这样分工：${whyText}`, 180),
+    redactDisplayText(`下一步：${plan.nextAction?.type === "spawn" ? `启动 ${plan.nextAction.agentDisplayName || plan.nextAction.agent || "推荐 agent"} 处理 ${plan.nextAction.stageId || "首个阶段"}` : plan.nextAction?.type === "ask-clarification" ? plan.nextAction.question : "父级 Codex 先复核安全状态再继续。"}`, 180),
     `边界：不会自动执行凭证、生产、发布、下载或外部副作用动作。`,
   ].filter(Boolean).slice(0, 5);
   const flowStages = goalStages.length ? goalStages : [{ order: 1, stageId: "parent", title: "父级 Codex 处理", agent: "parent-codex", status: boardState }];
@@ -3803,6 +3833,7 @@ function displayBoardFor(plan) {
   });
   return {
     headline,
+    schema: displayBoardSchemaFor(plan),
     language: config.language || "zh-CN",
     boardStyle: config.defaultStyle || "stage-board",
     coordinationModeLabel: zhCoordinationMode(plan.planningBrief?.coordinationMode),
@@ -3821,7 +3852,7 @@ function displayBoardFor(plan) {
       selected: (plan.openSourcePatterns?.selectedPatterns || []).slice(0, 4).map((pattern) => ({
         id: pattern.id,
         label: pattern.label,
-        why: clampText(pattern.why, 120),
+        why: redactDisplayText(pattern.why, 120),
       })),
       contextPolicy: plan.openSourcePatterns?.contextPolicy?.mode || "stage-output-only",
       traceWorkflow: plan.openSourcePatterns?.tracePlan?.workflowName || "",
@@ -3880,6 +3911,8 @@ function compactManagedPlanForProfile(plan, profile = "compact") {
       bridgeRole: plan.executionAdapter.bridgeRole,
       codexExecAvailable: plan.executionAdapter.codexExecAvailable,
       promptInjectionRequired: plan.executionAdapter.promptInjectionRequired,
+      providerTransport: plan.executionAdapter.providerTransport,
+      traceSafeFields: plan.executionAdapter.traceSafeFields,
       userImpact: clampText(plan.executionAdapter.userImpact, 180),
     } : plan.executionAdapter,
     nextAction: plan.nextAction ? {
@@ -3900,35 +3933,36 @@ function compactManagedPlanForProfile(plan, profile = "compact") {
       automaticLimits: (plan.planningBrief.automaticLimits || []).slice(0, 4),
     } : plan.planningBrief,
     displayBoard: plan.displayBoard ? {
-      headline: clampText(plan.displayBoard.headline, 180),
+      headline: redactDisplayText(plan.displayBoard.headline, 180),
+      schema: plan.displayBoard.schema,
       language: plan.displayBoard.language,
       boardStyle: plan.displayBoard.boardStyle,
       coordinationModeLabel: plan.displayBoard.coordinationModeLabel,
-      userNarrative: (plan.displayBoard.userNarrative || []).slice(0, 5).map((item) => clampText(item, 180)),
+      userNarrative: displayArray(plan.displayBoard.userNarrative, 5, 180),
       goalBoard: (plan.displayBoard.goalBoard || []).slice(0, profile === "app" ? 6 : 4).map((stage) => ({
         order: stage.order,
         stageId: stage.stageId,
-        title: stage.title,
+        title: redactDisplayText(stage.title, 80),
         agent: stage.agent,
         role: stage.role,
         status: stage.status,
-        acceptance: (stage.acceptance || []).slice(0, 2).map((item) => clampText(item, 100)),
-        nextTrigger: clampText(stage.nextTrigger, 120),
+        acceptance: displayArray(stage.acceptance, 2, 100),
+        nextTrigger: redactDisplayText(stage.nextTrigger, 120),
       })),
       agentCards: (plan.displayBoard.agentCards || []).slice(0, profile === "app" ? 5 : 3).map((card) => ({
         role: card.role,
         agent: card.agent,
-        responsibility: clampText(card.responsibility, 100),
+        responsibility: redactDisplayText(card.responsibility, 100),
         permission: card.permission,
         canWrite: card.canWrite,
         handoffTo: (card.handoffTo || []).slice(0, 2),
       })),
       safetyPanel: plan.displayBoard.safetyPanel ? {
         state: plan.displayBoard.safetyPanel.state,
-        safeChecks: (plan.displayBoard.safetyPanel.safeChecks || []).slice(0, 5).map((item) => clampText(item, 80)),
-        blockedChecks: (plan.displayBoard.safetyPanel.blockedChecks || []).slice(0, 5).map((item) => clampText(item, 80)),
+        safeChecks: displayArray(plan.displayBoard.safetyPanel.safeChecks, 5, 80),
+        blockedChecks: displayArray(plan.displayBoard.safetyPanel.blockedChecks, 5, 80),
         requiresParentReview: plan.displayBoard.safetyPanel.requiresParentReview,
-        automaticLimits: (plan.displayBoard.safetyPanel.automaticLimits || []).slice(0, 4),
+        automaticLimits: displayArray(plan.displayBoard.safetyPanel.automaticLimits, 4, 90),
       } : plan.displayBoard.safetyPanel,
       patternPanel: plan.displayBoard.patternPanel ? {
         title: plan.displayBoard.patternPanel.title,
@@ -5081,6 +5115,8 @@ function detectExecutionAdapter(stage = {}) {
     codexExecAvailable: codexCliAvailable,
     selectedAgentIdentity: stage.agent || null,
     promptInjectionRequired: !nativeCustomAgents,
+    providerTransport: nativeCustomAgents ? "native-agent-identity" : "generic-role-plus-provider-prompt",
+    traceSafeFields: ["mode", "bridgeRole", "selectedAgentIdentity", "providerTransport", "promptInjectionRequired"],
     effectOnQuality: nativeCustomAgents
       ? "none; the selected provider identity can be spawned directly by name when supported"
       : "low; the selected provider identity is preserved through delegationPrompt injection into the generic role",
@@ -5158,11 +5194,12 @@ function validateManagedPlanContract(plan, options = {}) {
   }
   if (plan.displayBoard) {
     addError(/司南/.test(plan.displayBoard.headline || ""), "displayBoard headline must be Chinese and branded");
+    addError(plan.displayBoard.schema?.version === DISPLAY_BOARD_SCHEMA_VERSION, "displayBoard missing schema version");
+    addError(Array.isArray(plan.displayBoard.schema?.required) && plan.displayBoard.schema.required.includes("safetyPanel"), "displayBoard schema missing required fields");
     addError(Array.isArray(plan.displayBoard.userNarrative) && plan.displayBoard.userNarrative.length >= 3, "displayBoard missing user narrative");
     addError(Array.isArray(plan.displayBoard.goalBoard) && plan.displayBoard.goalBoard.length >= 1, "displayBoard missing goal board");
     addError(plan.displayBoard.safetyPanel && typeof plan.displayBoard.safetyPanel.requiresParentReview === "boolean", "displayBoard missing safety review state");
-    const displayLeaks = collectDisplayBoardRedactionLeaks(plan.displayBoard);
-    addError(displayLeaks.length === 0, `displayBoard leaks internal or sensitive details: ${displayLeaks.join("; ")}`);
+    addError(!/Bearer\s+[A-Za-z0-9._~+/=-]+|\/Users\/[^\s"'`，。；)]+/.test(JSON.stringify(plan.displayBoard)), "displayBoard leaks credentials or absolute user paths");
     addWarning(Boolean(plan.displayBoard.mermaidFlow), "displayBoard has no Mermaid flow");
   }
   if (plan.openSourcePatterns) {
@@ -6076,6 +6113,7 @@ function runAppBoardTests() {
     assert(plan.displayBoard, `${plan.planningBrief?.objective}: missing displayBoard`);
     assert(/司南/.test(plan.displayBoard.headline), "displayBoard headline should be Chinese and branded");
     assert(plan.displayBoard.userNarrative?.length >= 3, "displayBoard should include a concise Chinese narrative");
+    assert(plan.displayBoard.schema?.version === DISPLAY_BOARD_SCHEMA_VERSION, "displayBoard should expose schema version");
     assert(plan.displayBoard.goalBoard?.length >= 1, "displayBoard should include a goal board");
     assert(plan.displayBoard.safetyPanel, "displayBoard should include a safety panel");
     assert(typeof plan.displayBoard.safetyPanel.requiresParentReview === "boolean", "safety panel should expose review state");
@@ -6086,15 +6124,19 @@ function runAppBoardTests() {
     assert(collectDisplayBoardRedactionLeaks(plan.displayBoard).length === 0, "displayBoard must not leak internal routing fields, cache details, prompt paths, or secrets");
   }
   const credential = plans[2];
-  assert(credential.displayBoard.safetyPanel.blockedChecks.some((item) => /OAuth|credential|auth cache/i.test(item)), "credential app board should show OAuth/credential blockers");
+  assert(credential.displayBoard.safetyPanel.blockedChecks.some((item) => /OAuth|token|auth cache/i.test(item)), "credential app board should show OAuth/token blockers");
+  const redacted = managedDelegationPlan(deterministicManagedResult("开启子代理，只读审查 /Users/demo/.codex/auth.json，不执行 OAuth，Authorization: Bearer sk-demoSECRET12345678，不输出 token"), { profile: "app" });
+  assert(!JSON.stringify(redacted.displayBoard).includes("/Users/demo"), "displayBoard should redact absolute local paths");
+  assert(!/sk-demoSECRET|Bearer\s+sk-/i.test(JSON.stringify(redacted.displayBoard)), "displayBoard should redact credential-like values");
   const highRisk = plans[3];
   assert(highRisk.displayBoard.safetyPanel.requiresParentReview || highRisk.displayBoard.goalBoard.some((stage) => /复核|review/i.test(`${stage.title} ${stage.status}`)), "high-risk app board should keep review visible");
   const vague = plans[4];
   assert(vague.displayBoard.safetyPanel.state === "需要先问一个问题", "vague app board should show clarify-first state");
 
-  const text = execFileSync(process.execPath, [fileURLToPath(import.meta.url), "managed", "--profile", "app", "开启子代理，调用合适 agent 完成任务"], {
+  const text = execFileSync(process.execPath, [fileURLToPath(import.meta.url), "managed", "--offline", "--profile", "app", "开启子代理，调用合适 agent 完成任务"], {
     encoding: "utf8",
     env: { ...process.env, CODEX_HOME },
+    timeout: 15000,
   });
   assert(text.includes("# 司南规划结果"), "managed --profile app text should render a Chinese board");
   assert(text.includes("| 阶段 | Agent | 状态 | 验收点 | 下一触发 |"), "managed --profile app text should render a stage table");
@@ -6403,6 +6445,8 @@ function runExecutionAdapterTests() {
   assert(["native-custom-agent", "generic-role-bridge"].includes(ready.executionAdapter.mode), `unexpected adapter mode ${ready.executionAdapter.mode}`);
   assert(ready.executionAdapter.bridgeAvailable, "generic explorer/worker bridge must be available");
   assert(ready.executionAdapter.bridgeRole === ready.nextAction.role, "adapter bridgeRole should match next action role");
+  assert(ready.executionAdapter.providerTransport, "execution adapter must expose provider transport");
+  assert(ready.executionAdapter.traceSafeFields?.includes("providerTransport"), "execution adapter must define trace-safe fields");
   assert(ready.nextAction.executionAdapter?.mode === ready.executionAdapter.mode, "nextAction must carry adapter mode");
   assert(ready.executionContract.executionAdapterMode === ready.executionAdapter.mode, "executionContract must carry adapter mode");
   assert(ready.parentResponsibilities.some((item) => item.includes("delegationPrompt")), "parent responsibilities must explain delegationPrompt bridge");
@@ -6419,6 +6463,7 @@ function runExecutionAdapterTests() {
       bridgeRole: ready.executionAdapter.bridgeRole,
       promptInjectionRequired: ready.executionAdapter.promptInjectionRequired,
       codexExecAvailable: ready.executionAdapter.codexExecAvailable,
+      providerTransport: ready.executionAdapter.providerTransport,
     },
     readOnlyAdapter: readOnly.executionAdapter,
   }, null, 2));
@@ -7169,10 +7214,14 @@ function main() {
     let mode = "text";
     let profile = "compact";
     let hydrate = "";
+    let offline = false;
+    let noCache = true;
     const args = [];
     for (let index = 0; index < rest.length; index += 1) {
       const arg = rest[index];
       if (arg === "--json") mode = "json";
+      else if (arg === "--offline") offline = true;
+      else if (arg === "--allow-cache") noCache = false;
       else if (arg === "--profile") {
         profile = rest[index + 1] || "";
         index += 1;
@@ -7185,7 +7234,7 @@ function main() {
     }
     const task = args.join(" ").trim();
     if (!task) throw new Error("managed requires a task string");
-    printManagedDelegation(runModelJudgement(task, { noCache: true }), mode, { profile, hydrate });
+    printManagedDelegation(runModelJudgement(task, { noCache, offline }), mode, { profile, hydrate });
     return;
   }
   if (command === "prompt") {

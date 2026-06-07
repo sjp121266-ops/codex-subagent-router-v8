@@ -23,10 +23,13 @@
 - `patternPanel`: 本次采用的开源协作模式摘要，例如 Agent/Task/Process 分离、带守卫的交接、上下文窗口控制、Supervisor 复核。
 - `mermaidFlow`: 可贴进聊天窗口的 Mermaid 流程图。
 
+`displayBoard.schema.version = "display-board-v2"` 记录显示契约和脱敏边界。面向 App 的看板文本会先清理凭证样式值、Bearer token、邮箱和绝对 `/Users/...` 路径，避免把本地敏感上下文塞进聊天界面。
+
 直接预览 App 友好输出：
 
 ```bash
 node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs managed --profile app "使用多智能体分批测试这个项目，输出规划看板"
+node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs managed --offline --profile app "使用多智能体分批测试这个项目，输出规划看板"
 ```
 
 ## Execution Adapter
@@ -48,6 +51,7 @@ For direct local checks:
 ```bash
 node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs managed --json --profile compact "开启子代理，调用合适子代理，用 goal 模式持续实现"
 node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs managed --profile app "开启子代理，调用合适子代理，用 goal 模式持续实现"
+node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs managed --offline --profile app "开启子代理，调用合适子代理，用 goal 模式持续实现"
 node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs inspect-context "开启子代理，帮我做 Reddit 社区增长策略"
 node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs prompt agency:reddit-community-builder "帮我做 Reddit 社区增长策略" --hydrate summary --budget 2000
 node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs test
@@ -59,6 +63,7 @@ node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs test-agent-ind
 node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs test-prompt-hydration
 node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs test-context-budget
 node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs test-execution-adapter
+node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs test-app-board
 node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs test-architecture
 node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs test-open-source-patterns
 node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs architecture-health
