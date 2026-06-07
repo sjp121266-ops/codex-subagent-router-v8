@@ -5160,7 +5160,7 @@ function validateManagedPlanContract(plan, options = {}) {
   addError(plan.openSourcePatterns && typeof plan.openSourcePatterns === "object", "missing openSourcePatterns");
   addError(plan.verificationBoard && typeof plan.verificationBoard === "object", "missing verificationBoard");
   addError(plan.contextLedger && typeof plan.contextLedger === "object", "missing contextLedger");
-  for (const internal of ["judgeMode", "judgeModel", "candidateBudget", "cache", "decisionTrace", "rejectedCandidates"]) {
+  for (const internal of MANAGED_INTERNAL_KEYS) {
     addError(!Object.prototype.hasOwnProperty.call(plan, internal), `managed plan leaks internal field: ${internal}`);
   }
   if (goalLoop.length) {
