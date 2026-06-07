@@ -1113,6 +1113,23 @@ function classifyFailure(errorMessage = "") {
   return "unknown";
 }
 
+function safeFailureSummary(errorMessage = "") {
+  const failureClass = classifyFailure(errorMessage);
+  if (failureClass === "none") return "";
+  const labels = {
+    offline: "offline routing fallback",
+    "invalid-skill-subset": "router returned an invalid skill subset",
+    "invalid-agent-candidate": "router returned an invalid agent candidate",
+    "schema-error": "router schema validation failed",
+    "model-unavailable": "model judgement unavailable",
+    "invalid-output": "model judgement returned invalid output",
+    "missing-file": "required routing file is missing",
+    timeout: "model judgement timed out",
+    unknown: "routing fallback requires parent review",
+  };
+  return labels[failureClass] || labels.unknown;
+}
+
 function classifyIntents(task) {
   const cleaned = cleanTask(task);
   const matches = [];
@@ -1753,34 +1770,15 @@ function clampText(text, max = 180) {
   return compact.length > max ? `${compact.slice(0, max - 3)}...` : compact;
 }
 
-const DISPLAY_BOARD_SCHEMA_VERSION = "display-board-v2";
-
-function redactDisplayText(text, max = 180) {
-  const compact = String(text || "")
-    .replace(/Bearer\s+[A-Za-z0-9._~+/=-]+/gi, "Bearer [redacted]")
-    .replace(/\b(?:sk|pk|rk|sess|ghp|github_pat|xox[baprs]?)-[A-Za-z0-9._-]{8,}\b/gi, "[redacted-credential]")
-    .replace(/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g, "[redacted-email]")
-    .replace(/\/Users\/[^\s"'`，。；)]+/g, "[local-path]")
-    .replace(/\s+/g, " ")
-    .trim();
-  return clampText(compact, max);
+function redactSensitiveValues(text) {
+  return String(text || "")
+    .replace(/\b((?:access|refresh|id)?_?token|api[_-]?key|secret|password|passwd|credential)\s*[:=]\s*["']?[^"'\s,;)}\]]+/gi, "$1=[REDACTED]")
+    .replace(/\b(Bearer|Basic)\s+[A-Za-z0-9._~+/-]+=*/gi, "$1 [REDACTED]")
+    .replace(/\b(sk-[A-Za-z0-9_-]{12,}|gh[pousr]_[A-Za-z0-9_]{12,}|xox[baprs]-[A-Za-z0-9-]{12,})\b/g, "[REDACTED_SECRET]");
 }
 
-function displayArray(items, maxItems, maxChars) {
-  return (items || [])
-    .slice(0, maxItems)
-    .map((item) => redactDisplayText(item, maxChars))
-    .filter(Boolean);
-}
-
-function displayBoardSchemaFor(plan) {
-  return {
-    version: DISPLAY_BOARD_SCHEMA_VERSION,
-    required: ["headline", "userNarrative", "goalBoard", "safetyPanel", "mermaidFlow"],
-    redaction: "credential-values, bearer tokens, emails, and absolute /Users paths are redacted before App display.",
-    provider: plan.agentProvider || "voltagent",
-    adapterMode: plan.executionAdapter?.mode || "",
-  };
+function displayText(text, max = 180) {
+  return clampText(redactSensitiveValues(text), max);
 }
 
 function routeMargin(route) {
@@ -1893,7 +1891,7 @@ function cacheKeyFor(task, policy, route, skillCandidates) {
     .sort()
     .slice(0, Math.min(12, skillCandidates.length));
   const payload = {
-    routerMetadataVersion: 15,
+    routerMetadataVersion: ROUTER_METADATA_VERSION,
     task: cleanTask(task),
     budget: policy.budget,
     judgeMode: policy.judgeMode,
@@ -2257,6 +2255,7 @@ function clarificationQuestionFor(task, routeLike) {
 }
 
 function buildParentReviewHandoffPlan(task, reason = "routing fallback requires parent review") {
+  const safeReason = safeFailureSummary(reason) || displayText(reason, 160) || "routing fallback requires parent review";
   const stage = {
     id: "parent-review",
     agent: "parent-codex",
@@ -2275,7 +2274,7 @@ function buildParentReviewHandoffPlan(task, reason = "routing fallback requires 
   };
   return {
     mode: "parent-review-required",
-    clarificationQuestion: reason,
+    clarificationQuestion: safeReason,
     stages: [stage],
   };
 }
@@ -2480,9 +2479,10 @@ function fallbackSafetyFor(route, errorMessage, judgePolicy) {
   const isIntentionalDeterministic = !errorMessage && judgePolicy?.judgeMode === "deterministic";
   if (isIntentionalDeterministic) return { fallbackReason: "", fallbackSafety: "safe-deterministic", requiresParentReview: false };
   const failureClass = classifyFailure(errorMessage);
-  if (highRisk) return { fallbackReason: errorMessage || "high-risk fallback", failureClass, fallbackSafety: "conservative", requiresParentReview: true };
-  if (route.confidence === "low" || route.needsParentChoice) return { fallbackReason: errorMessage || "low-confidence fallback", failureClass, fallbackSafety: "needs-parent-choice", requiresParentReview: true };
-  return { fallbackReason: errorMessage || "deterministic fallback", failureClass, fallbackSafety: "acceptable", requiresParentReview: false };
+  const fallbackReason = safeFailureSummary(errorMessage) || "deterministic fallback";
+  if (highRisk) return { fallbackReason: fallbackReason === "deterministic fallback" ? "high-risk fallback" : fallbackReason, failureClass, fallbackSafety: "conservative", requiresParentReview: true };
+  if (route.confidence === "low" || route.needsParentChoice) return { fallbackReason: fallbackReason === "deterministic fallback" ? "low-confidence fallback" : fallbackReason, failureClass, fallbackSafety: "needs-parent-choice", requiresParentReview: true };
+  return { fallbackReason, failureClass, fallbackSafety: "acceptable", requiresParentReview: false };
 }
 
 function attachRoutingMetadata(result, route, skillCandidates = [], judgePolicy = {}, fallbackMeta = {}) {
@@ -3824,10 +3824,10 @@ function displayBoardFor(plan) {
           : "任务适合按发现、执行、验证和复核阶段交接推进。";
   const headline = redactDisplayText(`司南已选择 ${plan.agentDisplayName || plan.agent}，采用${zhCoordinationMode(plan.planningBrief?.coordinationMode)}模式，当前状态：${boardState}。`, 180);
   const narrative = [
-    headline,
-    redactDisplayText(`本次目标：${plan.planningBrief?.objective || "完成用户请求的多智能体任务"}`, 180),
-    redactDisplayText(`为什么这样分工：${whyText}`, 180),
-    redactDisplayText(`下一步：${plan.nextAction?.type === "spawn" ? `启动 ${plan.nextAction.agentDisplayName || plan.nextAction.agent || "推荐 agent"} 处理 ${plan.nextAction.stageId || "首个阶段"}` : plan.nextAction?.type === "ask-clarification" ? plan.nextAction.question : "父级 Codex 先复核安全状态再继续。"}`, 180),
+    displayText(headline, 220),
+    `本次目标：${displayText(plan.planningBrief?.objective || "完成用户请求的多智能体任务", 220)}`,
+    `为什么这样分工：${displayText(whyText, 180)}`,
+    `下一步：${plan.nextAction?.type === "spawn" ? `启动 ${displayText(plan.nextAction.agentDisplayName || plan.nextAction.agent || "推荐 agent", 80)} 处理 ${displayText(plan.nextAction.stageId || "首个阶段", 80)}` : plan.nextAction?.type === "ask-clarification" ? displayText(plan.nextAction.question, 180) : "父级 Codex 先复核安全状态再继续。"}`,
     `边界：不会自动执行凭证、生产、发布、下载或外部副作用动作。`,
   ].filter(Boolean).slice(0, 5);
   const flowStages = goalStages.length ? goalStages : [{ order: 1, stageId: "parent", title: "父级 Codex 处理", agent: "parent-codex", status: boardState }];
@@ -3837,8 +3837,7 @@ function displayBoardFor(plan) {
     if (index > 0) mermaidLines.push(`  S${index} --> S${index + 1}`);
   });
   return {
-    headline,
-    schema: displayBoardSchemaFor(plan),
+    headline: displayText(headline, 220),
     language: config.language || "zh-CN",
     boardStyle: config.defaultStyle || "stage-board",
     coordinationModeLabel: zhCoordinationMode(plan.planningBrief?.coordinationMode),
@@ -3847,8 +3846,8 @@ function displayBoardFor(plan) {
     agentCards,
     safetyPanel: {
       state: boardState,
-      safeChecks,
-      blockedChecks,
+      safeChecks: safeChecks.map((item) => displayText(item, 120)),
+      blockedChecks: blockedChecks.map((item) => displayText(item, 120)),
       requiresParentReview,
       automaticLimits: plan.planningBrief?.automaticLimits || [],
     },
@@ -3857,7 +3856,7 @@ function displayBoardFor(plan) {
       selected: (plan.openSourcePatterns?.selectedPatterns || []).slice(0, 4).map((pattern) => ({
         id: pattern.id,
         label: pattern.label,
-        why: redactDisplayText(pattern.why, 120),
+          why: displayText(pattern.why, 120),
       })),
       contextPolicy: plan.openSourcePatterns?.contextPolicy?.mode || "stage-output-only",
       traceWorkflow: plan.openSourcePatterns?.tracePlan?.workflowName || "",
@@ -3881,13 +3880,13 @@ function compactManagedPlanForProfile(plan, profile = "compact") {
   } : agent;
   return {
     ...plan,
-    providerPromptPreview: clampText(plan.providerPromptPreview, 180),
+      providerPromptPreview: displayText(plan.providerPromptPreview, 180),
     compactRoleCard: {
       ...plan.compactRoleCard,
-      roleSummary: clampText(plan.compactRoleCard?.roleSummary, 260),
+      roleSummary: displayText(plan.compactRoleCard?.roleSummary, 260),
       capabilities: (plan.compactRoleCard?.capabilities || []).slice(0, 5),
       keywords: (plan.compactRoleCard?.keywords || []).slice(0, 6),
-      criticalInstructions: clampText(plan.compactRoleCard?.criticalInstructions, 120),
+      criticalInstructions: displayText(plan.compactRoleCard?.criticalInstructions, 120),
     },
     promptHydrationPlan: plan.promptHydrationPlan ? {
       mode: plan.promptHydrationPlan.mode,
@@ -3898,7 +3897,7 @@ function compactManagedPlanForProfile(plan, profile = "compact") {
       providerPromptBytes: plan.promptHydrationPlan.providerPromptBytes,
       canHydrateLocally: plan.promptHydrationPlan.canHydrateLocally,
       hydrationRisk: plan.promptHydrationPlan.hydrationRisk,
-      instructions: clampText(plan.promptHydrationPlan.instructions, 150),
+      instructions: displayText(plan.promptHydrationPlan.instructions, 150),
     } : plan.promptHydrationPlan,
     agentRoster: plan.agentRoster ? {
       taskKind: plan.agentRoster.taskKind,
@@ -3916,36 +3915,36 @@ function compactManagedPlanForProfile(plan, profile = "compact") {
       bridgeRole: plan.executionAdapter.bridgeRole,
       codexExecAvailable: plan.executionAdapter.codexExecAvailable,
       promptInjectionRequired: plan.executionAdapter.promptInjectionRequired,
-      providerTransport: plan.executionAdapter.providerTransport,
-      traceSafeFields: plan.executionAdapter.traceSafeFields,
-      userImpact: clampText(plan.executionAdapter.userImpact, 180),
+      userImpact: displayText(plan.executionAdapter.userImpact, 180),
     } : plan.executionAdapter,
     nextAction: plan.nextAction ? {
       ...plan.nextAction,
-      question: plan.nextAction.question ? redactForDisplay(plan.nextAction.question) : plan.nextAction.question,
-      reason: plan.nextAction.reason ? redactForDisplay(plan.nextAction.reason) : plan.nextAction.reason,
+      question: displayText(plan.nextAction.question, 180),
+      reason: displayText(plan.nextAction.reason, 180),
+      stageId: displayText(plan.nextAction.stageId, 80),
+      agent: displayText(plan.nextAction.agent, 80),
+      agentDisplayName: displayText(plan.nextAction.agentDisplayName, 80),
       executionAdapter: plan.nextAction.executionAdapter,
     } : plan.nextAction,
     userSummary: plan.userSummary ? {
-      whyThisAgent: clampText(plan.userSummary.whyThisAgent, 160),
-      whyNoQuestionNow: clampText(plan.userSummary.whyNoQuestionNow, 160),
-      whenCodexWillAsk: clampText(plan.userSummary.whenCodexWillAsk, 180),
-      executionAdapter: clampText(plan.userSummary.executionAdapter, 160),
+      whyThisAgent: displayText(plan.userSummary.whyThisAgent, 160),
+      whyNoQuestionNow: displayText(plan.userSummary.whyNoQuestionNow, 160),
+      whenCodexWillAsk: displayText(plan.userSummary.whenCodexWillAsk, 180),
+      executionAdapter: displayText(plan.userSummary.executionAdapter, 160),
     } : plan.userSummary,
     planningBrief: plan.planningBrief ? {
       ...plan.planningBrief,
-      objective: clampText(redactForDisplay(plan.planningBrief.objective), 160),
-      whyMultiAgent: clampText(plan.planningBrief.whyMultiAgent, 160),
-      safeExpectation: clampText(plan.planningBrief.safeExpectation, 180),
+      objective: displayText(plan.planningBrief.objective, 160),
+      whyMultiAgent: displayText(plan.planningBrief.whyMultiAgent, 160),
+      safeExpectation: displayText(plan.planningBrief.safeExpectation, 180),
       automaticLimits: (plan.planningBrief.automaticLimits || []).slice(0, 4),
     } : plan.planningBrief,
     displayBoard: plan.displayBoard ? {
-      headline: redactDisplayText(plan.displayBoard.headline, 180),
-      schema: plan.displayBoard.schema,
+      headline: displayText(plan.displayBoard.headline, 180),
       language: plan.displayBoard.language,
       boardStyle: plan.displayBoard.boardStyle,
       coordinationModeLabel: plan.displayBoard.coordinationModeLabel,
-      userNarrative: displayArray(plan.displayBoard.userNarrative, 5, 180),
+      userNarrative: (plan.displayBoard.userNarrative || []).slice(0, 5).map((item) => displayText(item, 180)),
       goalBoard: (plan.displayBoard.goalBoard || []).slice(0, profile === "app" ? 6 : 4).map((stage) => ({
         order: stage.order,
         stageId: stage.stageId,
@@ -3953,21 +3952,21 @@ function compactManagedPlanForProfile(plan, profile = "compact") {
         agent: stage.agent,
         role: stage.role,
         status: stage.status,
-        acceptance: displayArray(stage.acceptance, 2, 100),
-        nextTrigger: redactDisplayText(stage.nextTrigger, 120),
+        acceptance: (stage.acceptance || []).slice(0, 2).map((item) => displayText(item, 100)),
+        nextTrigger: displayText(stage.nextTrigger, 120),
       })),
       agentCards: (plan.displayBoard.agentCards || []).slice(0, profile === "app" ? 5 : 3).map((card) => ({
         role: card.role,
         agent: card.agent,
-        responsibility: redactDisplayText(card.responsibility, 100),
+        responsibility: displayText(card.responsibility, 100),
         permission: card.permission,
         canWrite: card.canWrite,
         handoffTo: (card.handoffTo || []).slice(0, 2),
       })),
       safetyPanel: plan.displayBoard.safetyPanel ? {
         state: plan.displayBoard.safetyPanel.state,
-        safeChecks: displayArray(plan.displayBoard.safetyPanel.safeChecks, 5, 80),
-        blockedChecks: displayArray(plan.displayBoard.safetyPanel.blockedChecks, 5, 80),
+        safeChecks: (plan.displayBoard.safetyPanel.safeChecks || []).slice(0, 5).map((item) => displayText(item, 80)),
+        blockedChecks: (plan.displayBoard.safetyPanel.blockedChecks || []).slice(0, 5).map((item) => displayText(item, 80)),
         requiresParentReview: plan.displayBoard.safetyPanel.requiresParentReview,
         automaticLimits: displayArray(plan.displayBoard.safetyPanel.automaticLimits, 4, 90),
       } : plan.displayBoard.safetyPanel,
@@ -3976,27 +3975,27 @@ function compactManagedPlanForProfile(plan, profile = "compact") {
         selected: (plan.displayBoard.patternPanel.selected || []).slice(0, profile === "app" ? 4 : 3).map((pattern) => ({
           id: pattern.id,
           label: pattern.label,
-          why: clampText(pattern.why, 100),
+          why: displayText(pattern.why, 100),
         })),
         contextPolicy: plan.displayBoard.patternPanel.contextPolicy,
-        traceWorkflow: clampText(plan.displayBoard.patternPanel.traceWorkflow, 90),
+        traceWorkflow: displayText(plan.displayBoard.patternPanel.traceWorkflow, 90),
       } : plan.displayBoard.patternPanel,
-      mermaidFlow: profile === "app" ? plan.displayBoard.mermaidFlow : clampText(plan.displayBoard.mermaidFlow, 500),
+      mermaidFlow: profile === "app" ? redactSensitiveValues(plan.displayBoard.mermaidFlow) : displayText(plan.displayBoard.mermaidFlow, 500),
     } : plan.displayBoard,
     openSourcePatterns: plan.openSourcePatterns ? {
       version: plan.openSourcePatterns.version,
       designSources: (plan.openSourcePatterns.designSources || []).map((source) => ({
         project: source.project,
-        takeaway: profile === "app" ? clampText(source.takeaway, 120) : "",
+        takeaway: profile === "app" ? displayText(source.takeaway, 120) : "",
       })),
       selectedPatterns: (plan.openSourcePatterns.selectedPatterns || []).slice(0, 6).map((pattern) => ({
         id: pattern.id,
         label: pattern.label,
         sourceProjects: profile === "app" ? pattern.sourceProjects : undefined,
         appliesTo: profile === "app" ? pattern.appliesTo : undefined,
-        why: profile === "app" ? clampText(pattern.why, 140) : "",
-        implementationHint: profile === "app" ? clampText(pattern.implementationHint, 140) : "",
-        acceptanceCheck: clampText(pattern.acceptanceCheck, profile === "app" ? 120 : 80),
+        why: profile === "app" ? displayText(pattern.why, 140) : "",
+        implementationHint: profile === "app" ? displayText(pattern.implementationHint, 140) : "",
+        acceptanceCheck: displayText(pattern.acceptanceCheck, profile === "app" ? 120 : 80),
       })),
       contextPolicy: profile === "app" ? plan.openSourcePatterns.contextPolicy : {
         mode: plan.openSourcePatterns.contextPolicy?.mode,
@@ -4008,31 +4007,31 @@ function compactManagedPlanForProfile(plan, profile = "compact") {
       tracePlan: {
         workflowName: plan.openSourcePatterns.tracePlan?.workflowName,
         events: (plan.openSourcePatterns.tracePlan?.events || []).slice(0, profile === "app" ? 10 : 5),
-        redaction: profile === "app" ? clampText(plan.openSourcePatterns.tracePlan?.redaction, 160) : "redacted",
+        redaction: profile === "app" ? displayText(plan.openSourcePatterns.tracePlan?.redaction, 160) : "redacted",
       },
     } : plan.openSourcePatterns,
     agentWorkPlan: (plan.agentWorkPlan || []).map((card) => ({
       rosterRole: card.rosterRole,
       agent: card.agent,
       agentProvider: card.agentProvider,
-      responsibility: clampText(card.responsibility, 120),
+      responsibility: displayText(card.responsibility, 120),
       permission: card.permission,
       canRunInParallel: card.canRunInParallel,
-      inputs: (card.inputs || []).slice(0, 2).map((item) => clampText(item, 90)),
-      outputs: (card.outputs || []).slice(0, 2).map((item) => clampText(item, 100)),
-      acceptance: (card.acceptance || []).slice(0, 2).map((item) => clampText(item, 100)),
+      inputs: (card.inputs || []).slice(0, 2).map((item) => displayText(item, 90)),
+      outputs: (card.outputs || []).slice(0, 2).map((item) => displayText(item, 100)),
+      acceptance: (card.acceptance || []).slice(0, 2).map((item) => displayText(item, 100)),
       handoffTo: (card.handoffTo || []).slice(0, 2),
     })),
     batchPlan: (plan.batchPlan || []).map((batch) => ({
       ...batch,
-      safeChecks: (batch.safeChecks || []).slice(0, 5).map((item) => clampText(item, 80)),
-      blockedChecks: (batch.blockedChecks || []).slice(0, 5).map((item) => clampText(item, 80)),
+      safeChecks: (batch.safeChecks || []).slice(0, 5).map((item) => displayText(item, 80)),
+      blockedChecks: (batch.blockedChecks || []).slice(0, 5).map((item) => displayText(item, 80)),
     })),
     handoffContracts: (plan.handoffContracts || []).map((contract) => ({
       ...contract,
-      requiredEvidence: (contract.requiredEvidence || []).slice(0, 2).map((item) => clampText(item, 110)),
-      stopCondition: clampText(contract.stopCondition, 140),
-      resumeTrigger: clampText(contract.resumeTrigger, 120),
+      requiredEvidence: (contract.requiredEvidence || []).slice(0, 2).map((item) => displayText(item, 110)),
+      stopCondition: displayText(contract.stopCondition, 140),
+      resumeTrigger: displayText(contract.resumeTrigger, 120),
     })),
     verificationBoard: plan.verificationBoard ? {
       summary: plan.verificationBoard.summary,
@@ -4040,29 +4039,29 @@ function compactManagedPlanForProfile(plan, profile = "compact") {
         stageId: check.stageId,
         agent: check.agent,
         status: check.status,
-        checks: (check.checks || []).slice(0, 2).map((item) => clampText(item, 100)),
+        checks: (check.checks || []).slice(0, 2).map((item) => displayText(item, 100)),
       })),
-      safeChecks: (plan.verificationBoard.safeChecks || []).slice(0, 6).map((item) => clampText(item, 80)),
-      blockedChecks: (plan.verificationBoard.blockedChecks || []).slice(0, 6).map((item) => clampText(item, 80)),
+      safeChecks: (plan.verificationBoard.safeChecks || []).slice(0, 6).map((item) => displayText(item, 80)),
+      blockedChecks: (plan.verificationBoard.blockedChecks || []).slice(0, 6).map((item) => displayText(item, 80)),
     } : plan.verificationBoard,
     writeBoundaries: plan.writeBoundaries ? {
-      policy: clampText(plan.writeBoundaries.policy, 180),
+      policy: displayText(plan.writeBoundaries.policy, 180),
       allowedWriters: plan.writeBoundaries.allowedWriters,
       readOnlyStages: plan.writeBoundaries.readOnlyStages,
       conflictAvoidance: (plan.writeBoundaries.conflictAvoidance || []).slice(0, 2),
     } : plan.writeBoundaries,
-    parentResponsibilities: (plan.parentResponsibilities || []).slice(0, 4).map((item) => clampText(item, 120)),
+    parentResponsibilities: (plan.parentResponsibilities || []).slice(0, 4).map((item) => displayText(item, 120)),
     stageInputs: Object.fromEntries(Object.entries(plan.stageInputs || {}).map(([key, value]) => [
       key,
-      (value || []).slice(0, 2).map((item) => clampText(redactForDisplay(item), 90)),
+      (value || []).slice(0, 2).map((item) => displayText(item, 90)),
     ])),
     stageOutputs: Object.fromEntries(Object.entries(plan.stageOutputs || {}).map(([key, value]) => [
       key,
-      clampText(redactForDisplay(value), 110),
+      displayText(value, 110),
     ])),
     goalLoop: (plan.goalLoop || []).map((stage) => ({
       ...stage,
-      acceptance: (stage.acceptance || []).slice(0, 2).map((item) => clampText(item, 120)),
+      acceptance: (stage.acceptance || []).slice(0, 2).map((item) => displayText(item, 120)),
     })),
   };
 }
@@ -4572,13 +4571,13 @@ function managedDelegationPlan(result, options = {}) {
   const nextAction = readinessState === "clarify-first"
     ? {
       type: "ask-clarification",
-      question: result.executionPlan?.clarificationQuestion || result.handoffPlan?.clarificationQuestion || "请补充一个关键范围或目标。",
+      question: displayText(result.executionPlan?.clarificationQuestion || result.handoffPlan?.clarificationQuestion || "请补充一个关键范围或目标。", 180),
     }
     : readinessState === "parent-review-required"
       ? {
         type: "parent-review",
         stageId: "parent-review",
-        reason: result.fallbackReason || "routing requires parent review before delegation",
+        reason: displayText(result.fallbackReason || "routing requires parent review before delegation", 180),
       }
       : {
         type: "spawn",
@@ -4677,7 +4676,7 @@ function managedDelegationPlan(result, options = {}) {
       executionAdapter: executionAdapter.userImpact,
     },
     planningBrief: planningBriefFor({ task: result.task || "", coordinationMode, result, profile, readinessState, stageDetails }),
-    clarificationQuestion: asksNow ? (result.executionPlan?.clarificationQuestion || result.handoffPlan?.clarificationQuestion || "请补充一个关键范围或目标，以便安全派发子代理。") : "",
+    clarificationQuestion: readinessState === "clarify-first" ? displayText(result.executionPlan?.clarificationQuestion || result.handoffPlan?.clarificationQuestion || "请补充一个关键范围或目标，以便安全派发子代理。", 180) : "",
     executionContract: {
       taskKind: profile.taskKind || "unknown",
       risk: profile.risk || "unknown",
@@ -4746,9 +4745,10 @@ function printManagedDelegation(result, mode = "text", options = {}) {
   console.log("");
   console.log("| 阶段 | Agent | 状态 | 验收点 | 下一触发 |");
   console.log("| --- | --- | --- | --- | --- |");
+  const tableCell = (value) => displayText(value, 140).replace(/\|/g, "\\|").replace(/`/g, "'");
   for (const stage of board.goalBoard || []) {
     const acceptance = (stage.acceptance || []).join("; ") || "记录阶段证据";
-    console.log(`| ${stage.title} | ${stage.agent || "parent-codex"} | ${stage.status} | ${acceptance} | ${stage.nextTrigger || "完成后继续"} |`);
+    console.log(`| ${tableCell(stage.title)} | ${tableCell(stage.agent || "parent-codex")} | ${tableCell(stage.status)} | ${tableCell(acceptance)} | ${tableCell(stage.nextTrigger || "完成后继续")} |`);
   }
   console.log("");
   console.log("## 安全边界");
@@ -4757,7 +4757,7 @@ function printManagedDelegation(result, mode = "text", options = {}) {
   if (board.safetyPanel?.safeChecks?.length) console.log(`- 可安全执行：${board.safetyPanel.safeChecks.join("；")}`);
   if (board.safetyPanel?.blockedChecks?.length) console.log(`- 明确阻塞：${board.safetyPanel.blockedChecks.join("；")}`);
   if (board.safetyPanel?.requiresParentReview) console.log("- 需要父级 Codex 复核后再派发写入或高风险阶段。");
-  if (plan.clarificationQuestion) console.log(`- 需要先问：${plan.clarificationQuestion}`);
+  if (plan.clarificationQuestion) console.log(`- 需要先问：${displayText(plan.clarificationQuestion, 180)}`);
   if (board.patternPanel?.selected?.length) {
     console.log("");
     console.log("## 协作模式");
@@ -4766,7 +4766,7 @@ function printManagedDelegation(result, mode = "text", options = {}) {
     if (board.patternPanel.contextPolicy) console.log(`- 上下文策略：${board.patternPanel.contextPolicy}`);
   }
   console.log("");
-  console.log(`下一步：${plan.nextAction.type}${plan.nextAction.stageId ? ` (${plan.nextAction.stageId})` : ""}`);
+  console.log(`下一步：${displayText(plan.nextAction.type, 60)}${plan.nextAction.stageId ? ` (${displayText(plan.nextAction.stageId, 80)})` : ""}`);
   if (board.mermaidFlow) {
     console.log("");
     console.log("```mermaid");
@@ -5221,6 +5221,21 @@ function validateManagedPlanContract(plan, options = {}) {
     addError(plan.contextLedger.estimatedInputTokens <= options.maxCompactTokens, `managed plan exceeds compact token budget: ${plan.contextLedger.estimatedInputTokens}`);
   }
   return { ok: errors.length === 0, errors, warnings };
+}
+
+function assertNoManagedInternalLeaks(value, label = "managed output") {
+  const internalKeys = new Set(["judgeMode", "judgeModel", "candidateBudget", "cache", "cacheKey", "decisionTrace", "rejectedCandidates"]);
+  const visit = (node, path = "") => {
+    if (!node || typeof node !== "object") return;
+    for (const [key, child] of Object.entries(node)) {
+      assert(!internalKeys.has(key), `${label} must not expose internal key ${path ? `${path}.` : ""}${key}`);
+      visit(child, path ? `${path}.${key}` : key);
+    }
+  };
+  if (typeof value !== "string") visit(value);
+  const text = typeof value === "string" ? value : JSON.stringify(value);
+  assert(!/cacheKey|decisionTrace|Routing packet/i.test(text), `${label} must not expose internal routing fields`);
+  assert(!/--output-schema|--output-last-message|\\.judgement-|codex exec/i.test(text), `${label} must not expose judge execution details`);
 }
 
 function resolveProjectRootForMirror() {
@@ -6159,16 +6174,7 @@ function runAppBoardTests() {
     assert(!Object.prototype.hasOwnProperty.call(plan, "judgeMode"), "app managed plan must hide judgeMode");
     assert(!Object.prototype.hasOwnProperty.call(plan, "candidateBudget"), "app managed plan must hide candidateBudget");
     assert(!Object.prototype.hasOwnProperty.call(plan, "cache"), "app managed plan must hide cache internals");
-    const contract = validateManagedPlanContract(plan);
-    assert(contract.ok, `app managed plan contract failed: ${contract.errors.join("; ")}`);
-    assertNoManagedLeak(plan.displayBoard, "app displayBoard");
-    assert(plan.displayBoard.headline.length <= 180, "app headline should stay readable");
-    for (const item of plan.displayBoard.userNarrative || []) assert(item.length <= 180, "app narrative item should stay readable");
-    for (const stage of plan.displayBoard.goalBoard || []) {
-      assert(stage.title && stage.agent && stage.status && stage.acceptance?.[0] && stage.nextTrigger, "app goal board should not render empty cells");
-      assert(stage.acceptance[0].length <= 100, "app acceptance should stay concise");
-      assert(stage.nextTrigger.length <= 120, "app next trigger should stay concise");
-    }
+    assertNoManagedInternalLeaks(plan, "app managed plan");
   }
   const credential = plans[2];
   assert(credential.displayBoard.safetyPanel.blockedChecks.some((item) => /OAuth|token|auth cache/i.test(item)), "credential app board should show OAuth/token blockers");
@@ -6189,12 +6195,15 @@ function runAppBoardTests() {
   assert(text.includes("| 阶段 | Agent | 状态 | 验收点 | 下一触发 |"), "managed --profile app text should render a stage table");
   assert(text.includes("```mermaid"), "managed --profile app text should include Mermaid");
   assert(!/judgeMode|candidateBudget|cache key|cacheKey/i.test(text), "managed app text should not expose internal routing fields");
-  assertNoManagedLeak(text, "managed app text");
-  assert(!/undefined|null/.test(text), "managed app text should not render undefined/null cells");
-  for (const line of text.split("\n").filter((item) => /^\|/.test(item) && !/^\|\s*-/.test(item))) {
-    const cells = line.split("|").slice(1, -1).map((cell) => cell.trim());
-    assert(cells.every(Boolean), `managed app text should not render empty table cells: ${line}`);
-  }
+  assertNoManagedInternalLeaks(text, "managed app text");
+
+  const sensitiveTask = "开启子代理，审查 credential 工具，样例 access_token=abc123SECRET456、api_key=key_live_789 和 Bearer ghp_exampleSECRET000，不要输出 token";
+  const sensitiveApp = managedDelegationPlan(deterministicManagedResult(sensitiveTask), { profile: "app" });
+  const sensitiveCompact = managedDelegationPlan(deterministicManagedResult(sensitiveTask), { profile: "compact" });
+  const sensitiveJson = JSON.stringify({ sensitiveApp, sensitiveCompact });
+  assert(sensitiveJson.includes("[REDACTED]"), "compact/app managed plans should show redaction markers for secret-shaped values");
+  assert(!/abc123SECRET456|key_live_789|ghp_exampleSECRET000/.test(sensitiveJson), "compact/app managed plans must redact secret-shaped values recursively");
+  assertNoManagedInternalLeaks(sensitiveJson, "sensitive compact/app managed plans");
 
   console.log(JSON.stringify({
     pass: true,
@@ -7268,13 +7277,11 @@ function main() {
     let profile = "compact";
     let hydrate = "";
     let offline = false;
-    let noCache = true;
     const args = [];
     for (let index = 0; index < rest.length; index += 1) {
       const arg = rest[index];
       if (arg === "--json") mode = "json";
       else if (arg === "--offline") offline = true;
-      else if (arg === "--allow-cache") noCache = false;
       else if (arg === "--profile") {
         profile = rest[index + 1] || "";
         index += 1;
@@ -7287,7 +7294,7 @@ function main() {
     }
     const task = args.join(" ").trim();
     if (!task) throw new Error("managed requires a task string");
-    printManagedDelegation(runModelJudgement(task, { noCache, offline }), mode, { profile, hydrate });
+    printManagedDelegation(runModelJudgement(task, { noCache: true, offline }), mode, { profile, hydrate });
     return;
   }
   if (command === "prompt") {
