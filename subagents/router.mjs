@@ -3920,6 +3920,8 @@ function compactManagedPlanForProfile(plan, profile = "compact") {
     } : plan.executionAdapter,
     nextAction: plan.nextAction ? {
       ...plan.nextAction,
+      question: plan.nextAction.question ? redactForDisplay(plan.nextAction.question) : plan.nextAction.question,
+      reason: plan.nextAction.reason ? redactForDisplay(plan.nextAction.reason) : plan.nextAction.reason,
       executionAdapter: plan.nextAction.executionAdapter,
     } : plan.nextAction,
     userSummary: plan.userSummary ? {
@@ -3930,9 +3932,9 @@ function compactManagedPlanForProfile(plan, profile = "compact") {
     } : plan.userSummary,
     planningBrief: plan.planningBrief ? {
       ...plan.planningBrief,
-      objective: displayText(plan.planningBrief.objective, 160),
-      whyMultiAgent: displayText(plan.planningBrief.whyMultiAgent, 160),
-      safeExpectation: displayText(plan.planningBrief.safeExpectation, 180),
+      objective: clampText(redactForDisplay(plan.planningBrief.objective), 160),
+      whyMultiAgent: clampText(plan.planningBrief.whyMultiAgent, 160),
+      safeExpectation: clampText(plan.planningBrief.safeExpectation, 180),
       automaticLimits: (plan.planningBrief.automaticLimits || []).slice(0, 4),
     } : plan.planningBrief,
     displayBoard: plan.displayBoard ? {
@@ -4049,11 +4051,11 @@ function compactManagedPlanForProfile(plan, profile = "compact") {
     parentResponsibilities: (plan.parentResponsibilities || []).slice(0, 4).map((item) => displayText(item, 120)),
     stageInputs: Object.fromEntries(Object.entries(plan.stageInputs || {}).map(([key, value]) => [
       key,
-      (value || []).slice(0, 2).map((item) => displayText(item, 90)),
+      (value || []).slice(0, 2).map((item) => clampText(redactForDisplay(item), 90)),
     ])),
     stageOutputs: Object.fromEntries(Object.entries(plan.stageOutputs || {}).map(([key, value]) => [
       key,
-      displayText(value, 110),
+      clampText(redactForDisplay(value), 110),
     ])),
     goalLoop: (plan.goalLoop || []).map((stage) => ({
       ...stage,
