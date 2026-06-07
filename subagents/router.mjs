@@ -1753,15 +1753,16 @@ function clampText(text, max = 180) {
   return compact.length > max ? `${compact.slice(0, max - 3)}...` : compact;
 }
 
-function redactSensitiveValues(text) {
+function redactForDisplay(text) {
   return String(text || "")
-    .replace(/\b((?:access|refresh|id)?_?token|api[_-]?key|secret|password|passwd|credential)\s*[:=]\s*["']?[^"'\s,;)}\]]+/gi, "$1=[REDACTED]")
-    .replace(/\b(Bearer|Basic)\s+[A-Za-z0-9._~+/-]+=*/gi, "$1 [REDACTED]")
-    .replace(/\b(sk-[A-Za-z0-9_-]{12,}|gh[pousr]_[A-Za-z0-9_]{12,}|xox[baprs]-[A-Za-z0-9-]{12,})\b/g, "[REDACTED_SECRET]");
-}
-
-function displayText(text, max = 180) {
-  return clampText(redactSensitiveValues(text), max);
+    .replace(/Authorization:\s*Bearer\s+[\w.-]+/gi, "Authorization: Bearer [redacted]")
+    .replace(/\b(?:access_token|refresh_token|api[_-]?key|secret)\s*=\s*[^ \n\t,;]+/gi, (match) => `${match.split("=")[0].trim()}=[redacted]`)
+    .replace(/\bsk-[A-Za-z0-9_-]{8,}\b/g, "sk-[redacted]")
+    .replace(/\bgh[pousr]_[A-Za-z0-9_]{12,}\b/g, "gh[redacted]")
+    .replace(/https?:\/\/[^\s)]+/gi, "[redacted-url]")
+    .replace(/\/Users\/[^\s,;:)]+/g, "[redacted-path]")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function routeMargin(route) {
@@ -3416,7 +3417,7 @@ function coordinationModeFor(task, executionMode, readinessState, stageDetails, 
 }
 
 function planningBriefFor({ task, coordinationMode, result, profile, readinessState, stageDetails }) {
-  const objective = clampText(String(task || "").replace(/\s+/g, " ").trim(), 180) || "Coordinate the requested Codex subagent work.";
+  const objective = clampText(redactForDisplay(task), 180) || "Coordinate the requested Codex subagent work.";
   const whyMultiAgent = coordinationMode === "single-agent"
     ? "One focused agent is enough because the route has a narrow scope."
     : coordinationMode === "parallel-batches"
@@ -3761,6 +3762,10 @@ function displayBoardFor(plan) {
   const goalStages = (plan.goalLoop || []).slice(0, maxStages).map((stage, index) => {
     const stageId = String(stage.goal || "").replace(/^Stage \d+:\s*/, "") || `stage-${index + 1}`;
     const check = stageChecksById.get(stageId) || {};
+    const concreteAcceptance = (stage.acceptance || [])
+      .map((item) => clampText(redactForDisplay(item), 100))
+      .filter(Boolean)
+      .slice(0, 2);
     return {
       order: index + 1,
       stageId,
@@ -3768,8 +3773,8 @@ function displayBoardFor(plan) {
       agent: stage.agent,
       role: zhRole(stage.role),
       status: zhStatus(check.status || "pending"),
-      acceptance: [redactDisplayText(zhAcceptanceForStage(stageId, stage.role), 100)],
-      nextTrigger: redactDisplayText(stage.nextTrigger || "完成本阶段验收后进入下一步", 120),
+      acceptance: concreteAcceptance.length ? concreteAcceptance : [zhAcceptanceForStage(stageId, stage.role)],
+      nextTrigger: redactForDisplay(stage.nextTrigger || "完成本阶段验收后进入下一步"),
     };
   });
   const agentCards = (plan.agentWorkPlan || [])
@@ -3799,12 +3804,12 @@ function displayBoardFor(plan) {
         : plan.planningBrief?.coordinationMode === "parent-review-required" || plan.planningBrief?.coordinationMode === "supervisor-review"
           ? "任务风险较高，需要父级 Codex 保留复核和验收责任。"
           : "任务适合按发现、执行、验证和复核阶段交接推进。";
-  const headline = redactDisplayText(`司南已选择 ${plan.agentDisplayName || plan.agent}，采用${zhCoordinationMode(plan.planningBrief?.coordinationMode)}模式，当前状态：${boardState}。`, 180);
+  const headline = redactForDisplay(`司南已选择 ${plan.agentDisplayName || plan.agent}，采用${zhCoordinationMode(plan.planningBrief?.coordinationMode)}模式，当前状态：${boardState}。`);
   const narrative = [
-    displayText(headline, 220),
-    `本次目标：${displayText(plan.planningBrief?.objective || "完成用户请求的多智能体任务", 220)}`,
-    `为什么这样分工：${displayText(whyText, 180)}`,
-    `下一步：${plan.nextAction?.type === "spawn" ? `启动 ${displayText(plan.nextAction.agentDisplayName || plan.nextAction.agent || "推荐 agent", 80)} 处理 ${displayText(plan.nextAction.stageId || "首个阶段", 80)}` : plan.nextAction?.type === "ask-clarification" ? displayText(plan.nextAction.question, 180) : "父级 Codex 先复核安全状态再继续。"}`,
+    headline,
+    `本次目标：${redactForDisplay(plan.planningBrief?.objective || "完成用户请求的多智能体任务")}`,
+    `为什么这样分工：${whyText}`,
+    `下一步：${plan.nextAction?.type === "spawn" ? `启动 ${plan.nextAction.agentDisplayName || plan.nextAction.agent || "推荐 agent"} 处理 ${plan.nextAction.stageId || "首个阶段"}` : plan.nextAction?.type === "ask-clarification" ? redactForDisplay(plan.nextAction.question) : "父级 Codex 先复核安全状态再继续。"}`,
     `边界：不会自动执行凭证、生产、发布、下载或外部副作用动作。`,
   ].filter(Boolean).slice(0, 5);
   const flowStages = goalStages.length ? goalStages : [{ order: 1, stageId: "parent", title: "父级 Codex 处理", agent: "parent-codex", status: boardState }];
