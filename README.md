@@ -178,6 +178,8 @@ node subagents/router.mjs managed --profile app "开启子代理，调用合适�
 node subagents/router.mjs config-explain "开启子代理，根据生产日志处理线上事故并准备回滚"
 node subagents/router.mjs architecture-health
 node subagents/router.mjs test-mirror-parity
+node subagents/router.mjs test-routing-fixtures
+node subagents/router.mjs routing-metrics
 node subagents/router.mjs cache-status
 node subagents/router.mjs cache-prune --all --older-than-hours 168
 node subagents/router.mjs judge --json --budget economy "开启子代理，补齐 pytest 覆盖率"

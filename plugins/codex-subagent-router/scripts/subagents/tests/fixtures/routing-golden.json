@@ -1,0 +1,82 @@
+{
+  "schemaVersion": "routing-fixtures-v1",
+  "description": "Golden routing cases that must select the intended task kind, agent, mode, or safety boundary.",
+  "cases": [
+    {
+      "id": "xiaohongshu-over-react",
+      "task": "开启子代理，在当前 React 项目里写小红书种草脚本",
+      "project": {
+        "package.json": "{\"dependencies\":{\"react\":\"^19.0.0\",\"vite\":\"^6.0.0\"}}",
+        "src/main.tsx": "export function App() { return null; }"
+      },
+      "expected": {
+        "taskKind": "content-marketing",
+        "agent": "agency:xiaohongshu-specialist",
+        "rejectedCode": "content-task-disallows-engineering-agent"
+      }
+    },
+    {
+      "id": "readonly-token-review",
+      "task": "开启子代理，只读审查 get_token，不执行 OAuth、不输出 token",
+      "project": {
+        "requirements.txt": "requests\n",
+        "get_token.py": "def get_token():\n    return None\n"
+      },
+      "expected": {
+        "taskKind": "credential-tooling",
+        "sandbox": "read-only",
+        "rejectedCode": "no-write-disallows-writer"
+      }
+    },
+    {
+      "id": "chrome-extension-not-android",
+      "task": "开启子代理，静态检查 manifest 和 popup 脚本，不做 Android 测试",
+      "project": {
+        "manifest.json": "{\"manifest_version\":3,\"name\":\"Demo\",\"action\":{\"default_popup\":\"popup.html\"}}",
+        "popup.html": "<script src='popup.js'></script>",
+        "popup.js": "export function boot() {}"
+      },
+      "expected": {
+        "taskKind": "chrome-extension-qa",
+        "agentIn": [
+          "test-automator",
+          "frontend-developer",
+          "browser-debugger",
+          "qa-expert",
+          "code-mapper"
+        ]
+      }
+    },
+    {
+      "id": "fastapi-auth-security",
+      "task": "开启子代理，修复接口鉴权并补测试",
+      "project": {
+        "requirements.txt": "fastapi\npytest\n",
+        "main.py": "from fastapi import FastAPI\napp = FastAPI()\ndef auth():\n    pass\n",
+        "tests/test_auth.py": "def test_auth():\n    assert True\n"
+      },
+      "expected": {
+        "agentIn": [
+          "backend-developer",
+          "security-auditor",
+          "reviewer",
+          "test-automator"
+        ],
+        "forbiddenProvider": "agency-agents"
+      }
+    },
+    {
+      "id": "vague-project-asks-first",
+      "task": "开启子代理，多代理帮我优化一下这个",
+      "project": {
+        "package.json": "{\"dependencies\":{\"react\":\"^19.0.0\"}}",
+        "src/main.tsx": "export function App() { return null; }"
+      },
+      "expected": {
+        "mode": "clarify-first",
+        "needsParentChoice": true,
+        "agent": "code-mapper"
+      }
+    }
+  ]
+}

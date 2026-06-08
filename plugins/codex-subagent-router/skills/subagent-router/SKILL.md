@@ -55,12 +55,13 @@ For router maintenance, use the explicit accuracy surfaces before editing rules:
 
 ```bash
 "$SUBAGENT_ROUTER" agent-profile --json "<agent-name>"
+"$SUBAGENT_ROUTER" test-routing-fixtures
 "$SUBAGENT_ROUTER" test-routing-golden
 "$SUBAGENT_ROUTER" test-routing-negatives
 "$SUBAGENT_ROUTER" routing-metrics --json
 ```
 
-`agent-profile` shows structured capability tags, preferred task kinds, avoid task kinds, safety fit, and handoff roles. `test-routing-negatives` protects against wrong-domain selection such as content tasks choosing engineering agents, credential tasks choosing marketing agents, Chrome extension tasks choosing mobile agents, and vague tasks entering implementation without clarification. `routing-metrics` summarizes golden accuracy, negative-sample accuracy, taskKind coverage, profile coverage, and route-cache health.
+`agent-profile` shows structured capability tags, preferred task kinds, avoid task kinds, safety fit, and handoff roles. `test-routing-fixtures` validates the external golden/negative sample library before scoring changes. `test-routing-negatives` protects against wrong-domain selection such as content tasks choosing engineering agents, credential tasks choosing marketing agents, Chrome extension tasks choosing mobile agents, and vague tasks entering implementation without clarification. `routing-metrics` summarizes golden accuracy, negative-sample accuracy, taskKind coverage, confusion matrix, previous-run comparison, profile coverage, and route-cache health.
 
 2. For debugging the router or medium/high-risk delegation, run the cost-aware router:
 

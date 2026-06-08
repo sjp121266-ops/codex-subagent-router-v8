@@ -1,0 +1,79 @@
+{
+  "schemaVersion": "routing-fixtures-v1",
+  "description": "Negative routing cases that protect against wrong-domain or unsafe agent selection.",
+  "cases": [
+    {
+      "id": "content-not-engineering",
+      "task": "开启子代理，在当前 React 项目里写小红书种草脚本",
+      "project": {
+        "package.json": "{\"dependencies\":{\"react\":\"^19.0.0\",\"vite\":\"^6.0.0\"}}",
+        "src/main.tsx": "export function App() { return null; }"
+      },
+      "forbiddenAgents": [
+        "frontend-developer",
+        "backend-developer",
+        "fullstack-developer"
+      ],
+      "forbiddenProviders": [
+        "voltagent"
+      ],
+      "expectedRejectedCode": "content-task-disallows-engineering-agent"
+    },
+    {
+      "id": "credential-not-marketing",
+      "task": "开启子代理，只读审查 get_token OAuth token 工具，不执行 OAuth、不输出 token",
+      "project": {
+        "get_token.py": "def get_token():\n    return None\n"
+      },
+      "forbiddenProviders": [
+        "agency-agents"
+      ],
+      "forbiddenCapabilityTags": [
+        "content-marketing"
+      ]
+    },
+    {
+      "id": "chrome-not-android",
+      "task": "开启子代理，检查 Chrome MV3 manifest 和 popup，不做 Android 测试",
+      "project": {
+        "manifest.json": "{\"manifest_version\":3,\"name\":\"Demo\",\"action\":{\"default_popup\":\"popup.html\"}}",
+        "popup.html": "<script src='popup.js'></script>"
+      },
+      "forbiddenAgents": [
+        "mobile-developer",
+        "ios-developer"
+      ],
+      "forbiddenCapabilityTags": [
+        "mobile"
+      ]
+    },
+    {
+      "id": "android-not-browser-extension",
+      "task": "开启子代理，测试 Android Gradle 项目，运行 unit test 和 debug APK，不做 Chrome 插件检查",
+      "project": {
+        "settings.gradle": "pluginManagement {}\n",
+        "build.gradle": "plugins { id 'com.android.application' version '8.0.0' apply false }\n",
+        "app/src/main/AndroidManifest.xml": "<manifest />"
+      },
+      "forbiddenAgents": [
+        "browser-debugger"
+      ],
+      "forbiddenCapabilityTags": [
+        "browser-extension"
+      ]
+    },
+    {
+      "id": "vague-not-implementation",
+      "task": "开启子代理，多代理帮我优化一下这个",
+      "project": {
+        "package.json": "{\"dependencies\":{\"react\":\"^19.0.0\"}}"
+      },
+      "forbiddenModes": [
+        "staged",
+        "parallel-review",
+        "single-agent"
+      ],
+      "expectedMode": "clarify-first"
+    }
+  ]
+}

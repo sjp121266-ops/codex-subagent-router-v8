@@ -29,9 +29,13 @@ const PROMPT_SUMMARY_CACHE_PATH = runtimePath("prompt-summary-cache.json");
 const HYDRATION_PLAN_CACHE_PATH = runtimePath("hydration-plan-cache.json");
 const SKILL_REGISTRY_SNAPSHOT_PATH = runtimePath("skill-registry-snapshot.json");
 const EVAL_RESULTS_PATH = runtimePath("last-eval-results.json");
+const ROUTING_METRICS_RESULTS_PATH = runtimePath("last-routing-metrics.json");
 const SKILL_REPAIR_RESULTS_PATH = runtimePath("last-skill-repair-results.json");
+const ROUTING_FIXTURES_DIR = bundledPath(path.join("tests", "fixtures"));
+const ROUTING_GOLDEN_FIXTURE_PATH = path.join(ROUTING_FIXTURES_DIR, "routing-golden.json");
+const ROUTING_NEGATIVE_FIXTURE_PATH = path.join(ROUTING_FIXTURES_DIR, "routing-negatives.json");
 const CODEX_CLI = process.env.CODEX_CLI || "codex";
-const ROUTER_METADATA_VERSION = 1605;
+const ROUTER_METADATA_VERSION = 1606;
 const DEFAULT_PROMPT_BUDGETS = {
   compact: 1800,
   balanced: 3200,
@@ -551,6 +555,7 @@ Usage:
   router.mjs test-app-board
   router.mjs test-project-graph
   router.mjs test-project-graph-performance
+  router.mjs test-routing-fixtures
   router.mjs test-routing-golden
   router.mjs test-routing-negatives
   router.mjs test-open-source-patterns
@@ -582,6 +587,9 @@ Environment:
 }
 function readText(file) {
   return fs.readFileSync(file, "utf8");
+}
+function readJsonFile(file) {
+  return JSON.parse(readText(file));
 }
 function hashText(text) {
   return crypto.createHash("sha256").update(String(text || "")).digest("hex");
@@ -6302,6 +6310,8 @@ function pluginMirrorSyncHealth() {
     ["registry", path.join(projectRoot, "subagents", "registry.json"), path.join(projectRoot, "plugins/codex-subagent-router/scripts/subagents/registry.json")],
     ["community-skills-manifest", path.join(projectRoot, "subagents", "community-skills-manifest.json"), path.join(projectRoot, "plugins/codex-subagent-router/scripts/subagents/community-skills-manifest.json")],
     ["import-community-skills", path.join(projectRoot, "subagents", "import-community-skills.mjs"), path.join(projectRoot, "plugins/codex-subagent-router/scripts/subagents/import-community-skills.mjs")],
+    ["routing-golden-fixture", path.join(projectRoot, "subagents/tests/fixtures/routing-golden.json"), path.join(projectRoot, "plugins/codex-subagent-router/scripts/subagents/tests/fixtures/routing-golden.json")],
+    ["routing-negative-fixture", path.join(projectRoot, "subagents/tests/fixtures/routing-negatives.json"), path.join(projectRoot, "plugins/codex-subagent-router/scripts/subagents/tests/fixtures/routing-negatives.json")],
     ["skill", path.join(projectRoot, "skills/subagent-router/SKILL.md"), path.join(projectRoot, "plugins/codex-subagent-router/skills/subagent-router/SKILL.md")],
   ];
   const files = pairs.map(([id, source, mirror]) => {
@@ -7398,110 +7408,95 @@ function runProjectGraphTests() {
 }
 
 function routingGoldenCases() {
-  return [
-    {
-      id: "xiaohongshu-over-react",
-      task: "开启子代理，在当前 React 项目里写小红书种草脚本",
-      project: {
-        "package.json": JSON.stringify({ dependencies: { react: "^19.0.0", vite: "^6.0.0" } }),
-        "src/main.tsx": "export function App() { return null; }",
-      },
-      expected: { taskKind: "content-marketing", agent: "agency:xiaohongshu-specialist", rejectedCode: "content-task-disallows-engineering-agent" },
-    },
-    {
-      id: "readonly-token-review",
-      task: "开启子代理，只读审查 get_token，不执行 OAuth、不输出 token",
-      project: {
-        "requirements.txt": "requests\n",
-        "get_token.py": "def get_token():\n    return None\n",
-      },
-      expected: { taskKind: "credential-tooling", sandbox: "read-only", rejectedCode: "no-write-disallows-writer" },
-    },
-    {
-      id: "chrome-extension-not-android",
-      task: "开启子代理，静态检查 manifest 和 popup 脚本，不做 Android 测试",
-      project: {
-        "manifest.json": JSON.stringify({ manifest_version: 3, name: "Demo", action: { default_popup: "popup.html" } }),
-        "popup.html": "<script src='popup.js'></script>",
-        "popup.js": "export function boot() {}",
-      },
-      expected: { taskKind: "chrome-extension-qa", agentIn: ["test-automator", "frontend-developer", "browser-debugger", "qa-expert", "code-mapper"] },
-    },
-    {
-      id: "fastapi-auth-security",
-      task: "开启子代理，修复接口鉴权并补测试",
-      project: {
-        "requirements.txt": "fastapi\npytest\n",
-        "main.py": "from fastapi import FastAPI\napp = FastAPI()\ndef auth():\n    pass\n",
-        "tests/test_auth.py": "def test_auth():\n    assert True\n",
-      },
-      expected: { agentIn: ["backend-developer", "security-auditor", "reviewer", "test-automator"], forbiddenProvider: "agency-agents" },
-    },
-    {
-      id: "vague-project-asks-first",
-      task: "开启子代理，多代理帮我优化一下这个",
-      project: {
-        "package.json": JSON.stringify({ dependencies: { react: "^19.0.0" } }),
-        "src/main.tsx": "export function App() { return null; }",
-      },
-      expected: { mode: "clarify-first", needsParentChoice: true, agent: "code-mapper" },
-    },
-  ];
+  return routingFixtureCases("golden");
 }
 
 function routingNegativeCases() {
-  return [
-    {
-      id: "content-not-engineering",
-      task: "开启子代理，在当前 React 项目里写小红书种草脚本",
-      project: {
-        "package.json": JSON.stringify({ dependencies: { react: "^19.0.0", vite: "^6.0.0" } }),
-        "src/main.tsx": "export function App() { return null; }",
-      },
-      forbiddenAgents: ["frontend-developer", "backend-developer", "fullstack-developer"],
-      forbiddenProviders: ["voltagent"],
-      expectedRejectedCode: "content-task-disallows-engineering-agent",
-    },
-    {
-      id: "credential-not-marketing",
-      task: "开启子代理，只读审查 get_token OAuth token 工具，不执行 OAuth、不输出 token",
-      project: {
-        "get_token.py": "def get_token():\n    return None\n",
-      },
-      forbiddenProviders: ["agency-agents"],
-      forbiddenCapabilityTags: ["content-marketing"],
-    },
-    {
-      id: "chrome-not-android",
-      task: "开启子代理，检查 Chrome MV3 manifest 和 popup，不做 Android 测试",
-      project: {
-        "manifest.json": JSON.stringify({ manifest_version: 3, name: "Demo", action: { default_popup: "popup.html" } }),
-        "popup.html": "<script src='popup.js'></script>",
-      },
-      forbiddenAgents: ["mobile-developer", "ios-developer"],
-      forbiddenCapabilityTags: ["mobile"],
-    },
-    {
-      id: "android-not-browser-extension",
-      task: "开启子代理，测试 Android Gradle 项目，运行 unit test 和 debug APK，不做 Chrome 插件检查",
-      project: {
-        "settings.gradle": "pluginManagement {}\n",
-        "build.gradle": "plugins { id 'com.android.application' version '8.0.0' apply false }\n",
-        "app/src/main/AndroidManifest.xml": "<manifest />",
-      },
-      forbiddenAgents: ["browser-debugger"],
-      forbiddenCapabilityTags: ["browser-extension"],
-    },
-    {
-      id: "vague-not-implementation",
-      task: "开启子代理，多代理帮我优化一下这个",
-      project: {
-        "package.json": JSON.stringify({ dependencies: { react: "^19.0.0" } }),
-      },
-      forbiddenModes: ["staged", "parallel-review", "single-agent"],
-      expectedMode: "clarify-first",
-    },
-  ];
+  return routingFixtureCases("negative");
+}
+
+function routingFixtureDefinition(kind) {
+  if (kind === "golden") return { kind, label: "golden", file: ROUTING_GOLDEN_FIXTURE_PATH };
+  if (kind === "negative") return { kind, label: "negative", file: ROUTING_NEGATIVE_FIXTURE_PATH };
+  throw new Error(`Unknown routing fixture kind: ${kind}`);
+}
+
+function validateRoutingFixturePayload(kind, payload, file) {
+  const errors = [];
+  const ids = new Set();
+  const allowedNegativeAssertions = ["forbiddenAgents", "forbiddenProviders", "forbiddenModes", "forbiddenCapabilityTags", "expectedRejectedCode", "expectedMode"];
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) errors.push("fixture root must be an object");
+  if (payload?.schemaVersion !== "routing-fixtures-v1") errors.push("schemaVersion must be routing-fixtures-v1");
+  if (!Array.isArray(payload?.cases) || payload.cases.length === 0) errors.push("cases must be a non-empty array");
+  for (const [index, testCase] of (payload?.cases || []).entries()) {
+    const prefix = `cases[${index}]`;
+    if (!testCase || typeof testCase !== "object" || Array.isArray(testCase)) {
+      errors.push(`${prefix} must be an object`);
+      continue;
+    }
+    if (!testCase.id || typeof testCase.id !== "string") errors.push(`${prefix}.id must be a string`);
+    if (testCase.id && ids.has(testCase.id)) errors.push(`${prefix}.id duplicates ${testCase.id}`);
+    if (testCase.id) ids.add(testCase.id);
+    if (!testCase.task || typeof testCase.task !== "string") errors.push(`${prefix}.task must be a string`);
+    if (!testCase.project || typeof testCase.project !== "object" || Array.isArray(testCase.project)) {
+      errors.push(`${prefix}.project must be an object`);
+    } else {
+      for (const [projectPath, body] of Object.entries(testCase.project)) {
+        if (!projectPath || typeof projectPath !== "string" || path.isAbsolute(projectPath) || projectPath.includes("..")) errors.push(`${prefix}.project has unsafe path ${projectPath}`);
+        if (typeof body !== "string") errors.push(`${prefix}.project.${projectPath} must be a string`);
+      }
+    }
+    if (kind === "golden") {
+      if (!testCase.expected || typeof testCase.expected !== "object" || Array.isArray(testCase.expected)) errors.push(`${prefix}.expected must be an object`);
+    } else if (!allowedNegativeAssertions.some((key) => Object.prototype.hasOwnProperty.call(testCase, key))) {
+      errors.push(`${prefix} must define at least one negative assertion`);
+    }
+  }
+  if (errors.length) throw new Error(`Invalid routing ${kind} fixture ${file}: ${errors.join("; ")}`);
+}
+
+function loadRoutingFixture(kind) {
+  const definition = routingFixtureDefinition(kind);
+  if (!fs.existsSync(definition.file)) throw new Error(`Missing routing ${kind} fixture: ${definition.file}`);
+  let payload;
+  try {
+    payload = readJsonFile(definition.file);
+  } catch (error) {
+    throw new Error(`Unable to parse routing ${kind} fixture ${definition.file}: ${error.message}`);
+  }
+  validateRoutingFixturePayload(kind, payload, definition.file);
+  return {
+    ...payload,
+    kind,
+    file: definition.file,
+    hash: fileHash(definition.file),
+    count: payload.cases.length,
+  };
+}
+
+function routingFixtureCases(kind) {
+  const fixture = loadRoutingFixture(kind);
+  return fixture.cases.map((testCase) => JSON.parse(JSON.stringify(testCase)));
+}
+
+function routingFixtureSources() {
+  const fixtures = [loadRoutingFixture("golden"), loadRoutingFixture("negative")];
+  return Object.fromEntries(fixtures.map((fixture) => [fixture.kind, {
+    schemaVersion: fixture.schemaVersion,
+    path: fixture.file,
+    hash: fixture.hash.slice(0, 16),
+    count: fixture.count,
+    description: fixture.description || "",
+  }]));
+}
+
+function runRoutingFixtureTests() {
+  const sources = routingFixtureSources();
+  console.log(JSON.stringify({
+    pass: true,
+    fixtures: sources,
+    totalCases: Object.values(sources).reduce((total, source) => total + source.count, 0),
+  }, null, 2));
 }
 
 function evaluateRoutingGoldenCase(testCase) {
@@ -7594,9 +7589,89 @@ function runRoutingNegativeTests() {
   }, null, 2));
 }
 
+function buildRoutingConfusionMatrix(goldenCases, goldenResults) {
+  const matrix = {};
+  const rows = [];
+  let asserted = 0;
+  let mismatches = 0;
+  for (let index = 0; index < goldenCases.length; index += 1) {
+    const testCase = goldenCases[index];
+    const result = goldenResults[index];
+    const expected = testCase.expected?.taskKind || "unspecified";
+    const actual = result?.summary?.taskKind || "unknown";
+    matrix[expected] = matrix[expected] || {};
+    matrix[expected][actual] = (matrix[expected][actual] || 0) + 1;
+    const mismatch = Boolean(testCase.expected?.taskKind && expected !== actual);
+    if (testCase.expected?.taskKind) asserted += 1;
+    if (mismatch) mismatches += 1;
+    rows.push({
+      id: testCase.id,
+      expectedTaskKind: expected,
+      actualTaskKind: actual,
+      pass: result?.pass === true,
+      mismatch,
+    });
+  }
+  return {
+    asserted,
+    mismatches,
+    matrix,
+    rows,
+  };
+}
+
+function previousRoutingMetricsSummary() {
+  if (!fs.existsSync(ROUTING_METRICS_RESULTS_PATH)) return null;
+  try {
+    const previous = readJsonFile(ROUTING_METRICS_RESULTS_PATH);
+    if (!previous || typeof previous !== "object") return null;
+    return {
+      generatedAt: previous.generatedAt || "",
+      total: Number(previous.total || 0),
+      passed: Number(previous.passed || 0),
+      accuracy: Number(previous.accuracy || 0),
+      golden: {
+        total: Number(previous.golden?.total || 0),
+        passed: Number(previous.golden?.passed || 0),
+      },
+      negatives: {
+        total: Number(previous.negatives?.total || 0),
+        passed: Number(previous.negatives?.passed || 0),
+      },
+      confusionMismatches: Number(previous.confusionMatrix?.mismatches || 0),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function compareRoutingMetrics(previous, current) {
+  if (!previous) {
+    return {
+      previousRunAvailable: false,
+      baselinePath: ROUTING_METRICS_RESULTS_PATH,
+    };
+  }
+  return {
+    previousRunAvailable: true,
+    baselinePath: ROUTING_METRICS_RESULTS_PATH,
+    previousGeneratedAt: previous.generatedAt,
+    accuracyDelta: Number((current.accuracy - previous.accuracy).toFixed(4)),
+    passedDelta: current.passed - previous.passed,
+    totalDelta: current.total - previous.total,
+    goldenPassedDelta: current.golden.passed - previous.golden.passed,
+    negativePassedDelta: current.negatives.passed - previous.negatives.passed,
+    confusionMismatchDelta: current.confusionMatrix.mismatches - previous.confusionMismatches,
+  };
+}
+
 function buildRoutingMetricsReport() {
-  const golden = routingGoldenCases().map(evaluateRoutingGoldenCase);
-  const negatives = routingNegativeCases().map(evaluateRoutingNegativeCase);
+  const previous = previousRoutingMetricsSummary();
+  const fixtureSources = routingFixtureSources();
+  const goldenCases = routingGoldenCases();
+  const negativeCases = routingNegativeCases();
+  const golden = goldenCases.map(evaluateRoutingGoldenCase);
+  const negatives = negativeCases.map(evaluateRoutingNegativeCase);
   const all = [...golden, ...negatives];
   const failed = all.filter((result) => !result.pass);
   const byTaskKind = {};
@@ -7607,9 +7682,11 @@ function buildRoutingMetricsReport() {
     if (result.pass) byTaskKind[kind].passed += 1;
   }
   const coverage = agentProfileCoverage();
-  return {
+  const confusionMatrix = buildRoutingConfusionMatrix(goldenCases, golden);
+  const report = {
     schemaVersion: "routing-metrics-v1",
     generatedAt: new Date().toISOString(),
+    fixtureSources,
     pass: failed.length === 0,
     total: all.length,
     passed: all.length - failed.length,
@@ -7625,13 +7702,18 @@ function buildRoutingMetricsReport() {
       failures: negatives.filter((result) => !result.pass),
     },
     byTaskKind,
+    confusionMatrix,
     agentProfileCoverage: coverage,
     routeCache: routeCacheStats(),
   };
+  report.comparison = compareRoutingMetrics(previous, report);
+  return report;
 }
 
 function runRoutingMetrics(mode = "text") {
   const report = buildRoutingMetricsReport();
+  fs.mkdirSync(path.dirname(ROUTING_METRICS_RESULTS_PATH), { recursive: true });
+  fs.writeFileSync(ROUTING_METRICS_RESULTS_PATH, `${JSON.stringify(report, null, 2)}\n`);
   if (mode === "json") {
     console.log(JSON.stringify(report, null, 2));
     return;
@@ -7641,6 +7723,14 @@ function runRoutingMetrics(mode = "text") {
   console.log(`总体：${report.passed}/${report.total} (${Math.round(report.accuracy * 100)}%)`);
   console.log(`黄金样本：${report.golden.passed}/${report.golden.total}`);
   console.log(`负样本：${report.negatives.passed}/${report.negatives.total}`);
+  console.log(`混淆矩阵：${report.confusionMatrix.mismatches} 个 taskKind 错配 / ${report.confusionMatrix.asserted} 个显式 taskKind 样本`);
+  if (report.comparison.previousRunAvailable) {
+    const sign = (value) => (value > 0 ? `+${value}` : String(value));
+    console.log(`较上次：准确率 ${sign(Math.round(report.comparison.accuracyDelta * 10000) / 100)}pp，通过数 ${sign(report.comparison.passedDelta)}，错配 ${sign(report.comparison.confusionMismatchDelta)}`);
+  } else {
+    console.log("较上次：暂无历史基线，本次结果已写入本地基线。");
+  }
+  console.log(`样本库：golden ${report.fixtureSources.golden.count} (${report.fixtureSources.golden.hash})，negative ${report.fixtureSources.negative.count} (${report.fixtureSources.negative.hash})`);
   console.log(`Agent 画像覆盖：${report.agentProfileCoverage.totalAgents} agents，高/中/低 = ${report.agentProfileCoverage.byCompleteness.high || 0}/${report.agentProfileCoverage.byCompleteness.medium || 0}/${report.agentProfileCoverage.byCompleteness.low || 0}`);
   console.log(`路由缓存：${report.routeCache.entries} entries，命中率 ${report.routeCache.hitRate}`);
   if (!report.pass) {
@@ -8955,6 +9045,10 @@ function main() {
   }
   if (command === "test-project-graph-performance") {
     runProjectGraphPerformanceTests();
+    return;
+  }
+  if (command === "test-routing-fixtures") {
+    runRoutingFixtureTests();
     return;
   }
   if (command === "test-routing-golden") {

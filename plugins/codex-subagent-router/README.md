@@ -76,12 +76,15 @@ node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs agent-profile 
 ```bash
 node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs test-routing-golden
 node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs test-routing-negatives
+node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs test-routing-fixtures
 node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs routing-metrics
 node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs routing-metrics --json
 node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs test-project-graph-performance
 ```
 
-`routing-metrics` 会汇总黄金样本、负样本、按 taskKind 的通过情况、Agent 画像覆盖率和路由缓存状态。负样本重点验证“不要选错”：例如小红书内容任务不能走工程 agent，token/OAuth 审查不能走营销 agent，Chrome 扩展不能走 Android agent，模糊项目优化不能直接进入实现。
+黄金样本和负样本放在 `scripts/subagents/tests/fixtures/`，后续扩展调度能力时先加样本，再调策略。`test-routing-fixtures` 只校验样本结构和唯一性；`test-routing-golden` / `test-routing-negatives` 会真实跑路由。
+
+`routing-metrics` 会汇总黄金样本、负样本、按 taskKind 的通过情况、Agent 画像覆盖率、路由缓存状态、样本来源哈希、taskKind 混淆矩阵，以及和上一次运行的准确率差异。负样本重点验证“不要选错”：例如小红书内容任务不能走工程 agent，token/OAuth 审查不能走营销 agent，Chrome 扩展不能走 Android agent，模糊项目优化不能直接进入实现。
 
 ## Execution Adapter
 
@@ -144,7 +147,7 @@ node scripts/subagents/router.mjs test-mirror-parity
 node scripts/subagents/router.mjs architecture-health --json
 ```
 
-`test-app-board` now verifies that the user-facing `displayBoard` does not leak internal routing fields, cache details, provider prompt paths/full prompt wording, or credential-shaped secrets. Keep source and plugin mirror files byte-for-byte aligned before publishing; `test-mirror-parity` checks the router, config, schema, registry, community manifest, importer, and skill mirror pairs.
+`test-app-board` now verifies that the user-facing `displayBoard` does not leak internal routing fields, cache details, provider prompt paths/full prompt wording, or credential-shaped secrets. Keep source and plugin mirror files byte-for-byte aligned before publishing; `test-mirror-parity` checks the router, config, schema, registry, community manifest, importer, routing fixture, and skill mirror pairs.
 
 ## Global Sync
 
