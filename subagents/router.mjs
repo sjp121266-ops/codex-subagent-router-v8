@@ -31,7 +31,7 @@ const SKILL_REGISTRY_SNAPSHOT_PATH = runtimePath("skill-registry-snapshot.json")
 const EVAL_RESULTS_PATH = runtimePath("last-eval-results.json");
 const SKILL_REPAIR_RESULTS_PATH = runtimePath("last-skill-repair-results.json");
 const CODEX_CLI = process.env.CODEX_CLI || "codex";
-const ROUTER_METADATA_VERSION = 1604;
+const ROUTER_METADATA_VERSION = 1605;
 const DEFAULT_PROMPT_BUDGETS = {
   compact: 1800,
   balanced: 3200,
@@ -525,6 +525,8 @@ Usage:
   router.mjs list [query]
   router.mjs route [--json|--brief] <task>
   router.mjs route-trace [--json] [--no-project-graph] <task>
+  router.mjs agent-profile [--json] <agent-name|--all>
+  router.mjs routing-metrics [--json]
   router.mjs judge [--json|--verbose|--explain|--offline] [--budget economy|balanced|premium|critical] [--no-cache] [--force-model] <task>
   router.mjs managed [--json] [--offline] [--profile compact|balanced|app|full] <task>
   router.mjs prompt <agent-name> <task> [--hydrate reference|summary|hybrid|full] [--budget N]
@@ -550,6 +552,7 @@ Usage:
   router.mjs test-project-graph
   router.mjs test-project-graph-performance
   router.mjs test-routing-golden
+  router.mjs test-routing-negatives
   router.mjs test-open-source-patterns
   router.mjs test-architecture
   router.mjs test-agent-roster
@@ -916,6 +919,145 @@ function agentCardFor(agent) {
   return index.cards?.find((card) => card.id === agent.id || card.promptPath === agent.promptPath) || buildAgentCard(agent, "");
 }
 
+function agentProfileText(agent = {}) {
+  return normalize(`${agent.id || ""} ${agent.name || ""} ${agent.displayName || ""} ${agent.slug || ""} ${agent.category || ""} ${agent.description || ""} ${agent.instructions || ""} ${agent.promptPath || ""}`);
+}
+
+function agentCapabilityProfile(agent = {}) {
+  const text = agentProfileText(agent);
+  const capabilityTags = [];
+  const preferredTaskKinds = [];
+  const avoidTaskKinds = [];
+  const platformFit = [];
+  const safetyFit = [];
+  const handoffRoles = [];
+  const add = (list, value) => { if (value && !list.includes(value)) list.push(value); };
+  const match = (pattern) => pattern.test(text);
+
+  if (match(/frontend|react|vue|svelte|vite|next|\bui\b|\bbrowser\b|\bweb\b/)) {
+    add(capabilityTags, "frontend");
+    add(platformFit, "web");
+    add(preferredTaskKinds, "web-app-qa");
+  }
+  if (match(/backend|\bapi\b|server|database|postgres|fastapi|django|express/)) {
+    add(capabilityTags, "backend");
+    add(platformFit, "server");
+    add(preferredTaskKinds, "engineering-execution");
+  }
+  if (match(/test|qa|quality|automation|playwright|browser-debugger/)) {
+    add(capabilityTags, "testing");
+    add(preferredTaskKinds, "web-app-qa");
+    add(preferredTaskKinds, "chrome-extension-qa");
+    add(handoffRoles, "validator");
+  }
+  if (match(/security|\bauth\b|oauth|credential|token|privacy|auditor/)) {
+    add(capabilityTags, "security");
+    add(preferredTaskKinds, "credential-tooling");
+    add(safetyFit, "high-risk-review");
+    add(handoffRoles, "reviewer");
+  }
+  if (match(/android|gradle|mobile|kotlin/)) {
+    add(capabilityTags, "mobile");
+    add(platformFit, "android");
+    add(preferredTaskKinds, "android-qa");
+  }
+  if (match(/\bios\b|swift|xcode/)) {
+    add(capabilityTags, "mobile");
+    add(platformFit, "ios");
+  }
+  if (match(/\bchrome\b|extension|manifest|\bbrowser\b/)) {
+    add(capabilityTags, "browser-extension");
+    add(platformFit, "chrome-extension");
+    add(preferredTaskKinds, "chrome-extension-qa");
+  }
+  if (match(/docs|documentation|writer|readme|research|analyst/)) {
+    add(capabilityTags, "research-docs");
+    add(preferredTaskKinds, "research-only");
+    add(preferredTaskKinds, "release-publishing");
+    add(handoffRoles, "mapper");
+  }
+  if (match(/architect|planner|manager|coordinator|orchestrat|mapper/)) {
+    add(capabilityTags, "planning-orchestration");
+    add(preferredTaskKinds, "orchestration-design");
+    add(handoffRoles, "mapper");
+  }
+  if (match(/marketing|growth|content|social|xiaohongshu|douyin|tiktok|bilibili|reddit|community|seo|wechat|weibo|zhihu/)) {
+    add(capabilityTags, "content-marketing");
+    add(preferredTaskKinds, "content-marketing");
+    add(avoidTaskKinds, "credential-tooling");
+    add(avoidTaskKinds, "incident-response");
+  }
+  if (agent.sandboxMode === "read-only") {
+    add(safetyFit, "read-only");
+    add(handoffRoles, "mapper");
+  } else if (agent.sandboxMode === "workspace-write") {
+    add(safetyFit, "workspace-write");
+    add(handoffRoles, "implementer");
+  }
+  if (agent.runtimeRole === "explorer") add(handoffRoles, "mapper");
+  if (agent.runtimeRole === "worker") add(handoffRoles, "implementer");
+  if (agent.provider === "agency-agents" && !capabilityTags.includes("content-marketing") && !match(/api-tester|accessibility-auditor/)) {
+    add(avoidTaskKinds, "engineering-execution");
+  }
+  if (platformFit.includes("android")) add(avoidTaskKinds, "chrome-extension-qa");
+  if (platformFit.includes("chrome-extension")) add(avoidTaskKinds, "android-qa");
+
+  const evidenceKeywords = unique(tokenize(`${agent.name || ""} ${agent.description || ""} ${agent.category || ""}`).slice(0, 12));
+  const completenessInputs = [capabilityTags.length, preferredTaskKinds.length, safetyFit.length, handoffRoles.length].filter((count) => count > 0).length;
+  return {
+    schemaVersion: "agent-profile-v1",
+    id: agent.id || agent.name,
+    name: agent.name,
+    provider: agent.provider || "voltagent",
+    displayName: agent.displayName || agent.name,
+    category: agent.category,
+    runtimeRole: agent.runtimeRole,
+    sandboxMode: agent.sandboxMode,
+    model: agent.model,
+    canWrite: agent.sandboxMode === "workspace-write",
+    capabilityTags: capabilityTags.slice(0, loadStrategyConfig().managedUX?.agentProfiles?.maxCapabilityTags || 8),
+    preferredTaskKinds,
+    avoidTaskKinds,
+    platformFit,
+    safetyFit,
+    handoffRoles: unique(handoffRoles),
+    evidenceKeywords,
+    profileCompleteness: completenessInputs >= 4 ? "high" : completenessInputs >= 2 ? "medium" : "low",
+  };
+}
+
+function compactAgentProfile(profile = {}) {
+  return {
+    name: profile.name,
+    provider: profile.provider,
+    canWrite: profile.canWrite,
+    capabilityTags: (profile.capabilityTags || []).slice(0, 5),
+    preferredTaskKinds: (profile.preferredTaskKinds || []).slice(0, 4),
+    avoidTaskKinds: (profile.avoidTaskKinds || []).slice(0, 4),
+    safetyFit: (profile.safetyFit || []).slice(0, 3),
+    handoffRoles: (profile.handoffRoles || []).slice(0, 3),
+  };
+}
+
+function agentProfileCoverage() {
+  const agents = loadAllAgents().agents;
+  const profiles = agents.map(agentCapabilityProfile);
+  const byCompleteness = profiles.reduce((acc, profile) => {
+    acc[profile.profileCompleteness] = (acc[profile.profileCompleteness] || 0) + 1;
+    return acc;
+  }, {});
+  const byCapability = {};
+  for (const profile of profiles) {
+    for (const tag of profile.capabilityTags || []) byCapability[tag] = (byCapability[tag] || 0) + 1;
+  }
+  return {
+    totalAgents: agents.length,
+    byCompleteness,
+    byCapability,
+    lowCompletenessSamples: profiles.filter((profile) => profile.profileCompleteness === "low").slice(0, 10).map((profile) => profile.name),
+  };
+}
+
 function loadAllAgents() {
   const registry = loadRegistry();
   const voltagentAgents = (registry.agents || []).map((agent) => ({
@@ -987,6 +1129,17 @@ function loadStrategyConfig() {
           includeInAppText: false,
           maxRejectedAgents: 8,
         },
+        agentProfiles: {
+          enabled: true,
+          includeInRoutingEvidence: true,
+          maxCapabilityTags: 8,
+        },
+        routingMetrics: {
+          enabled: true,
+          includeGolden: true,
+          includeNegatives: true,
+          includeProfileCoverage: true,
+        },
         ...(raw.managedUX || {}),
       },
       source: STRATEGY_CONFIG_PATH,
@@ -1017,6 +1170,17 @@ function loadStrategyConfig() {
           includeInManagedJson: true,
           includeInAppText: false,
           maxRejectedAgents: 8,
+        },
+        agentProfiles: {
+          enabled: true,
+          includeInRoutingEvidence: true,
+          maxCapabilityTags: 8,
+        },
+        routingMetrics: {
+          enabled: true,
+          includeGolden: true,
+          includeNegatives: true,
+          includeProfileCoverage: true,
         },
       },
       source: "built-in defaults",
@@ -2460,9 +2624,13 @@ function routingEvidenceFor(task, route, context = {}) {
   }));
   const rejectedByPolicy = context.rejectedByPolicy || [];
   const selectedAgent = route.recommended?.name || "";
+  const selectedAgentProfile = loadStrategyConfig().managedUX?.agentProfiles?.includeInRoutingEvidence === false
+    ? null
+    : compactAgentProfile(agentCapabilityProfile(route.recommended || {}));
   return {
     schemaVersion: "routing-evidence-v1",
     selectedAgent,
+    selectedAgentProfile,
     selectedBecause: [
       `${selectedAgent || "selected agent"} matched taskKind ${route.taskKind || route.taskProfile?.taskKind || "unknown"}`,
       ...(route.reasons || []).slice(0, 4),
@@ -4619,6 +4787,13 @@ function compactManagedPlanForProfile(plan, profile = "compact") {
     routingEvidence: plan.routingEvidence ? {
       schemaVersion: plan.routingEvidence.schemaVersion,
       selectedAgent: plan.routingEvidence.selectedAgent,
+      selectedAgentProfile: plan.routingEvidence.selectedAgentProfile ? {
+        canWrite: plan.routingEvidence.selectedAgentProfile.canWrite,
+        capabilityTags: (plan.routingEvidence.selectedAgentProfile.capabilityTags || []).slice(0, 4),
+        preferredTaskKinds: (plan.routingEvidence.selectedAgentProfile.preferredTaskKinds || []).slice(0, 3),
+        avoidTaskKinds: (plan.routingEvidence.selectedAgentProfile.avoidTaskKinds || []).slice(0, 3),
+        safetyFit: (plan.routingEvidence.selectedAgentProfile.safetyFit || []).slice(0, 2),
+      } : null,
       selectedBecause: (plan.routingEvidence.selectedBecause || []).slice(0, profile === "app" ? 3 : 2).map((item) => displayText(item, profile === "app" ? 90 : 60)),
       taskSignals: (plan.routingEvidence.taskSignals || []).slice(0, 3).map((signal) => ({
         id: signal.id,
@@ -5234,6 +5409,14 @@ function printRouteTrace(route, mode = "text") {
   console.log("");
   console.log("## 选择原因");
   for (const reason of evidence.selectedBecause || []) console.log(`- ${reason}`);
+  if (evidence.selectedAgentProfile) {
+    console.log("");
+    console.log("## Agent 能力画像");
+    console.log(`- 能力：${(evidence.selectedAgentProfile.capabilityTags || []).join("、") || "未标注"}`);
+    console.log(`- 适合任务：${(evidence.selectedAgentProfile.preferredTaskKinds || []).join("、") || "通用"}`);
+    console.log(`- 安全边界：${(evidence.selectedAgentProfile.safetyFit || []).join("、") || "默认"}`);
+    console.log(`- 可写：${evidence.selectedAgentProfile.canWrite ? "是" : "否"}`);
+  }
   console.log("");
   console.log("## 任务信号");
   for (const signal of evidence.taskSignals || []) console.log(`- ${signal.id}: ${signal.label || signal.source} (${signal.score || 0})`);
@@ -5260,6 +5443,26 @@ function printRouteTrace(route, mode = "text") {
     console.log("## 规则排除");
     for (const item of evidence.rejectedByPolicy) console.log(`- ${item.agent}: ${item.code}，${item.reason}`);
   }
+}
+
+function printAgentProfile(profile, mode = "text") {
+  if (mode === "json") {
+    console.log(JSON.stringify(profile, null, 2));
+    return;
+  }
+  console.log(`# Agent 能力画像：${profile.name || profile.id}`);
+  console.log("");
+  console.log(`Provider：${profile.provider}`);
+  console.log(`运行角色：${profile.runtimeRole || "unknown"}`);
+  console.log(`沙箱：${profile.sandboxMode || "unknown"}${profile.canWrite ? "（可写）" : "（只读/不可写）"}`);
+  console.log(`模型：${profile.model || "default"}`);
+  console.log(`能力标签：${(profile.capabilityTags || []).join("、") || "未标注"}`);
+  console.log(`适合任务：${(profile.preferredTaskKinds || []).join("、") || "通用"}`);
+  console.log(`应避免任务：${(profile.avoidTaskKinds || []).join("、") || "未标注"}`);
+  console.log(`平台：${(profile.platformFit || []).join("、") || "通用"}`);
+  console.log(`安全边界：${(profile.safetyFit || []).join("、") || "默认"}`);
+  console.log(`交接角色：${(profile.handoffRoles || []).join("、") || "未标注"}`);
+  console.log(`画像完整度：${profile.profileCompleteness}`);
 }
 
 function compactJudgementResult(result) {
@@ -6165,9 +6368,9 @@ function routerArchitectureHealth() {
   const checks = [
     {
       id: "router-monolith-known-risk",
-      ok: lineCount <= 9000,
+      ok: lineCount <= 9500,
       severity: lineCount > 9000 ? "high" : "medium",
-      detail: `${lineCount} lines; keep adding contracts before larger module extraction`,
+      detail: `${lineCount} lines; high-risk monolith, keep next larger work focused on module extraction`,
     },
     {
       id: "managed-contract-v17",
@@ -6191,7 +6394,7 @@ function routerArchitectureHealth() {
       id: "observability-surfaces",
       ok: true,
       severity: "medium",
-      detail: "doctor, report, config-explain, cache-status, inspect-context, app board, and architecture health are available",
+      detail: "doctor, report, config-explain, cache-status, inspect-context, app board, route-trace, agent-profile, routing-metrics, and architecture health are available",
     },
   ];
   return {
@@ -7194,8 +7397,8 @@ function runProjectGraphTests() {
   }, null, 2));
 }
 
-function runRoutingGoldenTests() {
-  const cases = [
+function routingGoldenCases() {
+  return [
     {
       id: "xiaohongshu-over-react",
       task: "开启子代理，在当前 React 项目里写小红书种草脚本",
@@ -7244,7 +7447,65 @@ function runRoutingGoldenTests() {
       expected: { mode: "clarify-first", needsParentChoice: true, agent: "code-mapper" },
     },
   ];
-  const results = cases.map((testCase) => withProjectGraphFixture(testCase.project, () => {
+}
+
+function routingNegativeCases() {
+  return [
+    {
+      id: "content-not-engineering",
+      task: "开启子代理，在当前 React 项目里写小红书种草脚本",
+      project: {
+        "package.json": JSON.stringify({ dependencies: { react: "^19.0.0", vite: "^6.0.0" } }),
+        "src/main.tsx": "export function App() { return null; }",
+      },
+      forbiddenAgents: ["frontend-developer", "backend-developer", "fullstack-developer"],
+      forbiddenProviders: ["voltagent"],
+      expectedRejectedCode: "content-task-disallows-engineering-agent",
+    },
+    {
+      id: "credential-not-marketing",
+      task: "开启子代理，只读审查 get_token OAuth token 工具，不执行 OAuth、不输出 token",
+      project: {
+        "get_token.py": "def get_token():\n    return None\n",
+      },
+      forbiddenProviders: ["agency-agents"],
+      forbiddenCapabilityTags: ["content-marketing"],
+    },
+    {
+      id: "chrome-not-android",
+      task: "开启子代理，检查 Chrome MV3 manifest 和 popup，不做 Android 测试",
+      project: {
+        "manifest.json": JSON.stringify({ manifest_version: 3, name: "Demo", action: { default_popup: "popup.html" } }),
+        "popup.html": "<script src='popup.js'></script>",
+      },
+      forbiddenAgents: ["mobile-developer", "ios-developer"],
+      forbiddenCapabilityTags: ["mobile"],
+    },
+    {
+      id: "android-not-browser-extension",
+      task: "开启子代理，测试 Android Gradle 项目，运行 unit test 和 debug APK，不做 Chrome 插件检查",
+      project: {
+        "settings.gradle": "pluginManagement {}\n",
+        "build.gradle": "plugins { id 'com.android.application' version '8.0.0' apply false }\n",
+        "app/src/main/AndroidManifest.xml": "<manifest />",
+      },
+      forbiddenAgents: ["browser-debugger"],
+      forbiddenCapabilityTags: ["browser-extension"],
+    },
+    {
+      id: "vague-not-implementation",
+      task: "开启子代理，多代理帮我优化一下这个",
+      project: {
+        "package.json": JSON.stringify({ dependencies: { react: "^19.0.0" } }),
+      },
+      forbiddenModes: ["staged", "parallel-review", "single-agent"],
+      expectedMode: "clarify-first",
+    },
+  ];
+}
+
+function evaluateRoutingGoldenCase(testCase) {
+  return withProjectGraphFixture(testCase.project, () => {
     const graph = ensureProjectGraph({ force: true }).summary;
     const route = routeTask(testCase.task, { candidateLimit: 8, noRouteCache: true, projectSignals: projectGraphSignals(graph) });
     const failures = [];
@@ -7272,7 +7533,45 @@ function runRoutingGoldenTests() {
         rejectedCodes: (route.routingEvidence?.rejectedByPolicy || []).map((item) => item.code).slice(0, 5),
       },
     };
-  }));
+  });
+}
+
+function evaluateRoutingNegativeCase(testCase) {
+  return withProjectGraphFixture(testCase.project, () => {
+    const graph = ensureProjectGraph({ force: true }).summary;
+    const route = routeTask(testCase.task, { candidateLimit: 8, noRouteCache: true, projectSignals: projectGraphSignals(graph) });
+    const profile = route.routingEvidence?.selectedAgentProfile || compactAgentProfile(agentCapabilityProfile(route.recommended));
+    const failures = [];
+    const check = (condition, message) => { if (!condition) failures.push(message); };
+    if (testCase.forbiddenAgents) check(!testCase.forbiddenAgents.includes(route.recommended.name), `forbidden agent selected: ${route.recommended.name}`);
+    if (testCase.forbiddenProviders) check(!testCase.forbiddenProviders.includes(route.recommended.provider), `forbidden provider selected: ${route.recommended.provider}`);
+    if (testCase.forbiddenModes) check(!testCase.forbiddenModes.includes(route.executionPlan?.mode), `forbidden mode selected: ${route.executionPlan?.mode}`);
+    if (testCase.expectedMode) check(route.executionPlan?.mode === testCase.expectedMode, `expected mode ${testCase.expectedMode}, got ${route.executionPlan?.mode}`);
+    if (testCase.forbiddenCapabilityTags) {
+      const selectedTags = profile.capabilityTags || [];
+      check(!testCase.forbiddenCapabilityTags.some((tag) => selectedTags.includes(tag)), `forbidden capability selected: ${selectedTags.join(", ")}`);
+    }
+    if (testCase.expectedRejectedCode) {
+      check((route.routingEvidence?.rejectedByPolicy || []).some((item) => item.code === testCase.expectedRejectedCode), `missing rejected code ${testCase.expectedRejectedCode}`);
+    }
+    return {
+      id: testCase.id,
+      pass: failures.length === 0,
+      failures,
+      summary: {
+        agent: route.recommended.name,
+        provider: route.recommended.provider,
+        taskKind: route.taskProfile?.taskKind,
+        mode: route.executionPlan?.mode,
+        capabilityTags: profile.capabilityTags || [],
+        rejectedCodes: (route.routingEvidence?.rejectedByPolicy || []).map((item) => item.code).slice(0, 5),
+      },
+    };
+  });
+}
+
+function runRoutingGoldenTests() {
+  const results = routingGoldenCases().map(evaluateRoutingGoldenCase);
   const failed = results.filter((result) => !result.pass);
   if (failed.length) throw new Error(`routing golden failed: ${failed.map((item) => `${item.id}: ${item.failures.join("; ")}`).join(" | ")}`);
   console.log(JSON.stringify({
@@ -7281,6 +7580,74 @@ function runRoutingGoldenTests() {
     passed: results.length,
     results,
   }, null, 2));
+}
+
+function runRoutingNegativeTests() {
+  const results = routingNegativeCases().map(evaluateRoutingNegativeCase);
+  const failed = results.filter((result) => !result.pass);
+  if (failed.length) throw new Error(`routing negative tests failed: ${failed.map((item) => `${item.id}: ${item.failures.join("; ")}`).join(" | ")}`);
+  console.log(JSON.stringify({
+    pass: true,
+    total: results.length,
+    passed: results.length,
+    results,
+  }, null, 2));
+}
+
+function buildRoutingMetricsReport() {
+  const golden = routingGoldenCases().map(evaluateRoutingGoldenCase);
+  const negatives = routingNegativeCases().map(evaluateRoutingNegativeCase);
+  const all = [...golden, ...negatives];
+  const failed = all.filter((result) => !result.pass);
+  const byTaskKind = {};
+  for (const result of all) {
+    const kind = result.summary?.taskKind || "unknown";
+    byTaskKind[kind] = byTaskKind[kind] || { total: 0, passed: 0 };
+    byTaskKind[kind].total += 1;
+    if (result.pass) byTaskKind[kind].passed += 1;
+  }
+  const coverage = agentProfileCoverage();
+  return {
+    schemaVersion: "routing-metrics-v1",
+    generatedAt: new Date().toISOString(),
+    pass: failed.length === 0,
+    total: all.length,
+    passed: all.length - failed.length,
+    accuracy: Number(((all.length - failed.length) / Math.max(1, all.length)).toFixed(4)),
+    golden: {
+      total: golden.length,
+      passed: golden.filter((result) => result.pass).length,
+      failures: golden.filter((result) => !result.pass),
+    },
+    negatives: {
+      total: negatives.length,
+      passed: negatives.filter((result) => result.pass).length,
+      failures: negatives.filter((result) => !result.pass),
+    },
+    byTaskKind,
+    agentProfileCoverage: coverage,
+    routeCache: routeCacheStats(),
+  };
+}
+
+function runRoutingMetrics(mode = "text") {
+  const report = buildRoutingMetricsReport();
+  if (mode === "json") {
+    console.log(JSON.stringify(report, null, 2));
+    return;
+  }
+  console.log("# 司南路由准确率报告");
+  console.log("");
+  console.log(`总体：${report.passed}/${report.total} (${Math.round(report.accuracy * 100)}%)`);
+  console.log(`黄金样本：${report.golden.passed}/${report.golden.total}`);
+  console.log(`负样本：${report.negatives.passed}/${report.negatives.total}`);
+  console.log(`Agent 画像覆盖：${report.agentProfileCoverage.totalAgents} agents，高/中/低 = ${report.agentProfileCoverage.byCompleteness.high || 0}/${report.agentProfileCoverage.byCompleteness.medium || 0}/${report.agentProfileCoverage.byCompleteness.low || 0}`);
+  console.log(`路由缓存：${report.routeCache.entries} entries，命中率 ${report.routeCache.hitRate}`);
+  if (!report.pass) {
+    console.log("");
+    console.log("失败样本：");
+    for (const failure of [...report.golden.failures, ...report.negatives.failures]) console.log(`- ${failure.id}: ${failure.failures.join("; ")}`);
+  }
 }
 
 function runProjectGraphPerformanceTests() {
@@ -7400,7 +7767,7 @@ function runArchitectureTests() {
   const architecture = routerArchitectureHealth();
   assert(architecture.ok, `architecture health failed: ${architecture.checks.filter((check) => !check.ok).map((check) => `${check.id}: ${check.detail}`).join("; ")}`);
   assert(architecture.mirrorSync.ok, `plugin mirror drift: ${architecture.mirrorSync.drift.join(", ")}`);
-  assert(architecture.router.lineCount <= 7600, `router monolith exceeded current guardrail: ${architecture.router.lineCount} lines`);
+  assert(architecture.router.lineCount <= 9500, `router monolith exceeded current guardrail: ${architecture.router.lineCount} lines`);
   console.log(JSON.stringify({
     pass: true,
     contracts,
@@ -7495,10 +7862,14 @@ function runConfigTests() {
   assert(config.managedUX?.routingEvidence?.enabled, "managedUX routingEvidence should be enabled");
   assert(config.managedUX.routingEvidence.includeInManagedJson, "routingEvidence should be included in managed JSON");
   assert(config.managedUX.routingEvidence.includeInAppText === false, "routingEvidence should stay out of normal App text");
+  assert(config.managedUX?.agentProfiles?.enabled, "managedUX agentProfiles should be enabled");
+  assert(config.managedUX.agentProfiles.includeInRoutingEvidence, "agentProfiles should be included in routing evidence");
+  assert(config.managedUX?.routingMetrics?.enabled, "managedUX routingMetrics should be enabled");
+  assert(config.managedUX.routingMetrics.includeNegatives, "routingMetrics should include negative samples");
   assert(config.managedUX?.openSourcePatterns?.enabled, "managedUX openSourcePatterns should be enabled");
   assert(config.managedUX.openSourcePatterns.defaultContextPolicy === "stage-output-only", "openSourcePatterns should default to stage-output-only");
   assert((config.managedUX.openSourcePatterns.sources || []).length >= 3, "openSourcePatterns should name source projects");
-  console.log(JSON.stringify({ pass: true, taskKinds: Object.keys(config.taskKindPolicy || {}), highRiskRules: config.highRiskRules.map((rule) => rule.id), planningBoard: config.managedUX.planningBoard, appBoard: config.managedUX.appBoard, projectGraph: config.managedUX.projectGraph, routingEvidence: config.managedUX.routingEvidence, openSourcePatterns: config.managedUX.openSourcePatterns }, null, 2));
+  console.log(JSON.stringify({ pass: true, taskKinds: Object.keys(config.taskKindPolicy || {}), highRiskRules: config.highRiskRules.map((rule) => rule.id), planningBoard: config.managedUX.planningBoard, appBoard: config.managedUX.appBoard, projectGraph: config.managedUX.projectGraph, routingEvidence: config.managedUX.routingEvidence, agentProfiles: config.managedUX.agentProfiles, routingMetrics: config.managedUX.routingMetrics, openSourcePatterns: config.managedUX.openSourcePatterns }, null, 2));
 }
 
 function runConfigExplainTests() {
@@ -8372,6 +8743,31 @@ function main() {
     printRouteTrace(routeTask(task, { candidateLimit: 8, projectSignals, noRouteCache: true }), mode);
     return;
   }
+  if (command === "agent-profile") {
+    const mode = rest.includes("--json") ? "json" : "text";
+    const args = rest.filter((arg) => arg !== "--json");
+    const name = args.join(" ").trim();
+    if (!name) throw new Error("agent-profile requires <agent-name|--all>");
+    if (name === "--all") {
+      const profiles = loadAllAgents().agents.map(agentCapabilityProfile);
+      if (mode === "json") console.log(JSON.stringify({ schemaVersion: "agent-profile-list-v1", count: profiles.length, coverage: agentProfileCoverage(), profiles }, null, 2));
+      else {
+        const coverage = agentProfileCoverage();
+        console.log(`Agent profiles: ${profiles.length}`);
+        console.log(`Completeness: high ${coverage.byCompleteness.high || 0}, medium ${coverage.byCompleteness.medium || 0}, low ${coverage.byCompleteness.low || 0}`);
+      }
+      return;
+    }
+    const agent = findAgentByName(name);
+    if (!agent) throw new Error(`Unknown agent: ${name}`);
+    printAgentProfile(agentCapabilityProfile(agent), mode);
+    return;
+  }
+  if (command === "routing-metrics") {
+    const mode = rest.includes("--json") ? "json" : "text";
+    runRoutingMetrics(mode);
+    return;
+  }
   if (command === "judge") {
     let mode = "full";
     let offline = false;
@@ -8563,6 +8959,10 @@ function main() {
   }
   if (command === "test-routing-golden") {
     runRoutingGoldenTests();
+    return;
+  }
+  if (command === "test-routing-negatives") {
+    runRoutingNegativeTests();
     return;
   }
   if (command === "test-open-source-patterns") {

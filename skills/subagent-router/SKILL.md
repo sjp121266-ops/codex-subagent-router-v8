@@ -49,7 +49,18 @@ When debugging routing accuracy, prefer `route-trace` before changing rules:
 "$SUBAGENT_ROUTER" route-trace --json "<task>"
 ```
 
-Use `routingEvidence.taskSignals`, `projectSignals`, `userConstraints`, `safetySignals`, `agentScores`, and `rejectedByPolicy` to explain why the router chose or rejected agents. Keep this evidence in debug/reporting contexts; do not show full candidate scoring in ordinary user-facing Codex App messages.
+Use `routingEvidence.taskSignals`, `projectSignals`, `userConstraints`, `safetySignals`, `selectedAgentProfile`, `agentScores`, and `rejectedByPolicy` to explain why the router chose or rejected agents. Keep this evidence in debug/reporting contexts; do not show full candidate scoring in ordinary user-facing Codex App messages.
+
+For router maintenance, use the explicit accuracy surfaces before editing rules:
+
+```bash
+"$SUBAGENT_ROUTER" agent-profile --json "<agent-name>"
+"$SUBAGENT_ROUTER" test-routing-golden
+"$SUBAGENT_ROUTER" test-routing-negatives
+"$SUBAGENT_ROUTER" routing-metrics --json
+```
+
+`agent-profile` shows structured capability tags, preferred task kinds, avoid task kinds, safety fit, and handoff roles. `test-routing-negatives` protects against wrong-domain selection such as content tasks choosing engineering agents, credential tasks choosing marketing agents, Chrome extension tasks choosing mobile agents, and vague tasks entering implementation without clarification. `routing-metrics` summarizes golden accuracy, negative-sample accuracy, taskKind coverage, profile coverage, and route-cache health.
 
 2. For debugging the router or medium/high-risk delegation, run the cost-aware router:
 

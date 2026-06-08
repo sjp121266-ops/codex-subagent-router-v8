@@ -61,12 +61,27 @@ node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs route-trace --
 
 `route-trace` 会展示任务信号、项目图谱信号、用户约束、安全信号、候选分数和被规则排除的 agent。普通 Codex App 聊天仍默认显示中文规划板，不会把内部候选评分塞给用户。
 
+查看某个 agent 的结构化能力画像：
+
+```bash
+node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs agent-profile qa-expert
+node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs agent-profile --json agency:xiaohongshu-specialist
+node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs agent-profile --json --all
+```
+
+画像会显示能力标签、适合任务、应避免任务、平台适配、安全边界、交接角色和画像完整度。它用于提高路由解释性和维护准确率，不会覆盖安全门或父级 Codex 的最终判断。
+
 维护调度准确率时使用：
 
 ```bash
 node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs test-routing-golden
+node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs test-routing-negatives
+node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs routing-metrics
+node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs routing-metrics --json
 node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs test-project-graph-performance
 ```
+
+`routing-metrics` 会汇总黄金样本、负样本、按 taskKind 的通过情况、Agent 画像覆盖率和路由缓存状态。负样本重点验证“不要选错”：例如小红书内容任务不能走工程 agent，token/OAuth 审查不能走营销 agent，Chrome 扩展不能走 Android agent，模糊项目优化不能直接进入实现。
 
 ## Execution Adapter
 

@@ -1,5 +1,5 @@
 {
-  "version": 20,
+  "version": 21,
   "skillRules": [
     {
       "id": "web-app-qa",
@@ -683,6 +683,17 @@
       "includeInManagedJson": true,
       "includeInAppText": false,
       "maxRejectedAgents": 8
+    },
+    "agentProfiles": {
+      "enabled": true,
+      "includeInRoutingEvidence": true,
+      "maxCapabilityTags": 8
+    },
+    "routingMetrics": {
+      "enabled": true,
+      "includeGolden": true,
+      "includeNegatives": true,
+      "includeProfileCoverage": true
     },
     "openSourcePatterns": {
       "enabled": true,
