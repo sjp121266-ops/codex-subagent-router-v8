@@ -4790,6 +4790,10 @@ function compactManagedPlanForProfile(plan, profile = "compact") {
       bridgeRole: plan.executionAdapter.bridgeRole,
       codexExecAvailable: plan.executionAdapter.codexExecAvailable,
       promptInjectionRequired: plan.executionAdapter.promptInjectionRequired,
+      providerTransport: displayText(plan.executionAdapter.providerTransport, 120),
+      traceSafeFields: (plan.executionAdapter.traceSafeFields || []).slice(0, 8),
+      codexAppSpawnConstraint: displayText(plan.executionAdapter.codexAppSpawnConstraint, 180),
+      spawnGuidance: displayText(plan.executionAdapter.spawnGuidance, 180),
       userImpact: displayText(plan.executionAdapter.userImpact, 180),
     } : plan.executionAdapter,
     routingEvidence: plan.routingEvidence ? {
@@ -5618,6 +5622,8 @@ function managedDelegationPlan(result, options = {}) {
       mode: executionAdapter.mode,
       bridgeRole: executionAdapter.bridgeRole,
       promptInjectionRequired: executionAdapter.promptInjectionRequired,
+      codexAppSpawnConstraint: executionAdapter.codexAppSpawnConstraint,
+      spawnGuidance: executionAdapter.spawnGuidance,
     };
   }
   const stageSkillLoadingOrder = stageDetails.map((stage) => ({
@@ -6151,7 +6157,9 @@ function detectExecutionAdapter(stage = {}) {
     selectedAgentIdentity: stage.agent || null,
     promptInjectionRequired: !nativeCustomAgents,
     providerTransport: nativeCustomAgents ? "native-agent-identity" : "generic-role-plus-provider-prompt",
-    traceSafeFields: ["mode", "bridgeRole", "selectedAgentIdentity", "providerTransport", "promptInjectionRequired"],
+    codexAppSpawnConstraint: "Some Codex App hosts reject combining full-context fork with an explicitly specified role.",
+    spawnGuidance: "Use an explicit role task with compact required context; do not retry full-context fork and role override together.",
+    traceSafeFields: ["mode", "bridgeRole", "selectedAgentIdentity", "providerTransport", "promptInjectionRequired", "codexAppSpawnConstraint"],
     effectOnQuality: nativeCustomAgents
       ? "none; the selected provider identity can be spawned directly by name when supported"
       : "low; the selected provider identity is preserved through delegationPrompt injection into the generic role",
@@ -6160,6 +6168,7 @@ function detectExecutionAdapter(stage = {}) {
       : "Codex uses the same selected provider identity and skills, but runs them through a generic explorer/worker carrier.",
     fallbackOrder: [
       "native custom agent spawn when the host exposes it",
+      "explicit role task with compact required context when full-context fork plus role override is rejected",
       "generic explorer/worker bridge with injected provider identity",
       "codex exec sandboxed subprocess when stronger isolation is needed",
     ],
@@ -8077,7 +8086,10 @@ function runExecutionAdapterTests() {
   assert(ready.executionAdapter.bridgeRole === ready.nextAction.role, "adapter bridgeRole should match next action role");
   assert(ready.executionAdapter.providerTransport, "execution adapter must expose provider transport");
   assert(ready.executionAdapter.traceSafeFields?.includes("providerTransport"), "execution adapter must define trace-safe fields");
+  assert(ready.executionAdapter.codexAppSpawnConstraint?.includes("full-context fork"), "execution adapter must document Codex App full-context fork role constraint");
+  assert(ready.executionAdapter.spawnGuidance?.includes("explicit role task"), "execution adapter must provide spawn guidance for role bridge fallback");
   assert(ready.nextAction.executionAdapter?.mode === ready.executionAdapter.mode, "nextAction must carry adapter mode");
+  if (ready.nextAction.type === "spawn") assert(ready.nextAction.executionAdapter?.spawnGuidance, "spawn nextAction must carry adapter guidance");
   assert(ready.executionContract.executionAdapterMode === ready.executionAdapter.mode, "executionContract must carry adapter mode");
   assert(ready.parentResponsibilities.some((item) => item.includes("delegationPrompt")), "parent responsibilities must explain delegationPrompt bridge");
 
@@ -8094,6 +8106,7 @@ function runExecutionAdapterTests() {
       promptInjectionRequired: ready.executionAdapter.promptInjectionRequired,
       codexExecAvailable: ready.executionAdapter.codexExecAvailable,
       providerTransport: ready.executionAdapter.providerTransport,
+      spawnGuidance: ready.executionAdapter.spawnGuidance,
     },
     readOnlyAdapter: readOnly.executionAdapter,
   }, null, 2));
