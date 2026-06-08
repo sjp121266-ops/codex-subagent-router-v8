@@ -1,8 +1,8 @@
-# 司南 Codex 多智能体调度器
+# 司南
 
-![司南 Codex 多智能体调度器主视觉](assets/sinan-codex-agent-orchestrator-hero.png)
+![司南主视觉](assets/sinan-codex-agent-orchestrator-hero.png)
 
-司南 Codex 多智能体调度器是一个质量优先的本地 Codex 子代理路由器，帮助父级 Codex 为明确的多智能体任务选择合适的代理身份、技能、模型强度、沙箱边界、规划看板和安全交接路径。
+司南是一个质量优先的本地 Codex 多智能体调度插件，帮助父级 Codex 为明确的多智能体任务选择合适的代理身份、技能、模型强度、沙箱边界、规划看板和安全交接路径。
 
 它适合需要在复杂代码库中进行分工、验证和持续迭代的用户：普通低风险任务保持轻量快速；安全、鉴权、生产、架构、迁移、审查、模糊范围和当前 diff 相关任务保持保守。
 
@@ -151,15 +151,15 @@ chmod +x ~/.codex/subagents/router.mjs
 
 ## Install As A Codex Plugin
 
-This repository also includes a local personal plugin package at `plugins/codex-subagent-router/`.
+This repository also includes the local personal plugin package source at `plugins/codex-subagent-router/`; install it under the plugin name `sinan`.
 
 ```bash
 mkdir -p ~/plugins
-rm -rf ~/plugins/codex-subagent-router
-cp -R plugins/codex-subagent-router ~/plugins/codex-subagent-router
-python3 ~/.codex/skills/.system/plugin-creator/scripts/validate_plugin.py ~/plugins/codex-subagent-router
-python3 ~/.codex/skills/.system/plugin-creator/scripts/update_plugin_cachebuster.py ~/plugins/codex-subagent-router
-codex plugin add codex-subagent-router@personal
+rm -rf ~/plugins/sinan
+cp -R plugins/codex-subagent-router ~/plugins/sinan
+python3 ~/.codex/skills/.system/plugin-creator/scripts/validate_plugin.py ~/plugins/sinan
+python3 ~/.codex/skills/.system/plugin-creator/scripts/update_plugin_cachebuster.py ~/plugins/sinan
+codex plugin add sinan@personal
 ```
 
 After installing, start a new Codex thread and try:

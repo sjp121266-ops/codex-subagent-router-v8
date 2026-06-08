@@ -12,7 +12,10 @@ Use this skill only after the user explicitly enables or asks for subagents, mul
 Use the plugin-packaged router first. Fall back to the global router path only if the plugin copy is not present:
 
 ```bash
-SUBAGENT_ROUTER="$HOME/plugins/codex-subagent-router/scripts/subagents/router.mjs"
+SUBAGENT_ROUTER="$HOME/plugins/sinan/scripts/subagents/router.mjs"
+if [ ! -x "$SUBAGENT_ROUTER" ]; then
+  SUBAGENT_ROUTER="$HOME/plugins/codex-subagent-router/scripts/subagents/router.mjs"
+fi
 if [ ! -x "$SUBAGENT_ROUTER" ]; then
   SUBAGENT_ROUTER="$HOME/.codex/subagents/router.mjs"
 fi

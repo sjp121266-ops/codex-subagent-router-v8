@@ -1,7 +1,7 @@
 {
-  "name": "codex-subagent-router",
-  "version": "0.1.0+codex.20260606112258",
-  "description": "司南 Codex 多智能体调度器：质量优先的本地子代理路由、规划看板和安全交接插件。",
+  "name": "sinan",
+  "version": "0.1.0+codex.20260608093721",
+  "description": "\u53f8\u5357\uff1a\u8d28\u91cf\u4f18\u5148\u7684 Codex \u591a\u667a\u80fd\u4f53\u8c03\u5ea6\u3001\u89c4\u5212\u770b\u677f\u548c\u5b89\u5168\u4ea4\u63a5\u63d2\u4ef6\u3002",
   "author": {
     "name": "sjp121266-ops",
     "url": "https://github.com/sjp121266-ops"
@@ -14,15 +14,17 @@
     "subagents",
     "routing",
     "multi-agent",
+    "sinan",
+    "\u53f8\u5357",
     "skills",
     "voltagent",
     "agency-agents"
   ],
   "skills": "./skills/",
   "interface": {
-    "displayName": "司南 Codex 多智能体调度器",
-    "shortDescription": "为 Codex 自动选择子代理、技能、模型、规划看板和安全交接路径。",
-    "longDescription": "司南 Codex 多智能体调度器把质量优先的本地路由系统打包为个人 Codex 插件。它帮助父级 Codex 为明确的子代理请求选择合适的 VoltAgent 或 Agency 代理身份、运行角色、沙箱边界、技能、模型强度、执行适配器、执行阶段、回退行为、规划看板和下一步安全动作。插件内置 msitarzewski/agency-agents 提示包专家作为提供商层，并通过紧凑代理卡索引、上下文账本和预算化提示词填充，让日常委托保持轻量。",
+    "displayName": "\u53f8\u5357",
+    "shortDescription": "\u4e3a Codex \u81ea\u52a8\u9009\u62e9\u5b50\u4ee3\u7406\u3001\u6280\u80fd\u3001\u6a21\u578b\u3001\u89c4\u5212\u770b\u677f\u548c\u5b89\u5168\u4ea4\u63a5\u8def\u5f84\u3002",
+    "longDescription": "\u53f8\u5357\u628a\u8d28\u91cf\u4f18\u5148\u7684\u672c\u5730\u591a\u667a\u80fd\u4f53\u8c03\u5ea6\u7cfb\u7edf\u6253\u5305\u4e3a\u4e2a\u4eba Codex \u63d2\u4ef6\u3002\u5b83\u5e2e\u52a9\u7236\u7ea7 Codex \u4e3a\u660e\u786e\u7684\u5b50\u4ee3\u7406\u8bf7\u6c42\u9009\u62e9\u5408\u9002\u7684 VoltAgent \u6216 Agency \u4ee3\u7406\u8eab\u4efd\u3001\u8fd0\u884c\u89d2\u8272\u3001\u6c99\u7bb1\u8fb9\u754c\u3001\u6280\u80fd\u3001\u6a21\u578b\u5f3a\u5ea6\u3001\u6267\u884c\u9002\u914d\u5668\u3001\u6267\u884c\u9636\u6bb5\u3001\u56de\u9000\u884c\u4e3a\u3001\u89c4\u5212\u770b\u677f\u548c\u4e0b\u4e00\u6b65\u5b89\u5168\u52a8\u4f5c\u3002\u63d2\u4ef6\u5185\u7f6e msitarzewski/agency-agents \u63d0\u793a\u5305\u4e13\u5bb6\u4f5c\u4e3a\u63d0\u4f9b\u5546\u5c42\uff0c\u5e76\u901a\u8fc7\u7d27\u51d1\u4ee3\u7406\u5361\u7d22\u5f15\u3001\u4e0a\u4e0b\u6587\u8d26\u672c\u548c\u9884\u7b97\u5316\u63d0\u793a\u8bcd\u586b\u5145\uff0c\u8ba9\u65e5\u5e38\u59d4\u6258\u4fdd\u6301\u8f7b\u91cf\u3002",
     "developerName": "sjp121266-ops",
     "category": "Productivity",
     "capabilities": [
@@ -31,9 +33,9 @@
       "Multi-agent planning"
     ],
     "defaultPrompt": [
-      "开启子代理，调用合适 agent 完成任务",
-      "用多代理审查并优化当前项目",
-      "解释这次应该使用哪些 agents 和 skills"
+      "\u5f00\u542f\u5b50\u4ee3\u7406\uff0c\u8c03\u7528\u5408\u9002 agent \u5b8c\u6210\u4efb\u52a1",
+      "\u7528\u591a\u4ee3\u7406\u5ba1\u67e5\u5e76\u4f18\u5316\u5f53\u524d\u9879\u76ee",
+      "\u89e3\u91ca\u8fd9\u6b21\u5e94\u8be5\u4f7f\u7528\u54ea\u4e9b agents \u548c skills"
     ],
     "brandColor": "#2563EB",
     "composerIcon": "./assets/sinan-codex-agent-orchestrator-hero.png",

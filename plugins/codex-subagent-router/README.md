@@ -1,6 +1,6 @@
-# 司南 Codex 多智能体调度器插件
+# 司南
 
-这个个人 Codex 插件把“司南 Codex 多智能体调度器”打包为本地可用的 `subagent-router` 技能、路由 CLI 和插件元数据，用于选择 VoltAgent 与 Agency 代理身份、Codex 技能、模型层级、沙箱模式、执行适配器、分阶段交接计划、多智能体规划看板和预算化提示词填充。
+司南是一个个人 Codex 多智能体调度插件，打包了本地可用的 `subagent-router` 技能、路由 CLI 和插件元数据，用于选择 VoltAgent 与 Agency 代理身份、Codex 技能、模型层级、沙箱模式、执行适配器、分阶段交接计划、多智能体规划看板和预算化提示词填充。
 
 ## What Is Included
 
@@ -28,8 +28,8 @@
 直接预览 App 友好输出：
 
 ```bash
-node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs managed --profile app "使用多智能体分批测试这个项目，输出规划看板"
-node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs managed --offline --profile app "使用多智能体分批测试这个项目，输出规划看板"
+node ~/plugins/sinan/scripts/subagents/router.mjs managed --profile app "使用多智能体分批测试这个项目，输出规划看板"
+node ~/plugins/sinan/scripts/subagents/router.mjs managed --offline --profile app "使用多智能体分批测试这个项目，输出规划看板"
 ```
 
 ## First-Use Project Code Graph
@@ -44,10 +44,10 @@ node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs managed --offl
 常用命令：
 
 ```bash
-node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs project-graph status --json
-node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs project-graph init --json
-node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs project-graph query --json "入口文件和测试"
-node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs managed --no-project-graph --json "调试时跳过项目图谱"
+node ~/plugins/sinan/scripts/subagents/router.mjs project-graph status --json
+node ~/plugins/sinan/scripts/subagents/router.mjs project-graph init --json
+node ~/plugins/sinan/scripts/subagents/router.mjs project-graph query --json "入口文件和测试"
+node ~/plugins/sinan/scripts/subagents/router.mjs managed --no-project-graph --json "调试时跳过项目图谱"
 ```
 
 ## Routing Accuracy Tools
@@ -55,8 +55,8 @@ node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs managed --no-p
 当你想知道“为什么选这个 agent”时，可以用路由追踪：
 
 ```bash
-node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs route-trace "写小红书种草脚本"
-node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs route-trace --json "只读审查 get_token，不执行 OAuth、不输出 token"
+node ~/plugins/sinan/scripts/subagents/router.mjs route-trace "写小红书种草脚本"
+node ~/plugins/sinan/scripts/subagents/router.mjs route-trace --json "只读审查 get_token，不执行 OAuth、不输出 token"
 ```
 
 `route-trace` 会展示任务信号、项目图谱信号、用户约束、安全信号、候选分数和被规则排除的 agent。普通 Codex App 聊天仍默认显示中文规划板，不会把内部候选评分塞给用户。
@@ -64,9 +64,9 @@ node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs route-trace --
 查看某个 agent 的结构化能力画像：
 
 ```bash
-node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs agent-profile qa-expert
-node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs agent-profile --json agency:xiaohongshu-specialist
-node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs agent-profile --json --all
+node ~/plugins/sinan/scripts/subagents/router.mjs agent-profile qa-expert
+node ~/plugins/sinan/scripts/subagents/router.mjs agent-profile --json agency:xiaohongshu-specialist
+node ~/plugins/sinan/scripts/subagents/router.mjs agent-profile --json --all
 ```
 
 画像会显示能力标签、适合任务、应避免任务、平台适配、安全边界、交接角色和画像完整度。它用于提高路由解释性和维护准确率，不会覆盖安全门或父级 Codex 的最终判断。
@@ -74,12 +74,12 @@ node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs agent-profile 
 维护调度准确率时使用：
 
 ```bash
-node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs test-routing-golden
-node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs test-routing-negatives
-node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs test-routing-fixtures
-node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs routing-metrics
-node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs routing-metrics --json
-node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs test-project-graph-performance
+node ~/plugins/sinan/scripts/subagents/router.mjs test-routing-golden
+node ~/plugins/sinan/scripts/subagents/router.mjs test-routing-negatives
+node ~/plugins/sinan/scripts/subagents/router.mjs test-routing-fixtures
+node ~/plugins/sinan/scripts/subagents/router.mjs routing-metrics
+node ~/plugins/sinan/scripts/subagents/router.mjs routing-metrics --json
+node ~/plugins/sinan/scripts/subagents/router.mjs test-project-graph-performance
 ```
 
 黄金样本和负样本放在 `scripts/subagents/tests/fixtures/`，后续扩展调度能力时先加样本，再调策略。`test-routing-fixtures` 只校验样本结构和唯一性；`test-routing-golden` / `test-routing-negatives` 会真实跑路由。
@@ -103,33 +103,33 @@ After installing the plugin, start a new Codex thread and ask:
 For direct local checks:
 
 ```bash
-node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs managed --json --profile compact "开启子代理，调用合适子代理，用 goal 模式持续实现"
-node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs managed --profile app "开启子代理，调用合适子代理，用 goal 模式持续实现"
-node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs managed --offline --profile app "开启子代理，调用合适子代理，用 goal 模式持续实现"
-node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs inspect-context "开启子代理，帮我做 Reddit 社区增长策略"
-node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs prompt agency:reddit-community-builder "帮我做 Reddit 社区增长策略" --hydrate summary --budget 2000
-node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs test
-node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs eval
-node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs test-agency-provider
-node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs test-provider-routing
-node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs test-provider-dispatch
-node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs test-agent-index
-node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs test-prompt-hydration
-node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs test-context-budget
-node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs test-execution-adapter
-node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs test-app-board
-node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs test-architecture
-node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs test-open-source-patterns
-node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs architecture-health
-node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs doctor
+node ~/plugins/sinan/scripts/subagents/router.mjs managed --json --profile compact "开启子代理，调用合适子代理，用 goal 模式持续实现"
+node ~/plugins/sinan/scripts/subagents/router.mjs managed --profile app "开启子代理，调用合适子代理，用 goal 模式持续实现"
+node ~/plugins/sinan/scripts/subagents/router.mjs managed --offline --profile app "开启子代理，调用合适子代理，用 goal 模式持续实现"
+node ~/plugins/sinan/scripts/subagents/router.mjs inspect-context "开启子代理，帮我做 Reddit 社区增长策略"
+node ~/plugins/sinan/scripts/subagents/router.mjs prompt agency:reddit-community-builder "帮我做 Reddit 社区增长策略" --hydrate summary --budget 2000
+node ~/plugins/sinan/scripts/subagents/router.mjs test
+node ~/plugins/sinan/scripts/subagents/router.mjs eval
+node ~/plugins/sinan/scripts/subagents/router.mjs test-agency-provider
+node ~/plugins/sinan/scripts/subagents/router.mjs test-provider-routing
+node ~/plugins/sinan/scripts/subagents/router.mjs test-provider-dispatch
+node ~/plugins/sinan/scripts/subagents/router.mjs test-agent-index
+node ~/plugins/sinan/scripts/subagents/router.mjs test-prompt-hydration
+node ~/plugins/sinan/scripts/subagents/router.mjs test-context-budget
+node ~/plugins/sinan/scripts/subagents/router.mjs test-execution-adapter
+node ~/plugins/sinan/scripts/subagents/router.mjs test-app-board
+node ~/plugins/sinan/scripts/subagents/router.mjs test-architecture
+node ~/plugins/sinan/scripts/subagents/router.mjs test-open-source-patterns
+node ~/plugins/sinan/scripts/subagents/router.mjs architecture-health
+node ~/plugins/sinan/scripts/subagents/router.mjs doctor
 ```
 
 Provider examples:
 
 ```bash
-node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs managed --json --profile compact "开启子代理，帮我做 Reddit 社区增长策略"
-node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs managed --json --profile compact "开启子代理，只读分析产品 adoption 下降原因，不要改代码"
-node ~/plugins/codex-subagent-router/scripts/subagents/router.mjs managed --json --profile compact "开启子代理，审查 API 鉴权漏洞"
+node ~/plugins/sinan/scripts/subagents/router.mjs managed --json --profile compact "开启子代理，帮我做 Reddit 社区增长策略"
+node ~/plugins/sinan/scripts/subagents/router.mjs managed --json --profile compact "开启子代理，只读分析产品 adoption 下降原因，不要改代码"
+node ~/plugins/sinan/scripts/subagents/router.mjs managed --json --profile compact "开启子代理，审查 API 鉴权漏洞"
 ```
 
 `report` should show 351 agents in the tested bundle: 167 VoltAgent and 184 Agency.
