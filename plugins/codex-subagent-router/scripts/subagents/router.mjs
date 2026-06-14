@@ -15,6 +15,11 @@ import {
   DEFAULT_HIGH_RISK_RULES,
   DEFAULT_TASK_KIND_POLICY,
 } from "./task-kind-policy.mjs";
+import {
+  applyProjectSignalsToTaskKind,
+  projectBoostForAgent,
+  projectPreferredAgentNames,
+} from "./semantic-routing.mjs";
 const ROUTER_DIR = path.dirname(fileURLToPath(import.meta.url));
 const HOME = process.env.HOME;
 if (!HOME) throw new Error("HOME is required; set CODEX_HOME explicitly when running in a minimal environment.");
@@ -3306,11 +3311,7 @@ function routeTask(task, options = {}) {
   const intents = classifyIntents(task);
   const projectSignals = options.projectSignals || null;
   let taskKind = classifyTaskKind(task, { matchedIntents: intents });
-  if (projectSignals && taskKind !== "content-marketing" && !hasExplicitSecurityRiskSignal(task)) {
-    if (projectSignals.isChromeExtension && /manifest|popup|extension|插件/i.test(task)) taskKind = "chrome-extension-qa";
-    else if (projectSignals.isAndroid && /android|gradle|apk|测试|检查|验证/i.test(task)) taskKind = "android-qa";
-    else if (projectSignals.isFrontend && /性能|首屏|ui|页面|component|组件|test|测试|build|构建/i.test(task)) taskKind = "web-app-qa";
-  }
+  taskKind = applyProjectSignalsToTaskKind(task, taskKind, projectSignals, { hasExplicitSecurityRisk: hasExplicitSecurityRiskSignal(task) });
   const routeCacheKey = routeCacheKeyFor(task, candidateLimit, strategy.version, taskKind, projectSignals?.fingerprint || "");
   const routeCacheEligibilityResult = routeCacheEligibility(task, options, taskKind);
   if (routeTaskCache.has(routeCacheKey)) return routeTaskCache.get(routeCacheKey);
@@ -3326,41 +3327,10 @@ function routeTask(task, options = {}) {
   const allAgents = loadAllAgents();
   const strongToolQaKinds = ["web-app-qa", "monorepo-wasm-qa", "android-qa", "chrome-extension-qa", "desktop-rpa-qa", "desktop-automation-qa", "comfyui-workflow-qa", "credential-tooling", "integration-bot-qa", "artifact-inspection", "static-artifact-inspection", "empty-sample-blocker"];
   const rejectedByPolicy = [];
-  const projectBoostFor = (agent) => {
-    if (!projectSignals || taskKind === "content-marketing") return { boost: 0, reason: "" };
-    const text = `${agent.name} ${agent.displayName || ""} ${agent.description || ""} ${agent.category || ""}`.toLowerCase();
-    let boost = 0;
-    const reasons = [];
-    if (projectSignals.isFrontend && /frontend|react|ui|browser|web/.test(text)) {
-      boost += /test|测试|qa|检查|验证/i.test(task) ? 24 : 34;
-      reasons.push("project graph detected frontend framework");
-    }
-    if (projectSignals.isBackend && /backend|api|server|architect|security/.test(text)) {
-      boost += /auth|鉴权|security|权限/i.test(task) ? 34 : 26;
-      reasons.push("project graph detected backend framework");
-    }
-    if (projectSignals.isChromeExtension && /browser|frontend|test|qa|code-mapper/.test(text)) {
-      boost += /test-automator|browser-debugger|qa-expert|frontend-developer|code-mapper/.test(text) ? 82 : 38;
-      reasons.push("project graph detected Chrome extension manifest");
-    }
-    if (projectSignals.isAndroid && /android|mobile|test|qa/.test(text)) {
-      boost += 38;
-      reasons.push("project graph detected Android or Gradle project");
-    }
-    if (projectSignals.isIos && /ios|swift|mobile/.test(text)) {
-      boost += 34;
-      reasons.push("project graph detected Swift project");
-    }
-    if (projectSignals.hasTests && /test|qa|automation/.test(text) && /test|测试|验证|coverage|覆盖/i.test(task)) {
-      boost += 24;
-      reasons.push("project graph detected existing tests");
-    }
-    return { boost, reason: reasons.join("; ") };
-  };
   let ranked = allAgents.agents
     .map((agent) => {
       const scored = scoreAgent(agent, task, intents);
-      const projectBoost = projectBoostFor(agent);
+      const projectBoost = projectBoostForAgent(agent, task, taskKind, projectSignals);
       return projectBoost.boost ? {
         ...scored,
         score: scored.score + projectBoost.boost,
@@ -3389,15 +3359,10 @@ function routeTask(task, options = {}) {
   const taskKindPreferred = preferredAgentsForTaskKind(taskKind)
     .map((name) => allAgents.agents.find((agent) => agentMatches(agent, name)))
     .filter(Boolean);
-  const projectPreferredNames = [];
-  if (projectSignals?.isChromeExtension && /manifest|popup|extension|插件/i.test(task)) projectPreferredNames.push("test-automator", "frontend-developer", "browser-debugger", "qa-expert", "code-mapper");
-  if (projectSignals?.isAndroid && /gradle|android|apk|测试|检查|验证/i.test(task)) projectPreferredNames.push("test-automator", "qa-expert", "mobile-developer", "code-mapper");
-  if (projectSignals?.isFrontend && /性能|首屏|ui|页面|component|组件|test|测试/i.test(task)) projectPreferredNames.push("frontend-developer", "test-automator", "browser-debugger", "qa-expert");
-  if (projectSignals?.isBackend && /api|接口|auth|鉴权|server|后端|test|测试/i.test(task)) projectPreferredNames.push("backend-developer", "security-auditor", "test-automator", "reviewer");
-  const projectPreferred = unique(projectPreferredNames)
+  const projectPreferred = projectPreferredAgentNames(task, taskKind, projectSignals, { hasExplicitSecurityRisk: hasExplicitSecurityRiskSignal(task) })
     .map((name) => allAgents.agents.find((agent) => agentMatches(agent, name)))
     .filter(Boolean);
-  if (projectPreferred.length && taskKind !== "content-marketing" && !hasExplicitSecurityRiskSignal(task)) {
+  if (projectPreferred.length) {
     const rankedByName = new Set(ranked.map((entry) => entry.agent.name));
     const preferredEntries = projectPreferred
       .filter((agent) => !rankedByName.has(agent.name))
@@ -6116,6 +6081,7 @@ function pluginMirrorSyncHealth() {
   const pairs = [
     ["router", path.join(projectRoot, "subagents", "router.mjs"), path.join(projectRoot, "plugins/codex-subagent-router/scripts/subagents/router.mjs")],
     ["managed-plan-contract", path.join(projectRoot, "subagents", "managed-plan-contract.mjs"), path.join(projectRoot, "plugins/codex-subagent-router/scripts/subagents/managed-plan-contract.mjs")],
+    ["semantic-routing", path.join(projectRoot, "subagents", "semantic-routing.mjs"), path.join(projectRoot, "plugins/codex-subagent-router/scripts/subagents/semantic-routing.mjs")],
     ["task-kind-policy", path.join(projectRoot, "subagents", "task-kind-policy.mjs"), path.join(projectRoot, "plugins/codex-subagent-router/scripts/subagents/task-kind-policy.mjs")],
     ["strategy-config", path.join(projectRoot, "subagents", "strategy-config.json"), path.join(projectRoot, "plugins/codex-subagent-router/scripts/subagents/strategy-config.json")],
     ["judgement-schema", path.join(projectRoot, "subagents", "judgement.schema.json"), path.join(projectRoot, "plugins/codex-subagent-router/scripts/subagents/judgement.schema.json")],
