@@ -1499,7 +1499,7 @@ function hasSecurityReviewSignal(text = "") {
   return hasExplicitSecurityRiskSignal(cleaned);
 }
 
-function classifyTaskKind(task, routeLike = {}) {
+function classifyTaskKindDecision(task, routeLike = {}) {
   const cleaned = cleanTask(task);
   const intentIds = (routeLike.matchedIntents || []).map((intent) => intent.id);
   const policy = configuredTaskKindPolicy();
@@ -1509,32 +1509,43 @@ function classifyTaskKind(task, routeLike = {}) {
   const productSignals = /adoption|churn|funnel|market|用户体验|用户问题|用户|产品|需求|商业|增长|定位|留存|转化|漏斗/i.test(cleaned);
   const debugSignals = /debug|bug|error|exception|crash|fail|flaky|regression|stack trace|traceback|\blog\b|日志|错误|报错|异常|崩溃|失败|修复|排查|定位.+(问题|异常|错误|失败|crash|bug)/i.test(cleaned);
   const analysisSignals = /review|audit|analy[sz]e|inspect|diagnose|map|评审|审查|审计|分析|调研|检查|诊断|只读|不要改|不改代码/i.test(cleaned);
+  const decide = (taskKind, ruleId, reason, signals = []) => ({
+    taskKind,
+    ruleId,
+    reason,
+    signals: unique(signals.filter(Boolean)),
+  });
 
-  if (hasEmptySampleBlockerSignal(task)) return "empty-sample-blocker";
-  if (patternListMatches(policy["incident-response"]?.keywords, cleaned)) return "incident-response";
-  if (hasChromeExtensionQaSignal(task) && !hasSecurityReviewSignal(cleaned)) return "chrome-extension-qa";
-  if (hasAndroidQaSignal(task) && !hasSecurityReviewSignal(cleaned)) return "android-qa";
-  if (hasMonorepoWasmQaSignal(task) && !hasSecurityReviewSignal(cleaned)) return "monorepo-wasm-qa";
-  if (hasIntegrationBotQaSignal(task)) return "integration-bot-qa";
-  if (hasDesktopAutomationQaSignal(task) && !hasSecurityReviewSignal(cleaned)) return "desktop-automation-qa";
-  if (hasDesktopRpaQaSignal(task) && (!hasSecurityReviewSignal(cleaned) || hasLocalRpaValidationBoundary(cleaned))) return "desktop-rpa-qa";
-  if (hasComfyUiWorkflowQaSignal(cleaned)) return "comfyui-workflow-qa";
-  if (hasCredentialToolingSignal(cleaned)) return "credential-tooling";
-  if (hasStaticArtifactInspectionSignal(cleaned) && !hasSecurityReviewSignal(cleaned)) return "static-artifact-inspection";
-  if (hasArtifactInspectionSignal(cleaned) && !hasSecurityReviewSignal(cleaned)) return "artifact-inspection";
-  if (hasWebAppQaSignal(task) && !hasSecurityReviewSignal(cleaned)) return "web-app-qa";
-  if (patternListMatches(policy["content-marketing"]?.keywords, cleaned)) return "content-marketing";
-  if (hasExplicitSecurityRiskSignal(cleaned) && analysisSignals) return "engineering-analysis";
-  if (debugSignals) return hasWriteVerb ? "engineering-execution" : "engineering-analysis";
-  if (productSignals && (noWrite || analysisSignals || !hasWriteVerb)) return "product-analysis";
-  if (noWrite && /调研|官方文档|查资料|资料|检查|审查|分析|research|official docs|source verification|read[- ]?only research|only research|只读调研|只调研|仅调研/i.test(cleaned)) return "research-only";
-  if (patternListMatches(policy["release-publishing"]?.keywords, cleaned) && !/deploy|docker|terraform|kubernetes|k8s|ci failure|部署失败|流水线失败/i.test(cleaned)) return "release-publishing";
-  if (patternListMatches(policy["repo-maintenance"]?.keywords, cleaned) && !/线上事故|生产事故|incident|outage/i.test(cleaned)) return "repo-maintenance";
-  if (explicitOrchestration) return "orchestration-design";
-  if (noWrite || analysisSignals || intentIds.some((id) => ["review", "security", "research"].includes(id))) return "engineering-analysis";
-  return hasWriteVerb || intentIds.some((id) => ["frontend", "backend", "debug", "testing", "ios", "devops", "data-ai"].includes(id))
-    ? "engineering-execution"
-    : "engineering-analysis";
+  if (hasEmptySampleBlockerSignal(task)) return decide("empty-sample-blocker", "empty-sample-blocker-signal", "Task references an empty or unavailable sample/project.", ["empty-sample"]);
+  if (patternListMatches(policy["incident-response"]?.keywords, cleaned)) return decide("incident-response", "incident-policy-keyword", "Incident, outage, production log, rollback, or urgent repair language matched.", ["incident"]);
+  if (hasChromeExtensionQaSignal(task) && !hasSecurityReviewSignal(cleaned)) return decide("chrome-extension-qa", "chrome-extension-qa-signal", "Chrome extension or Manifest V3 local QA signal matched without security-review override.", ["chrome-extension", "local-qa"]);
+  if (hasAndroidQaSignal(task) && !hasSecurityReviewSignal(cleaned)) return decide("android-qa", "android-qa-signal", "Android, Gradle, APK, adb, emulator, or device QA signal matched without security-review override.", ["android", "local-qa"]);
+  if (hasMonorepoWasmQaSignal(task) && !hasSecurityReviewSignal(cleaned)) return decide("monorepo-wasm-qa", "monorepo-wasm-qa-signal", "Monorepo, Turbo, Rust, WASM, or layered local QA signal matched.", ["monorepo", "wasm", "local-qa"]);
+  if (hasIntegrationBotQaSignal(task)) return decide("integration-bot-qa", "integration-bot-qa-signal", "Bot, webhook, connector, bridge, or platform API validation signal matched.", ["integration", "local-qa"]);
+  if (hasDesktopAutomationQaSignal(task) && !hasSecurityReviewSignal(cleaned)) return decide("desktop-automation-qa", "desktop-automation-qa-signal", "Desktop automation or GUI-control local QA signal matched.", ["desktop-automation", "local-qa"]);
+  if (hasDesktopRpaQaSignal(task) && (!hasSecurityReviewSignal(cleaned) || hasLocalRpaValidationBoundary(cleaned))) return decide("desktop-rpa-qa", "desktop-rpa-qa-signal", "RPA, PySide, Playwright, offscreen smoke, or local validation boundary matched.", ["desktop-rpa", "local-qa"]);
+  if (hasComfyUiWorkflowQaSignal(cleaned)) return decide("comfyui-workflow-qa", "comfyui-workflow-qa-signal", "ComfyUI workflow validation signal matched.", ["comfyui", "workflow-qa"]);
+  if (hasCredentialToolingSignal(cleaned)) return decide("credential-tooling", "credential-tooling-signal", "OAuth, token, credential, auth cache, or no-secret-output signal matched.", ["credential", "security-boundary"]);
+  if (hasStaticArtifactInspectionSignal(cleaned) && !hasSecurityReviewSignal(cleaned)) return decide("static-artifact-inspection", "static-artifact-inspection-signal", "Static HTML, document folder, or asset structure inspection signal matched.", ["static-artifact", "read-only"]);
+  if (hasArtifactInspectionSignal(cleaned) && !hasSecurityReviewSignal(cleaned)) return decide("artifact-inspection", "artifact-inspection-signal", "Transcript, document, subtitle, generated artifact, or output structure signal matched.", ["artifact", "read-only"]);
+  if (hasWebAppQaSignal(task) && !hasSecurityReviewSignal(cleaned)) return decide("web-app-qa", "web-app-qa-signal", "Web app framework, package script, test, build, or browser-facing QA signal matched.", ["web-app", "local-qa"]);
+  if (patternListMatches(policy["content-marketing"]?.keywords, cleaned)) return decide("content-marketing", "content-marketing-policy-keyword", "Content platform or social marketing keyword matched.", ["content", "platform"]);
+  if (hasExplicitSecurityRiskSignal(cleaned) && analysisSignals) return decide("engineering-analysis", "security-analysis-signal", "Security/auth/privacy risk combined with analysis or review intent.", ["security", "analysis"]);
+  if (debugSignals) return decide(hasWriteVerb ? "engineering-execution" : "engineering-analysis", "debug-signal", "Debug, error, failure, log, crash, or regression signal matched.", ["debug", hasWriteVerb ? "write-intent" : "analysis"]);
+  if (productSignals && (noWrite || analysisSignals || !hasWriteVerb)) return decide("product-analysis", "product-analysis-signal", "Product, adoption, churn, funnel, market, or user-problem signal matched without implementation intent.", ["product", noWrite ? "no-write" : "analysis"]);
+  if (noWrite && /调研|官方文档|查资料|资料|检查|审查|分析|research|official docs|source verification|read[- ]?only research|only research|只读调研|只调研|仅调研/i.test(cleaned)) return decide("research-only", "read-only-research-signal", "Read-only research or official/source verification signal matched.", ["read-only", "research"]);
+  if (patternListMatches(policy["release-publishing"]?.keywords, cleaned) && !/deploy|docker|terraform|kubernetes|k8s|ci failure|部署失败|流水线失败/i.test(cleaned)) return decide("release-publishing", "release-publishing-policy-keyword", "README, changelog, release notes, public repo, publishing, or attribution keyword matched.", ["release", "docs"]);
+  if (patternListMatches(policy["repo-maintenance"]?.keywords, cleaned) && !/线上事故|生产事故|incident|outage/i.test(cleaned)) return decide("repo-maintenance", "repo-maintenance-policy-keyword", "Config, cache, snapshot, registry, maintenance, cleanup, or dependency keyword matched.", ["maintenance"]);
+  if (explicitOrchestration) return decide("orchestration-design", "orchestration-signal", "Subagent routing, scheduling, handoff, fallback, goal mode, or multi-agent orchestration signal matched.", ["orchestration"]);
+  if (noWrite || analysisSignals || intentIds.some((id) => ["review", "security", "research"].includes(id))) return decide("engineering-analysis", "analysis-or-readonly-fallback", "Analysis, review, research, security intent, or no-write constraint selected analysis fallback.", ["analysis", noWrite ? "no-write" : ""]);
+  const executionIntent = hasWriteVerb || intentIds.some((id) => ["frontend", "backend", "debug", "testing", "ios", "devops", "data-ai"].includes(id));
+  return executionIntent
+    ? decide("engineering-execution", "execution-fallback", "Write verb or engineering implementation intent selected execution fallback.", ["execution"])
+    : decide("engineering-analysis", "analysis-fallback", "No stronger task-kind signal matched; defaulting to engineering analysis.", ["analysis"]);
+}
+
+function classifyTaskKind(task, routeLike = {}) {
+  return classifyTaskKindDecision(task, routeLike).taskKind;
 }
 
 function preferredAgentsForTaskKind(taskKind) {
@@ -2487,6 +2498,14 @@ function routingEvidenceFor(task, route, context = {}) {
     route.executionPlan?.requiresReview ? "requires-review" : "",
     route.routeCache?.eligible === false ? `route-cache-bypass:${route.routeCache.bypassReason || "not-eligible"}` : "",
   ].filter(Boolean);
+  const taskKindDecision = route.taskKindDecision ? {
+    taskKind: route.taskKindDecision.taskKind,
+    originalTaskKind: route.taskKindDecision.originalTaskKind || route.taskKindDecision.taskKind,
+    ruleId: route.taskKindDecision.ruleId,
+    reason: route.taskKindDecision.reason,
+    signals: route.taskKindDecision.signals || [],
+    projectGraphOverride: Boolean(route.taskKindDecision.projectGraphOverride),
+  } : null;
   const agentScores = (route.candidates || []).slice(0, 8).map((candidate) => ({
     name: candidate.name,
     provider: candidate.provider,
@@ -2513,6 +2532,7 @@ function routingEvidenceFor(task, route, context = {}) {
     projectSignals,
     userConstraints,
     safetySignals,
+    taskKindDecision,
     agentScores,
     rejectedByPolicy: rejectedByPolicy.slice(0, 8),
   };
@@ -3310,8 +3330,18 @@ function routeTask(task, options = {}) {
   const strategy = loadStrategyConfig();
   const intents = classifyIntents(task);
   const projectSignals = options.projectSignals || null;
-  let taskKind = classifyTaskKind(task, { matchedIntents: intents });
-  taskKind = applyProjectSignalsToTaskKind(task, taskKind, projectSignals, { hasExplicitSecurityRisk: hasExplicitSecurityRiskSignal(task) });
+  const taskKindDecision = classifyTaskKindDecision(task, { matchedIntents: intents });
+  let taskKind = applyProjectSignalsToTaskKind(task, taskKindDecision.taskKind, projectSignals, { hasExplicitSecurityRisk: hasExplicitSecurityRiskSignal(task) });
+  const finalTaskKindDecision = taskKind === taskKindDecision.taskKind
+    ? taskKindDecision
+    : {
+      ...taskKindDecision,
+      taskKind,
+      originalTaskKind: taskKindDecision.taskKind,
+      projectGraphOverride: true,
+      reason: `${taskKindDecision.reason} Project graph signals adjusted taskKind to ${taskKind}.`,
+      signals: unique([...(taskKindDecision.signals || []), "project-graph"]),
+    };
   const routeCacheKey = routeCacheKeyFor(task, candidateLimit, strategy.version, taskKind, projectSignals?.fingerprint || "");
   const routeCacheEligibilityResult = routeCacheEligibility(task, options, taskKind);
   if (routeTaskCache.has(routeCacheKey)) return routeTaskCache.get(routeCacheKey);
@@ -3506,6 +3536,7 @@ function routeTask(task, options = {}) {
     needsParentChoice,
     matchedIntents: intents.map(({ id, label, score, preferredSandbox }) => ({ id, label, score, preferredSandbox })),
     taskKind,
+    taskKindDecision: finalTaskKindDecision,
     recommended: summarizeAgent(best),
     finalAgentProvider: best.provider || "voltagent",
     finalAgentId: best.id || `voltagent:${best.name}`,
@@ -4655,6 +4686,14 @@ function compactManagedPlanForProfile(plan, profile = "compact") {
       projectSignals: plan.routingEvidence.projectSignals ? {
         fingerprint: plan.routingEvidence.projectSignals.fingerprint,
         detected: (plan.routingEvidence.projectSignals.detected || []).slice(0, 4),
+      } : null,
+      taskKindDecision: plan.routingEvidence.taskKindDecision ? {
+        taskKind: plan.routingEvidence.taskKindDecision.taskKind,
+        originalTaskKind: plan.routingEvidence.taskKindDecision.originalTaskKind,
+        ruleId: plan.routingEvidence.taskKindDecision.ruleId,
+        reason: displayText(plan.routingEvidence.taskKindDecision.reason, profile === "app" ? 120 : 80),
+        signals: (plan.routingEvidence.taskKindDecision.signals || []).slice(0, 4),
+        projectGraphOverride: Boolean(plan.routingEvidence.taskKindDecision.projectGraphOverride),
       } : null,
       userConstraints: (plan.routingEvidence.userConstraints || []).slice(0, 4),
       safetySignals: (plan.routingEvidence.safetySignals || []).slice(0, 4),
@@ -7288,6 +7327,8 @@ function evaluateRoutingGoldenCase(testCase) {
     if (expected.needsParentChoice !== undefined) check(route.needsParentChoice === expected.needsParentChoice, `expected needsParentChoice ${expected.needsParentChoice}, got ${route.needsParentChoice}`);
     if (expected.rejectedCode) check((route.routingEvidence?.rejectedByPolicy || []).some((item) => item.code === expected.rejectedCode), `missing rejectedCode ${expected.rejectedCode}`);
     check(route.routingEvidence?.selectedBecause?.length > 0, "routingEvidence should explain selection");
+    check(Boolean(route.routingEvidence?.taskKindDecision?.ruleId), "routingEvidence should expose taskKind decision rule");
+    check(Boolean(route.routingEvidence?.taskKindDecision?.reason), "routingEvidence should explain taskKind decision");
     check(route.routingEvidence?.agentScores?.length > 0, "routingEvidence should expose candidate scores");
     return {
       id: testCase.id,
