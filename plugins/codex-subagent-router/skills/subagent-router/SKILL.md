@@ -170,10 +170,12 @@ When `displayBoard.goalBoard` is present, prefer that board over a hand-written 
 8. Spawn the subagent:
 - Prefer native custom-agent spawning when the host supports it and `executionAdapter.mode` is `native-custom-agent`.
 - Otherwise use the generic bridge: `explorer` when `executionAdapter.bridgeRole` is `explorer`, or `worker` when it is `worker`.
+- Follow `executionAdapter.spawnInvocation` when present. If it says `fullContextFork: false`, leave any full-context / include-full-conversation / complete-context fork option disabled in the subagent tool call.
 - Pass `selectedModel` to the subagent spawn tool when it accepts model overrides.
 - Pass `reasoningEffort` to the subagent spawn tool when it accepts reasoning effort overrides.
 - Pass a compact prompt as the subagent task. Prefer `reference` or `summary`; use `hybrid` for isolated execution where the child may not be able to read local files; use `full` only for debugging or explicitly self-contained execution.
 - If the current Codex App subagent tool refuses a full-context fork plus specified role, do not retry that same combination. Treat it as an execution transport limit, switch to an explicit role task with the required compact context written into the task, and keep the selected agent identity/skills/safety boundaries from `executionAdapter`.
+- For Codex App native subagents, the safe default call shape is: explicit `role`, compact task text containing required context, no full-context fork. Write the stage objective, relevant files/evidence, acceptance criteria, and safety boundaries into the task body.
 - If the current Codex App reports that subagent/thread quota is full, do not retry spawning in a loop. Treat it as an execution transport limit, keep the router decision as planning guidance, and let parent Codex directly perform the current read-only or verification stage with the selected skills and safety boundaries.
 
 9. If the current environment cannot spawn custom-named agents directly, this is not a routing failure. Still use the chosen provider identity by injecting a budgeted prompt into the generic Codex `explorer` or `worker`. The selected agent, skills, model, sandbox, stages, and quality gates remain the source of truth; only the execution transport changes.

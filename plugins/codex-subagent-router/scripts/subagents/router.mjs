@@ -4794,6 +4794,22 @@ function compactManagedPlanForProfile(plan, profile = "compact") {
       traceSafeFields: (plan.executionAdapter.traceSafeFields || []).slice(0, 8),
       codexAppSpawnConstraint: displayText(plan.executionAdapter.codexAppSpawnConstraint, 180),
       spawnGuidance: displayText(plan.executionAdapter.spawnGuidance, 180),
+      spawnInvocation: plan.executionAdapter.spawnInvocation ? {
+        role: displayText(plan.executionAdapter.spawnInvocation.role, 40),
+        contextMode: displayText(plan.executionAdapter.spawnInvocation.contextMode, 80),
+        fullContextFork: Boolean(plan.executionAdapter.spawnInvocation.fullContextFork),
+        includeFullConversation: Boolean(plan.executionAdapter.spawnInvocation.includeFullConversation),
+        writeRequiredContextIntoTask: Boolean(plan.executionAdapter.spawnInvocation.writeRequiredContextIntoTask),
+        carrySelectedIdentityInPrompt: Boolean(plan.executionAdapter.spawnInvocation.carrySelectedIdentityInPrompt),
+        forbiddenShapes: (plan.executionAdapter.spawnInvocation.forbiddenShapes || []).slice(0, 3).map((shape) => ({
+          id: displayText(shape.id, 80),
+          fullContextFork: Boolean(shape.fullContextFork),
+          explicitRole: Boolean(shape.explicitRole),
+          reason: displayText(shape.reason, 140),
+        })),
+        requiredTaskContext: (plan.executionAdapter.spawnInvocation.requiredTaskContext || []).slice(0, 6),
+        omitFromToolCall: (plan.executionAdapter.spawnInvocation.omitFromToolCall || []).slice(0, 6),
+      } : plan.executionAdapter.spawnInvocation,
       userImpact: displayText(plan.executionAdapter.userImpact, 180),
     } : plan.executionAdapter,
     routingEvidence: plan.routingEvidence ? {
@@ -5624,6 +5640,7 @@ function managedDelegationPlan(result, options = {}) {
       promptInjectionRequired: executionAdapter.promptInjectionRequired,
       codexAppSpawnConstraint: executionAdapter.codexAppSpawnConstraint,
       spawnGuidance: executionAdapter.spawnGuidance,
+      spawnInvocation: executionAdapter.spawnInvocation,
     };
   }
   const stageSkillLoadingOrder = stageDetails.map((stage) => ({
@@ -6148,6 +6165,30 @@ function detectExecutionAdapter(stage = {}) {
   const codexCliAvailable = commandAvailable(CODEX_CLI);
   const genericRole = stage.role === "explorer" ? "explorer" : "worker";
   const mode = nativeCustomAgents ? "native-custom-agent" : "generic-role-bridge";
+  const spawnInvocation = {
+    role: genericRole,
+    contextMode: "compact-required-context",
+    fullContextFork: false,
+    includeFullConversation: false,
+    writeRequiredContextIntoTask: true,
+    carrySelectedIdentityInPrompt: !nativeCustomAgents,
+    forbiddenShapes: [
+      {
+        id: "full-context-fork-plus-explicit-role",
+        fullContextFork: true,
+        explicitRole: true,
+        reason: "Codex App may reject this combined subagent invocation shape.",
+      },
+    ],
+    requiredTaskContext: [
+      "selected agent identity and role card",
+      "stage objective and acceptance criteria",
+      "sandbox/write boundaries",
+      "required files or evidence snippets",
+      "verification commands or expected checks",
+    ],
+    omitFromToolCall: ["fullContextFork", "includeFullConversation", "roleOverrideWithFullContext"],
+  };
   return {
     mode,
     nativeCustomAgents,
@@ -6159,7 +6200,8 @@ function detectExecutionAdapter(stage = {}) {
     providerTransport: nativeCustomAgents ? "native-agent-identity" : "generic-role-plus-provider-prompt",
     codexAppSpawnConstraint: "Some Codex App hosts reject combining full-context fork with an explicitly specified role.",
     spawnGuidance: "Use an explicit role task with compact required context; do not retry full-context fork and role override together.",
-    traceSafeFields: ["mode", "bridgeRole", "selectedAgentIdentity", "providerTransport", "promptInjectionRequired", "codexAppSpawnConstraint"],
+    spawnInvocation,
+    traceSafeFields: ["mode", "bridgeRole", "selectedAgentIdentity", "providerTransport", "promptInjectionRequired", "codexAppSpawnConstraint", "spawnInvocation"],
     effectOnQuality: nativeCustomAgents
       ? "none; the selected provider identity can be spawned directly by name when supported"
       : "low; the selected provider identity is preserved through delegationPrompt injection into the generic role",
@@ -6217,6 +6259,20 @@ function validateManagedPlanContract(plan, options = {}) {
   addError(plan.verificationBoard && typeof plan.verificationBoard === "object", "missing verificationBoard");
   addError(plan.contextLedger && typeof plan.contextLedger === "object", "missing contextLedger");
   addError(plan.projectGraph && typeof plan.projectGraph === "object", "missing projectGraph");
+  addError(plan.executionAdapter && typeof plan.executionAdapter === "object", "missing executionAdapter");
+  if (plan.executionAdapter) {
+    addError(["native-custom-agent", "generic-role-bridge"].includes(plan.executionAdapter.mode), `invalid executionAdapter mode: ${plan.executionAdapter.mode}`);
+    addError(["explorer", "worker"].includes(plan.executionAdapter.bridgeRole), `invalid executionAdapter bridgeRole: ${plan.executionAdapter.bridgeRole}`);
+    addError(plan.executionAdapter.providerTransport || plan.executionAdapter.mode === "native-custom-agent", "executionAdapter missing providerTransport");
+    addError(plan.executionAdapter.spawnInvocation && typeof plan.executionAdapter.spawnInvocation === "object", "executionAdapter missing spawnInvocation");
+    if (plan.executionAdapter.spawnInvocation) {
+      addError(plan.executionAdapter.spawnInvocation.fullContextFork === false, "spawnInvocation must disable full-context fork for Codex App role calls");
+      addError(plan.executionAdapter.spawnInvocation.includeFullConversation === false, "spawnInvocation must disable full conversation context for Codex App role calls");
+      addError(plan.executionAdapter.spawnInvocation.writeRequiredContextIntoTask === true, "spawnInvocation must require compact context in task body");
+      addError(["explorer", "worker"].includes(plan.executionAdapter.spawnInvocation.role), `invalid spawnInvocation role: ${plan.executionAdapter.spawnInvocation.role}`);
+      addError((plan.executionAdapter.spawnInvocation.forbiddenShapes || []).some((shape) => shape.id === "full-context-fork-plus-explicit-role"), "spawnInvocation must forbid full-context fork plus explicit role");
+    }
+  }
   for (const internal of MANAGED_INTERNAL_KEYS) {
     addError(!Object.prototype.hasOwnProperty.call(plan, internal), `managed plan leaks internal field: ${internal}`);
   }
@@ -8088,8 +8144,12 @@ function runExecutionAdapterTests() {
   assert(ready.executionAdapter.traceSafeFields?.includes("providerTransport"), "execution adapter must define trace-safe fields");
   assert(ready.executionAdapter.codexAppSpawnConstraint?.includes("full-context fork"), "execution adapter must document Codex App full-context fork role constraint");
   assert(ready.executionAdapter.spawnGuidance?.includes("explicit role task"), "execution adapter must provide spawn guidance for role bridge fallback");
+  assert(ready.executionAdapter.spawnInvocation?.fullContextFork === false, "execution adapter must disable full-context fork for explicit role invocation");
+  assert(ready.executionAdapter.spawnInvocation?.contextMode === "compact-required-context", "execution adapter must recommend compact required context");
+  assert(ready.executionAdapter.spawnInvocation?.forbiddenShapes?.some((shape) => shape.id === "full-context-fork-plus-explicit-role"), "execution adapter must forbid full-context fork plus explicit role");
   assert(ready.nextAction.executionAdapter?.mode === ready.executionAdapter.mode, "nextAction must carry adapter mode");
   if (ready.nextAction.type === "spawn") assert(ready.nextAction.executionAdapter?.spawnGuidance, "spawn nextAction must carry adapter guidance");
+  if (ready.nextAction.type === "spawn") assert(ready.nextAction.executionAdapter?.spawnInvocation?.fullContextFork === false, "spawn nextAction must disable full-context fork");
   assert(ready.executionContract.executionAdapterMode === ready.executionAdapter.mode, "executionContract must carry adapter mode");
   assert(ready.parentResponsibilities.some((item) => item.includes("delegationPrompt")), "parent responsibilities must explain delegationPrompt bridge");
 
@@ -8107,6 +8167,7 @@ function runExecutionAdapterTests() {
       codexExecAvailable: ready.executionAdapter.codexExecAvailable,
       providerTransport: ready.executionAdapter.providerTransport,
       spawnGuidance: ready.executionAdapter.spawnGuidance,
+      spawnInvocation: ready.executionAdapter.spawnInvocation,
     },
     readOnlyAdapter: readOnly.executionAdapter,
   }, null, 2));

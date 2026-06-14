@@ -96,7 +96,7 @@ The parent Codex remains responsible for loading skill instructions, spawning or
 
 Native custom-name spawning depends on the current Codex host. When direct spawning by a provider identity is unavailable, `managed --json` exposes an `executionAdapter` and can fall back to a generic explorer or worker bridge. The selected provider identity is preserved through the generated `delegationPrompt`; only the transport layer changes.
 
-Some Codex App hosts reject “full-context fork + explicitly specified role” as a combined subagent call. Treat that as a host transport limit, not a routing failure: use an explicit role task with only the required compact context written into the task.
+Some Codex App hosts reject “full-context fork + explicitly specified role” as a combined subagent call. Treat that as a host transport limit, not a routing failure: use an explicit role task with only the required compact context written into the task. `executionAdapter.spawnInvocation` encodes this safe call shape for parent Codex: role is explicit, required context is written into the task body, and full-context fork is disabled.
 
 Agency agents are used as role and methodology guidance. They do not override Codex system, developer, user, AGENTS.md, sandbox, approval, or verification rules. Full provider prompt hydration is explicit and should be reserved for debugging, isolated execution, or self-contained handoff needs.
 
